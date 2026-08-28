@@ -33,8 +33,8 @@ use settings::Settings as _;
 use theme::ActiveTheme;
 use title_bar_settings::TitleBarSettings;
 use ui::{
-    ButtonLike, ContextMenu, IconWithIndicator, Indicator, PopoverMenu, TintColor, Tooltip,
-    prelude::*, utils::platform_title_bar_height,
+    ButtonLike, ContextMenu, IconButton, IconWithIndicator, Indicator, PopoverMenu, TintColor,
+    Tooltip, prelude::*, utils::platform_title_bar_height,
 };
 use update_version::UpdateVersion;
 use util::ResultExt;
@@ -278,6 +278,25 @@ impl Render for TitleBar {
                 .pr_1()
                 .gap_1()
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(
+                    IconButton::new("project-search", IconName::MagnifyingGlass)
+                        .icon_size(IconSize::Medium)
+                        .tab_index(0isize)
+                        .aria_label("Search Project")
+                        .tooltip(|_window, cx| {
+                            Tooltip::for_action(
+                                "Search Project",
+                                &workspace::DeploySearch::default(),
+                                cx,
+                            )
+                        })
+                        .on_click(|_, window, cx| {
+                            window.dispatch_action(
+                                workspace::DeploySearch::default().boxed_clone(),
+                                cx,
+                            )
+                        }),
+                )
                 .child(self.update_version.clone())
                 .when(TitleBarSettings::get_global(cx).show_user_menu, |this| {
                     this.child(self.render_user_menu_button(cx))

@@ -1840,6 +1840,20 @@ Positive `integer` value between 1 and 32. Values outside of this range will be 
 
 `boolean` values
 
+## Activity Bar
+
+- Description: Control the activity bar on the left side of the window. It holds the buttons for the left and right dock panels. When it is hidden, the panel buttons are shown in the status bar instead.
+- Setting: `activity_bar`
+- Default:
+
+```json [settings]
+{
+  "activity_bar": {
+    "show": true
+  }
+}
+```
+
 ## Status Bar
 
 - Description: Control various elements in the status bar. Note that some items in the status bar have their own settings set elsewhere.
@@ -3855,12 +3869,6 @@ Non-negative `integer` values
 }
 ```
 
-### Button
-
-- Description: Whether to show the project search button in the status bar.
-- Setting: `button`
-- Default: `true`
-
 ### Whole Word
 
 - Description: Whether to only match on whole words.
@@ -5144,7 +5152,7 @@ Run the {#action theme_selector::Toggle} action in the command palette to see a 
   "project_panel": {
     "button": true,
     "default_width": 240,
-    "dock": "right",
+    "dock": "left",
     "entry_spacing": "comfortable",
     "file_icons": true,
     "folder_indicator": "icon",
@@ -5180,7 +5188,7 @@ Run the {#action theme_selector::Toggle} action in the command palette to see a 
 
 - Description: Control the position of the dock
 - Setting: `dock`
-- Default: `right`
+- Default: `left`
 
 **Options**
 

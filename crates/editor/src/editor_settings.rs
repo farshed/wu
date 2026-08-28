@@ -173,8 +173,6 @@ pub struct DragAndDropSelection {
 /// Default options for buffer and project search items.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub struct SearchSettings {
-    /// Whether to show the project search button in the status bar.
-    pub button: bool,
     /// Whether to only match on whole words.
     pub whole_word: bool,
     /// Whether to match case sensitively.
@@ -278,7 +276,6 @@ impl Settings for EditorSettings {
             double_click_in_multibuffer: editor.double_click_in_multibuffer.unwrap(),
             search_wrap: editor.search_wrap.unwrap(),
             search: SearchSettings {
-                button: search.button.unwrap(),
                 whole_word: search.whole_word.unwrap(),
                 case_sensitive: search.case_sensitive.unwrap(),
                 include_ignored: search.include_ignored.unwrap(),

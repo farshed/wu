@@ -361,7 +361,7 @@ fn render_setting_import_button(
 ) -> impl IntoElement + 'static {
     let action = action.boxed_clone();
 
-    Button::new(label.clone(), label.clone())
+    Button::new(label.clone(), label)
         .style(ButtonStyle::OutlinedGhost)
         .size(ButtonSize::Medium)
         .label_size(LabelSize::Small)

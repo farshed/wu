@@ -11394,8 +11394,8 @@ async fn test_focus_follows_mouse_into_blank_area(cx: &mut gpui::TestAppContext)
     });
 
     // Hover over the blank space below the last entry in the project panel,
-    // which lives in the right dock by default.
-    cx.simulate_mouse_move(point(px(1800.), px(600.)), None, Modifiers::none());
+    // which lives in the left dock by default, past the activity bar.
+    cx.simulate_mouse_move(point(px(150.), px(600.)), None, Modifiers::none());
     cx.executor().advance_clock(Duration::from_millis(200));
     cx.run_until_parked();
 

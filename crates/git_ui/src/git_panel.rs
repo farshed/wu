@@ -12284,14 +12284,14 @@ mod tests {
         });
         cx.run_until_parked();
 
-        cx.dispatch_action(ActivatePaneRight);
+        cx.dispatch_action(ActivatePaneLeft);
         cx.run_until_parked();
 
         let history_panel_was_focused = panel.update_in(&mut cx, |panel, window, cx| {
             panel.focus_handle.contains_focused(window, cx)
         });
 
-        cx.dispatch_action(ActivatePaneLeft);
+        cx.dispatch_action(ActivatePaneRight);
         cx.run_until_parked();
 
         let center_item_is_focused = center_item.update_in(&mut cx, |center_item, window, cx| {
@@ -12299,7 +12299,7 @@ mod tests {
         });
         assert!(
             history_panel_was_focused && center_item_is_focused,
-            "pane navigation should focus the History panel after moving right and restore the center item after moving left; History panel focused after moving right: {history_panel_was_focused}, center item focused after moving left: {center_item_is_focused}"
+            "pane navigation should focus the History panel after moving left and restore the center item after moving right; History panel focused after moving left: {history_panel_was_focused}, center item focused after moving right: {center_item_is_focused}"
         );
     }
 

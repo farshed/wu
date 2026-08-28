@@ -196,6 +196,7 @@ pub struct SettingsContent {
     pub tabs: Option<ItemSettingsContent>,
     pub tab_bar: Option<TabBarSettingsContent>,
     pub status_bar: Option<StatusBarSettingsContent>,
+    pub activity_bar: Option<ActivityBarSettingsContent>,
 
     pub preview_tabs: Option<PreviewTabsSettingsContent>,
 
@@ -336,7 +337,7 @@ impl SettingsContent {
 fallible_options::flattened_deserialize!(SettingsContent {
     sections: { project, theme, extension, workspace, editor, remote },
     options: {
-        call_hierarchy, file_finder, git_panel, tabs, tab_bar, status_bar, preview_tabs,
+        call_hierarchy, file_finder, git_panel, tabs, tab_bar, status_bar, activity_bar, preview_tabs,
         auto_update, base_keymap, debugger, diagnostics,
         git,
         global_lsp_settings, image_viewer, markdown_preview, helix_mode, hide_mouse,

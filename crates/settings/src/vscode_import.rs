@@ -208,6 +208,7 @@ impl VsCodeSettings {
             server_url: None,
             session: None,
             status_bar: self.status_bar_settings_content(),
+            activity_bar: self.activity_bar_settings_content(),
             tab_bar: self.tab_bar_settings_content(),
             tabs: self.item_settings_content(),
             terminal: self.terminal_settings_content(),
@@ -728,6 +729,14 @@ impl VsCodeSettings {
                 .read_str("workbench.editor.editorActionsLocation")
                 .and_then(|str| if str == "hidden" { Some(false) } else { None }),
             show_pinned_tabs_in_separate_row: None,
+        })
+    }
+
+    fn activity_bar_settings_content(&self) -> Option<ActivityBarSettingsContent> {
+        skip_default(ActivityBarSettingsContent {
+            show: self
+                .read_str("workbench.activityBar.location")
+                .and_then(|location| (location == "hidden").then_some(false)),
         })
     }
 

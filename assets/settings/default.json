@@ -718,8 +718,6 @@
   "search_wrap": true,
   // Search options to enable by default when opening new project and buffer searches.
   "search": {
-    // Whether to show the project search button in the status bar.
-    "button": true,
     // Whether to only match on whole words.
     "whole_word": false,
     // Whether to match case sensitively.
@@ -788,7 +786,7 @@
     // Default width of the project panel.
     "default_width": 240,
     // Where to dock the project panel. Can be 'left' or 'right'.
-    "dock": "right",
+    "dock": "left",
     // Spacing between worktree entries in the project panel. Can be 'comfortable' or 'standard'.
     "entry_spacing": "comfortable",
     // Whether to show file icons in the project panel.
@@ -912,7 +910,7 @@
     // Default width of the outline panel.
     "default_width": 300,
     // Where to dock the outline panel. Can be 'left' or 'right'.
-    "dock": "right",
+    "dock": "left",
     // Whether to show file icons in the outline panel.
     "file_icons": true,
     // What to show for directories in the outline panel.
@@ -971,7 +969,7 @@
     // Whether to show the git panel button in the status bar.
     "button": true,
     // Where to dock the git panel. Can be 'left' or 'right'.
-    "dock": "right",
+    "dock": "left",
     // Default width of the git panel.
     "default_width": 360,
     // Style of the git status indicator in the panel.
@@ -1507,6 +1505,13 @@
   // 3. Don't load direnv configuration at all.
   //      "load_direnv": "disabled"
   "load_direnv": "direct",
+  // Activity bar-related settings.
+  "activity_bar": {
+    // Whether to show the activity bar on the left side of the window.
+    // It holds the buttons for the left and right dock panels, like the
+    // activity bar in VS Code.
+    "show": true
+  },
   // Status bar-related settings.
   "status_bar": {
     // Whether to show the status bar.

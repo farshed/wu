@@ -3008,16 +3008,15 @@ impl Project {
                 operation,
                 is_local: true,
             } => {
-                let operation = language::proto::serialize_operation(operation);
-
                 if let Some(remote) = &self.remote_client {
+                    let operation = language::proto::serialize_operation(operation);
                     remote
                         .read(cx)
                         .proto_client()
                         .send(proto::UpdateBuffer {
                             project_id: 0,
                             buffer_id: buffer_id.to_proto(),
-                            operations: vec![operation.clone()],
+                            operations: vec![operation],
                         })
                         .ok();
                 }

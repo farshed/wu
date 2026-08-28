@@ -206,6 +206,20 @@ impl Settings for TabBarSettings {
 }
 
 #[derive(Deserialize, RegisterSetting)]
+pub struct ActivityBarSettings {
+    pub show: bool,
+}
+
+impl Settings for ActivityBarSettings {
+    fn from_settings(content: &settings::SettingsContent) -> Self {
+        let activity_bar = content.activity_bar.clone().unwrap();
+        ActivityBarSettings {
+            show: activity_bar.show.unwrap(),
+        }
+    }
+}
+
+#[derive(Deserialize, RegisterSetting)]
 pub struct StatusBarSettings {
     pub show: bool,
     pub show_active_file: bool,

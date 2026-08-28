@@ -1,4 +1,5 @@
 pub mod active_file_name;
+pub mod activity_bar;
 pub mod dock;
 pub mod history_manager;
 pub mod invalid_item_view;
@@ -109,6 +110,7 @@ use settings::{
     CenteredPaddingSettings, DefaultOpenBehavior, Settings, SettingsLocation, SettingsStore,
 };
 
+use activity_bar::ActivityBar;
 use sqlez::{
     bindable::{Bind, Column, StaticColumnCount},
     statement::Statement,
@@ -149,9 +151,9 @@ use util::{
 };
 use uuid::Uuid;
 pub use workspace_settings::{
-    AccessibleMode, AutosaveSetting, BottomDockLayout, EncodingDisplayOptions, FocusFollowsMouse,
-    RestoreOnStartupBehavior, StatusBarSettings, TabBarSettings, WorkspaceSettings,
-    closing_last_window_quits_app, observe_accessible_mode,
+    AccessibleMode, ActivityBarSettings, AutosaveSetting, BottomDockLayout, EncodingDisplayOptions,
+    FocusFollowsMouse, RestoreOnStartupBehavior, StatusBarSettings, TabBarSettings,
+    WorkspaceSettings, closing_last_window_quits_app, observe_accessible_mode,
 };
 use zed_actions::{Spawn, theme::ToggleMode};
 
@@ -1331,6 +1333,7 @@ pub struct Workspace {
     active_pane: Entity<Pane>,
     last_active_center_pane: Option<WeakEntity<Pane>>,
     status_bar: Entity<StatusBar>,
+    activity_bar: Entity<ActivityBar>,
     pub(crate) modal_layer: Entity<ModalLayer>,
     toast_layer: Entity<ToastLayer>,
     titlebar_item: Option<AnyView>,
@@ -1634,6 +1637,18 @@ impl Workspace {
         let left_dock_buttons = cx.new(|cx| PanelButtons::new(left_dock.clone(), cx));
         let bottom_dock_buttons = cx.new(|cx| PanelButtons::new(bottom_dock.clone(), cx));
         let right_dock_buttons = cx.new(|cx| PanelButtons::new(right_dock.clone(), cx));
+        // The activity bar visibility is read during render, so the layout must be
+        // rebuilt when settings change.
+        cx.observe_global::<SettingsStore>(|_, cx| cx.notify())
+            .detach();
+        let activity_bar = cx.new(|cx| {
+            ActivityBar::new(
+                weak_handle.clone(),
+                left_dock.clone(),
+                right_dock.clone(),
+                cx,
+            )
+        });
         let multi_workspace = window
             .root::<MultiWorkspace>()
             .flatten()
@@ -1715,6 +1730,7 @@ impl Workspace {
             active_pane: center_pane.clone(),
             last_active_center_pane: Some(center_pane.downgrade()),
             status_bar,
+            activity_bar,
             modal_layer,
             toast_layer,
             titlebar_item: None,
@@ -2483,6 +2499,14 @@ impl Workspace {
 
     pub fn status_bar(&self) -> &Entity<StatusBar> {
         &self.status_bar
+    }
+
+    pub fn activity_bar(&self) -> &Entity<ActivityBar> {
+        &self.activity_bar
+    }
+
+    pub fn activity_bar_visible(&self, cx: &App) -> bool {
+        ActivityBarSettings::get_global(cx).show
     }
 
     pub fn status_bar_visible(&self, cx: &App) -> bool {
@@ -7890,8 +7914,17 @@ impl Render for Workspace {
                                     },
                                 ))
                             })
-                            .child({
-                                match bottom_dock_layout {
+                            .child(
+                                h_flex()
+                                    .flex_1()
+                                    .w_full()
+                                    .min_h_0()
+                                    .overflow_hidden()
+                                    .when(self.activity_bar_visible(cx), |this| {
+                                        this.child(self.activity_bar.clone())
+                                    })
+                                    .child({
+                                        match bottom_dock_layout {
                                     BottomDockLayout::Full => div()
                                         .flex()
                                         .flex_col()
@@ -8126,7 +8159,11 @@ impl Render for Workspace {
                                             cx,
                                         )),
                                 }
-                            })
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                    }),
+                            )
                             .children(self.zoomed.as_ref().and_then(|view| {
                                 let zoomed_view = view.upgrade()?;
                                 let div = div()
@@ -8598,6 +8635,7 @@ pub enum WorkspaceMatching {
 }
 
 #[derive(Clone)]
+#[derive(Default)]
 pub struct OpenOptions {
     pub visible: Option<OpenVisible>,
     pub focus: Option<bool>,
@@ -8607,21 +8645,6 @@ pub struct OpenOptions {
     pub open_mode: OpenMode,
     pub env: Option<HashMap<String, String>>,
     pub open_in_dev_container: bool,
-}
-
-impl Default for OpenOptions {
-    fn default() -> Self {
-        Self {
-            visible: None,
-            focus: None,
-            workspace_matching: WorkspaceMatching::default(),
-            wait: false,
-            requesting_window: None,
-            open_mode: OpenMode::default(),
-            env: None,
-            open_in_dev_container: false,
-        }
-    }
 }
 
 impl OpenOptions {

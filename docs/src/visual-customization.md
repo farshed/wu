@@ -337,6 +337,19 @@ TBD: Centered layout related settings
   }
 ```
 
+### Activity Bar
+
+```json [settings]
+  "activity_bar": {
+    // Show/hide the activity bar on the left side of the window.
+    // It holds the buttons for the left and right dock panels, like the
+    // activity bar in VS Code.
+    // When it is hidden, those buttons are shown in the status bar instead.
+    // Defaults to true.
+    "show": true
+  },
+```
+
 ### Status Bar
 
 ```json [settings]

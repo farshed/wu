@@ -27,7 +27,7 @@
     },
     {
       "name": "Markdown Preview",
-      "labels": ["area:preview/markdown", "area:preview/mermaid", "area:preview/csv"]
+      "labels": ["area:preview/markdown", "area:preview/csv"]
     },
     {
       "name": "NixOS",

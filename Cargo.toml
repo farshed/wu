@@ -86,7 +86,6 @@ members = [
     "crates/markdown",
     "crates/markdown_preview",
     "crates/menu",
-    "crates/mermaid_render",
     "crates/migrator",
     "crates/miniprofiler_ui",
     "crates/multi_buffer",
@@ -283,7 +282,6 @@ lsp_locations = { path = "crates/lsp_locations" }
 markdown = { path = "crates/markdown" }
 markdown_preview = { path = "crates/markdown_preview" }
 menu = { path = "crates/menu" }
-mermaid_render = { path = "crates/mermaid_render" }
 migrator = { path = "crates/migrator" }
 miniprofiler_ui = { path = "crates/miniprofiler_ui" }
 multi_buffer = { path = "crates/multi_buffer" }
@@ -827,14 +825,14 @@ notify-types = { git = "https://github.com/zed-industries/notify", rev = "0890bb
 split-debuginfo = "unpacked"
 incremental = true
 codegen-units = 16
-debug = "limited"
+debug = 0
 
 # mirror configuration for crates compiled for the build platform
 # (without this cargo will compile ~400 crates twice)
 [profile.dev.build-override]
 codegen-units = 16
 split-debuginfo = "unpacked"
-debug = "limited"
+debug = 0
 
 # "debug" is a reserved profile name.
 [profile.dbg]

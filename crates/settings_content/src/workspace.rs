@@ -526,6 +526,17 @@ pub struct TabBarSettingsContent {
 
 #[with_fallible_options]
 #[derive(Clone, Default, Serialize, Deserialize, JsonSchema, MergeFrom, Debug, PartialEq, Eq)]
+pub struct ActivityBarSettingsContent {
+    /// Whether to show the activity bar on the left side of the window.
+    /// The activity bar holds the buttons for the left and right dock panels,
+    /// like the activity bar in VS Code.
+    ///
+    /// Default: true
+    pub show: Option<bool>,
+}
+
+#[with_fallible_options]
+#[derive(Clone, Default, Serialize, Deserialize, JsonSchema, MergeFrom, Debug, PartialEq, Eq)]
 pub struct StatusBarSettingsContent {
     /// Whether to show the status bar.
     ///

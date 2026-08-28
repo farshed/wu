@@ -3569,7 +3569,26 @@ fn search_and_files_page() -> SettingsPage {
 }
 
 fn window_and_layout_page() -> SettingsPage {
-    fn status_bar_section() -> [SettingsPageItem; 11] {
+    fn activity_bar_section() -> [SettingsPageItem; 2] {
+        [
+            SettingsPageItem::SectionHeader("Activity Bar"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Show Activity Bar",
+                description: "Show the activity bar with the dock panel buttons on the left side of the window.",
+                field: Box::new(SettingField {
+                    json_path: Some("activity_bar.show"),
+                    pick: |settings_content| settings_content.activity_bar.as_ref()?.show.as_ref(),
+                    write: |settings_content, value, _| {
+                        settings_content.activity_bar.get_or_insert_default().show = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+        ]
+    }
+
+    fn status_bar_section() -> [SettingsPageItem; 10] {
         [
             SettingsPageItem::SectionHeader("Status Bar"),
             SettingsPageItem::SettingItem(SettingItem {
@@ -3699,25 +3718,6 @@ fn window_and_layout_page() -> SettingsPage {
                     pick: |settings_content| settings_content.diagnostics.as_ref()?.button.as_ref(),
                     write: |settings_content, value, _| {
                         settings_content.diagnostics.get_or_insert_default().button = value;
-                    },
-                }),
-                metadata: None,
-                files: USER,
-            }),
-            SettingsPageItem::SettingItem(SettingItem {
-                title: "Project Search Button",
-                description: "Show the project search button in the status bar.",
-                field: Box::new(SettingField {
-                    json_path: Some("search.button"),
-                    pick: |settings_content| {
-                        settings_content.editor.search.as_ref()?.button.as_ref()
-                    },
-                    write: |settings_content, value, _| {
-                        settings_content
-                            .editor
-                            .search
-                            .get_or_insert_default()
-                            .button = value;
                     },
                 }),
                 metadata: None,
@@ -4662,6 +4662,7 @@ fn window_and_layout_page() -> SettingsPage {
     SettingsPage {
         title: "Window & Layout",
         items: concat_sections![
+            activity_bar_section(),
             status_bar_section(),
             title_bar_section(),
             tab_bar_section(),

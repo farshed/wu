@@ -366,7 +366,6 @@ fn render_conflict_buttons(
             Button::new("both", "Use Both")
                 .label_size(LabelSize::Small)
                 .on_click({
-                    let editor = editor.clone();
                     let conflict = conflict.clone();
                     let ours = conflict.ours.clone();
                     let theirs = conflict.theirs.clone();
