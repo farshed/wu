@@ -33,7 +33,7 @@ use self::inlay_hints::BufferInlayHints;
 use crate::{
     CodeAction, Completion, CompletionDisplayOptions, CompletionResponse, CompletionSource,
     CoreCompletion, Hover, InlayHint, InlayId, LocationLink, LspAction, LspPullDiagnostics,
-    ManifestProvidersStore, Project, ProjectItem, ProjectPath, ProjectTransaction,
+    ManifestProvidersStore, ProjectItem, ProjectPath, ProjectTransaction,
     PulledDiagnostics, ResolveState, Symbol,
     buffer_store::{BufferStore, BufferStoreEvent},
     environment::ProjectEnvironment,
@@ -41,7 +41,6 @@ use crate::{
     lsp_store::{
         self,
         folding_ranges::FoldingRangeData,
-        log_store::{GlobalLogStore, LanguageServerKind},
         semantic_tokens::{SemanticTokenConfig, SemanticTokensData},
     },
     manifest_tree::{
@@ -9236,9 +9235,6 @@ impl LspStore {
         }
     }
 
-    pub fn disconnected_from_host(&mut self) {
-        self.downstream_client.take();
-    }
 
     pub fn disconnected_from_ssh_remote(&mut self) {
         if let LspStoreMode::Remote(RemoteLspStore {
@@ -9249,71 +9245,6 @@ impl LspStore {
         }
     }
 
-    pub(crate) fn set_language_server_statuses_from_proto(
-        &mut self,
-        project: WeakEntity<Project>,
-        language_servers: Vec<proto::LanguageServer>,
-        server_capabilities: Vec<String>,
-        cx: &mut Context<Self>,
-    ) {
-        let lsp_logs = cx
-            .try_global::<GlobalLogStore>()
-            .map(|lsp_store| lsp_store.0.clone());
-
-        self.language_server_statuses = language_servers
-            .into_iter()
-            .zip(server_capabilities)
-            .map(|(server, server_capabilities)| {
-                let server_id = LanguageServerId(server.id as usize);
-                if let Ok(server_capabilities) = serde_json::from_str(&server_capabilities) {
-                    self.lsp_server_capabilities
-                        .insert(server_id, server_capabilities);
-                }
-
-                let name = LanguageServerName::from_proto(server.name);
-                let worktree = server.worktree_id.map(WorktreeId::from_proto);
-                let language_name = server.language_name.map(LanguageName::from_proto);
-
-                if let Some(lsp_logs) = &lsp_logs {
-                    lsp_logs.update(cx, |lsp_logs, cx| {
-                        lsp_logs.add_language_server(
-                            // Only remote clients get their language servers set from proto
-                            LanguageServerKind::Remote {
-                                project: project.clone(),
-                            },
-                            server_id,
-                            Some(name.clone()),
-                            worktree,
-                            None,
-                            cx,
-                        );
-                    });
-                }
-
-                if let Some(ref lang_name) = language_name {
-                    self.try_register_remote_adapter_locally(&name, lang_name);
-                }
-
-                (
-                    server_id,
-                    LanguageServerStatus {
-                        name,
-                        language_name: language_name,
-                        server_version: None,
-                        server_readable_version: None,
-                        pending_work: Default::default(),
-                        has_pending_diagnostic_updates: false,
-                        progress_tokens: Default::default(),
-                        worktree,
-                        binary: None,
-                        configuration: None,
-                        workspace_folders: BTreeSet::new(),
-                        process_id: None,
-                    },
-                )
-            })
-            .collect();
-    }
 
     fn try_register_remote_adapter_locally(
         &self,

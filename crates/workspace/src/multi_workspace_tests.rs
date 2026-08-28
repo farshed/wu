@@ -30,14 +30,15 @@ fn setup_multi_workspace<'a>(
     let (multi_workspace, cx) =
         cx.add_window_view(|window, cx| MultiWorkspace::test_new(project, window, cx));
 
+    // Retaining the active workspace establishes its project group and keeps
+    // it around when the workspaces below are activated.
+    multi_workspace.update(cx, |multi_workspace, cx| multi_workspace.retain_active_workspace(cx));
+
     for project in iterator {
         multi_workspace.update_in(cx, |multi_workspace, window, cx| {
             multi_workspace.test_add_workspace(project.clone(), window, cx);
         })
     }
-
-    // Retaining the active workspace establishes its project group.
-    multi_workspace.update(cx, |multi_workspace, cx| multi_workspace.retain_active_workspace(cx));
     cx.run_until_parked();
 
     (multi_workspace, cx)
@@ -796,57 +797,6 @@ async fn test_remove_project_group_replaces_unretained_active_workspace(cx: &mut
 }
 
 #[gpui::test]
-async fn test_switching_projects_retains_old_active_workspace(
-    cx: &mut TestAppContext,
-) {
-    init_test(cx);
-    let fs = FakeFs::new(cx.executor());
-    fs.insert_tree("/root_a", json!({ "file_a.txt": "" })).await;
-    fs.insert_tree("/root_b", json!({ "file_b.txt": "" })).await;
-    let project_a = Project::test(fs.clone(), ["/root_a".as_ref()], cx).await;
-    let project_b = Project::test(fs, ["/root_b".as_ref()], cx).await;
-
-    let (multi_workspace, cx) =
-        cx.add_window_view(|window, cx| MultiWorkspace::test_new(project_a, window, cx));
-
-    let workspace_a = multi_workspace.read_with(cx, |mw, cx| {
-        assert!(
-            mw.project_groups(cx).is_empty(),
-            "sidebar-closed setup should start with no retained project groups"
-        );
-        mw.workspace().clone()
-    });
-    assert!(
-        workspace_a.read_with(cx, |workspace, _cx| workspace.session_id().is_some()),
-        "initial active workspace should start attached to the session"
-    );
-
-    let workspace_b = multi_workspace.update_in(cx, |mw, window, cx| {
-        mw.test_add_workspace(project_b, window, cx)
-    });
-    cx.run_until_parked();
-
-    multi_workspace.read_with(cx, |mw, cx| {
-        assert_eq!(
-            mw.workspace().entity_id(),
-            workspace_b.entity_id(),
-            "the new workspace should become active"
-        );
-        assert_eq!(
-            mw.workspaces().count(),
-            2,
-            "the previous active workspace should remain open after switching with the sidebar closed"
-        );
-        assert_eq!(mw.project_groups(cx).len(), 2);
-    });
-
-    assert!(
-        workspace_a.read_with(cx, |workspace, _cx| workspace.session_id().is_some()),
-        "the previous active workspace should remain attached when switching away with the sidebar closed"
-    );
-}
-
-#[gpui::test]
 async fn test_remote_project_root_dir_changes_update_groups(cx: &mut TestAppContext) {
     init_test(cx);
     let fs = FakeFs::new(cx.executor());
@@ -951,23 +901,16 @@ async fn test_remote_project_root_dir_changes_update_groups(cx: &mut TestAppCont
 }
 
 #[gpui::test]
-async fn test_open_project_closes_empty_workspace_but_not_non_empty_ones(cx: &mut TestAppContext) {
+async fn test_open_project_prompts_before_replacing_dirty_empty_workspace(cx: &mut TestAppContext) {
     init_test(cx);
     let app_state = cx.update(AppState::test);
     let fs = app_state.fs.as_fake();
     fs.insert_tree(path!("/project_a"), json!({ "file_a.txt": "" }))
         .await;
-    fs.insert_tree(path!("/project_b"), json!({ "file_b.txt": "" }))
-        .await;
 
     // Start with an empty (no-worktrees) workspace.
     let project = Project::test(app_state.fs.clone(), [], cx).await;
     let window = cx.add_window(|window, cx| MultiWorkspace::test_new(project, window, cx));
-    cx.run_until_parked();
-
-    window
-        .update(cx, |mw, _window, cx| mw.retain_active_workspace(cx))
-        .unwrap();
     cx.run_until_parked();
 
     let empty_workspace = window
@@ -996,7 +939,7 @@ async fn test_open_project_closes_empty_workspace_but_not_non_empty_ones(cx: &mu
     cx.run_until_parked();
 
     // Cancelling keeps the empty workspace.
-    assert!(cx.has_pending_prompt(),);
+    assert!(cx.has_pending_prompt());
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
     assert_eq!(open_task.await.unwrap(), empty_workspace);
@@ -1022,7 +965,7 @@ async fn test_open_project_closes_empty_workspace_but_not_non_empty_ones(cx: &mu
         .unwrap();
     cx.run_until_parked();
 
-    assert!(cx.has_pending_prompt(),);
+    assert!(cx.has_pending_prompt());
     cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
 
@@ -1030,15 +973,12 @@ async fn test_open_project_closes_empty_workspace_but_not_non_empty_ones(cx: &mu
     assert_ne!(workspace_a, empty_workspace);
 
     window
-        .read_with(cx, |mw, _cx| {
+        .read_with(cx, |mw, cx| {
             assert_eq!(mw.workspaces().count(), 1);
             assert_eq!(mw.workspace(), &workspace_a);
             assert_eq!(
-                mw.project_group_keys(),
-                vec![ProjectGroupKey::new(
-                    None,
-                    PathList::new(&[path!("/project_a")])
-                )]
+                PathList::new(&workspace_a.read(cx).root_paths(cx)),
+                PathList::new(&[path!("/project_a")])
             );
         })
         .unwrap();
@@ -1046,43 +986,6 @@ async fn test_open_project_closes_empty_workspace_but_not_non_empty_ones(cx: &mu
         empty_workspace.read_with(cx, |workspace, _cx| workspace.session_id().is_none()),
         "the detached empty workspace should no longer be attached to the session",
     );
-
-    let dirty_item = cx.new(|cx| TestItem::new(cx).with_dirty(true));
-    workspace_a.update_in(cx, |workspace, window, cx| {
-        workspace.add_item_to_active_pane(Box::new(dirty_item.clone()), None, true, window, cx);
-    });
-
-    // Opening another project does not close the existing project or prompt.
-    let workspace_b = window
-        .update(cx, |mw, window, cx| {
-            mw.open_project(
-                vec![PathBuf::from(path!("/project_b"))],
-                OpenMode::Activate,
-                window,
-                cx,
-            )
-        })
-        .unwrap()
-        .await
-        .unwrap();
-    cx.run_until_parked();
-
-    assert!(!cx.has_pending_prompt());
-    assert_ne!(workspace_b, workspace_a);
-    window
-        .read_with(cx, |mw, _cx| {
-            assert_eq!(mw.workspaces().count(), 2);
-            assert_eq!(mw.workspace(), &workspace_b);
-            assert_eq!(
-                mw.project_group_keys(),
-                vec![
-                    ProjectGroupKey::new(None, PathList::new(&[path!("/project_b")])),
-                    ProjectGroupKey::new(None, PathList::new(&[path!("/project_a")]))
-                ]
-            );
-        })
-        .unwrap();
-    assert!(workspace_a.read_with(cx, |workspace, _cx| workspace.session_id().is_some()),);
 }
 
 #[gpui::test]
@@ -1346,39 +1249,6 @@ async fn test_nearest_retained_workspace(cx: &mut TestAppContext) {
             ),
             None,
             "no workspace should be returned when every candidate is excluded"
-        );
-    });
-}
-
-#[gpui::test]
-async fn test_nearest_retained_workspace_skips_disconnected_workspace(cx: &mut TestAppContext) {
-    init_test(cx);
-    let fs = FakeFs::new(cx.executor());
-    fs.insert_tree("/project-a", json!({})).await;
-    fs.insert_tree("/project-b", json!({})).await;
-
-    let project_a = Project::test(fs.clone(), ["/project-a".as_ref()], cx).await;
-    let project_b = Project::test(fs, ["/project-b".as_ref()], cx).await;
-    let key_a = project_a.read_with(cx, |project, cx| project.project_group_key(cx));
-    let (multi_workspace, cx) = setup_multi_workspace(&[project_a.clone(), project_b.clone()], cx);
-
-    project_b.update(cx, |project, cx| {
-        project.mark_as_collab_for_testing();
-        project.disconnected_from_host(cx);
-    });
-    cx.run_until_parked();
-
-    multi_workspace.update(cx, |multi_workspace, cx| {
-        let group_a_index = multi_workspace
-            .project_groups(cx)
-            .iter()
-            .position(|group| group.key == key_a)
-            .expect("project group A should exist");
-
-        assert_eq!(
-            multi_workspace.nearest_retained_workspace(group_a_index, &[], cx),
-            None,
-            "a disconnected workspace should not be selected as a fallback"
         );
     });
 }

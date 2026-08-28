@@ -1136,6 +1136,7 @@ impl MultiWorkspace {
         cx: &mut Context<Self>,
     ) -> Entity<Workspace> {
         let workspace = cx.new(|cx| Workspace::test_new(project, window, cx));
+        self.add(workspace.clone(), window, cx);
         self.activate(workspace.clone(), None, window, cx);
         workspace
     }

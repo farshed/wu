@@ -429,9 +429,7 @@ impl WorktreePickerDelegate {
 
     fn creation_blocked_reason(&self, cx: &App) -> Option<SharedString> {
         let project = self.project.read(cx);
-        if project.is_via_collab() {
-            Some("Worktree creation is not supported in collaborative projects".into())
-        } else if project.repositories(cx).is_empty() {
+        if project.repositories(cx).is_empty() {
             Some("Requires a Git repository in the project".into())
         } else {
             None

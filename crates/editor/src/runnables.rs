@@ -200,10 +200,6 @@ impl Editor {
                 return;
             };
 
-            let hide_runnables = project.update(cx, |project, _| project.is_via_collab());
-            if hide_runnables {
-                return;
-            }
             let lsp_tasks = if lsp_task_sources.is_empty() {
                 Vec::new()
             } else {

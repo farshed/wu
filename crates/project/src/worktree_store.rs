@@ -777,7 +777,6 @@ impl WorktreeStore {
         cx: &mut Context<Self>,
     ) -> Task<Result<Entity<Worktree>>> {
         let abs_path: Arc<SanitizedPath> = SanitizedPath::new_arc(&abs_path);
-        let is_via_collab = matches!(&self.state, WorktreeStoreState::Remote { upstream_client, .. } if upstream_client.is_via_collab());
         if !self.loading_worktrees.contains_key(&abs_path) {
             let task = match &self.state {
                 WorktreeStoreState::Remote {
@@ -785,12 +784,8 @@ impl WorktreeStore {
                     path_style,
                     ..
                 } => {
-                    if upstream_client.is_via_collab() {
-                        Task::ready(Err(Arc::new(anyhow!("cannot create worktrees via collab"))))
-                    } else {
-                        let abs_path = RemotePathBuf::new(abs_path.to_string(), *path_style);
-                        self.create_remote_worktree(upstream_client.clone(), abs_path, visible, cx)
-                    }
+                    let abs_path = RemotePathBuf::new(abs_path.to_string(), *path_style);
+                    self.create_remote_worktree(upstream_client.clone(), abs_path, visible, cx)
                 }
                 WorktreeStoreState::Local { fs } => {
                     self.create_local_worktree(fs.clone(), abs_path.clone(), visible, cx)
@@ -809,9 +804,7 @@ impl WorktreeStore {
                     })
                     .ok();
 
-                    if let Ok(worktree) = &result
-                        && !is_via_collab
-                    {
+                    if let Ok(worktree) = &result {
                         if let Some((trusted_worktrees, worktree_store)) = this
                             .update(cx, |_, cx| {
                                 TrustedWorktrees::try_get_global(cx).zip(Some(cx.entity()))
@@ -1178,18 +1171,8 @@ impl WorktreeStore {
             worktrees: self.worktree_metadata_protos(cx),
         };
 
-        // collab has bad concurrency guarantees, so we send requests in serial.
-        let update_project = if downstream_client.is_via_collab() {
-            Some(downstream_client.request(update))
-        } else {
-            downstream_client.send(update).log_err();
-            None
-        };
+        downstream_client.send(update).log_err();
         cx.spawn(async move |this, cx| {
-            if let Some(update_project) = update_project {
-                update_project.await?;
-            }
-
             this.update(cx, |this, cx| {
                 let worktrees = this.worktrees().collect::<Vec<_>>();
 
@@ -1199,16 +1182,7 @@ impl WorktreeStore {
                         worktree.observe_updates(project_id, cx, {
                             move |update| {
                                 let client = client.clone();
-                                async move {
-                                    if client.is_via_collab() {
-                                        client
-                                            .request(update)
-                                            .map(|result| result.log_err().is_some())
-                                            .await
-                                    } else {
-                                        client.send(update).log_err().is_some()
-                                    }
-                                }
+                                async move { client.send(update).log_err().is_some() }
                             }
                         });
                     });
@@ -1269,23 +1243,6 @@ impl WorktreeStore {
         }
     }
 
-    pub fn unshared(&mut self, cx: &mut Context<Self>) {
-        self.retain_worktrees = false;
-        self.downstream_client.take();
-
-        // When not shared, only retain the visible worktrees
-        for worktree_handle in self.worktrees.iter_mut() {
-            if let WorktreeHandle::Strong(worktree) = worktree_handle {
-                let is_visible = worktree.update(cx, |worktree, _| {
-                    worktree.stop_observing_updates();
-                    worktree.is_visible()
-                });
-                if !is_visible {
-                    *worktree_handle = WorktreeHandle::Weak(worktree.downgrade());
-                }
-            }
-        }
-    }
 
     pub async fn handle_create_project_entry(
         this: Entity<Self>,

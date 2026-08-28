@@ -107,19 +107,9 @@ pub fn init(cx: &mut App) {
             }
 
             cx.defer_in(window, |editor, _window, cx| {
-                let project = editor.project().cloned();
-
-                let is_valid_project = project
-                    .as_ref()
-                    .map(|project| {
-                        let p = project.read(cx);
-                        !p.is_via_collab()
-                    })
-                    .unwrap_or(false);
-
-                if !is_valid_project {
+                let Some(project) = editor.project().cloned() else {
                     return;
-                }
+                };
 
                 let buffer = editor.buffer().read(cx).as_singleton();
 
@@ -129,7 +119,7 @@ pub fn init(cx: &mut App) {
                 // where language detection can complete after the editor is observed,
                 // still trigger a kernelspec refresh. Without this the REPL UI stays
                 // hidden until something else populates the global kernel list.
-                if let Some((buffer, project)) = buffer.zip(project) {
+                if let Some(buffer) = buffer {
                     refresh_python_kernelspecs_for_buffer(&buffer, &project, cx);
 
                     cx.subscribe(&buffer, move |_editor, buffer, event, cx| {

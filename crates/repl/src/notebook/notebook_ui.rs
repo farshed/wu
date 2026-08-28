@@ -3,7 +3,6 @@ use std::future::Future;
 use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context as _, Result};
-use client::proto::ViewId;
 use collections::HashMap;
 use editor::DisplayPoint;
 use feature_flags::{FeatureFlagAppExt as _, NotebookFeatureFlag};
@@ -96,7 +95,6 @@ pub struct NotebookEditor {
     focus_handle: FocusHandle,
     notebook_item: Entity<NotebookItem>,
     notebook_language: Shared<Task<Option<Arc<Language>>>>,
-    remote_id: Option<ViewId>,
     cell_list: ListState,
     notebook_mode: NotebookMode,
     selected_cell_index: usize,
@@ -216,7 +214,6 @@ impl NotebookEditor {
             focus_handle,
             notebook_item: notebook_item.clone(),
             notebook_language,
-            remote_id: None,
             cell_list,
             notebook_mode: NotebookMode::Command,
             selected_cell_index: 0,

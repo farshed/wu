@@ -1157,27 +1157,6 @@ impl GitStore {
         }
     }
 
-    pub fn unshared(&mut self, _cx: &mut Context<Self>) {
-        match &mut self.state {
-            GitStoreState::Local {
-                downstream: downstream_client,
-                ..
-            } => {
-                downstream_client.take();
-            }
-            GitStoreState::Remote {
-                downstream: downstream_client,
-                ..
-            } => {
-                downstream_client.take();
-            }
-        }
-        self.shared_diffs.clear();
-    }
-
-    pub(crate) fn forget_shared_diffs_for(&mut self, peer_id: &proto::PeerId) {
-        self.shared_diffs.remove(peer_id);
-    }
 
     pub fn active_repository(&self) -> Option<Entity<Repository>> {
         self.active_repo_id
@@ -3235,11 +3214,6 @@ impl GitStore {
                 upstream_project_id,
                 ..
             } => {
-                if upstream_client.is_via_collab() {
-                    return Task::ready(Err(anyhow!(
-                        "Git Clone isn't supported for project guests"
-                    )));
-                }
                 let request = upstream_client.request(proto::GitClone {
                     project_id: *upstream_project_id,
                     abs_path: path.to_string_lossy().into_owned(),
@@ -3265,16 +3239,7 @@ impl GitStore {
                 cx.background_executor()
                     .spawn(async move { fs.git_config(&path, args).await })
             }
-            GitStoreState::Remote {
-                upstream_client, ..
-            } => {
-                // Prevent running git config commands for collab.
-                if upstream_client.is_via_collab() {
-                    return Task::ready(Err(anyhow!(
-                        "Git Config isn't support for project guests"
-                    )));
-                }
-
+            GitStoreState::Remote { .. } => {
                 // TODO: Implement this for remote repositories.
                 Task::ready(Err(anyhow!(
                     "Git Config isn't yet supported for remote projects"

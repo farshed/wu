@@ -768,11 +768,6 @@ fn create_worktree_workspace_inner(
             "create_worktree: no git repository in the project"
         )));
     }
-    if project.read(cx).is_via_collab() {
-        return Task::ready(Err(anyhow!(
-            "create_worktree: not supported in collab projects"
-        )));
-    }
 
     // Guard against concurrent creation. We treat a concurrent creation as
     // a hard error here so the caller can surface it; the user-facing
@@ -905,10 +900,6 @@ pub fn handle_switch_worktree(
 
     if project.read(cx).repositories(cx).is_empty() {
         log::error!("switch_to_worktree: no git repository in the project");
-        return;
-    }
-    if project.read(cx).is_via_collab() {
-        log::error!("switch_to_worktree: not supported in collab projects");
         return;
     }
 

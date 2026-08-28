@@ -2,20 +2,15 @@ pub mod running;
 
 use crate::{persistence::SerializedLayout, session::running::DebugTerminal};
 use dap::client::SessionId;
-use gpui::{App, Axis, Entity, EventEmitter, FocusHandle, Focusable, Task, WeakEntity};
+use gpui::{App, Axis, Entity, EventEmitter, FocusHandle, Focusable, WeakEntity};
 use project::debugger::session::Session;
 
 use project::{Project, debugger::session::SessionQuirks};
-use rpc::proto;
 use running::RunningState;
 use ui::prelude::*;
-use workspace::{
-    CollaboratorId, FollowableItem, ViewId, Workspace,
-    item::{self, Item},
-};
+use workspace::{Workspace, item::Item};
 
 pub struct DebugSession {
-    remote_id: Option<workspace::ViewId>,
     pub(crate) running_state: Entity<RunningState>,
     pub(crate) quirks: SessionQuirks,
 }
@@ -46,7 +41,6 @@ impl DebugSession {
         let quirks = session.read(cx).quirks();
 
         cx.new(|_| Self {
-            remote_id: None,
             running_state,
             quirks,
         })
@@ -102,72 +96,6 @@ impl Item for DebugSession {
     type Event = ();
     fn tab_content_text(&self, _detail: usize, _cx: &App) -> SharedString {
         "Debugger".into()
-    }
-}
-
-impl FollowableItem for DebugSession {
-    fn remote_id(&self) -> Option<workspace::ViewId> {
-        self.remote_id
-    }
-
-    fn to_state_proto(&self, _window: &mut Window, _cx: &mut App) -> Option<proto::view::Variant> {
-        None
-    }
-
-    fn from_state_proto(
-        _workspace: Entity<Workspace>,
-        _remote_id: ViewId,
-        _state: &mut Option<proto::view::Variant>,
-        _window: &mut Window,
-        _cx: &mut App,
-    ) -> Option<gpui::Task<anyhow::Result<Entity<Self>>>> {
-        None
-    }
-
-    fn add_event_to_update_proto(
-        &self,
-        _event: &Self::Event,
-        _update: &mut Option<proto::update_view::Variant>,
-        _window: &mut Window,
-        _cx: &mut App,
-    ) -> bool {
-        // update.get_or_insert_with(|| proto::update_view::Variant::DebugPanel(Default::default()));
-
-        true
-    }
-
-    fn apply_update_proto(
-        &mut self,
-        _project: &Entity<project::Project>,
-        _message: proto::update_view::Variant,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) -> gpui::Task<anyhow::Result<()>> {
-        Task::ready(Ok(()))
-    }
-
-    fn set_leader_id(
-        &mut self,
-        _leader_id: Option<CollaboratorId>,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-    }
-
-    fn to_follow_event(_event: &Self::Event) -> Option<workspace::item::FollowEvent> {
-        None
-    }
-
-    fn dedup(&self, existing: &Self, _window: &Window, cx: &App) -> Option<workspace::item::Dedup> {
-        if existing.session_id(cx) == self.session_id(cx) {
-            Some(item::Dedup::KeepExisting)
-        } else {
-            None
-        }
-    }
-
-    fn is_project_item(&self, _window: &Window, _cx: &App) -> bool {
-        true
     }
 }
 

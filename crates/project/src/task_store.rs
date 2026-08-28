@@ -256,17 +256,6 @@ impl TaskStore {
         }
     }
 
-    pub fn unshared(&mut self, _: &mut Context<Self>) {
-        if let Self::Functional(StoreState {
-            mode: StoreMode::Local {
-                downstream_client, ..
-            },
-            ..
-        }) = self
-        {
-            *downstream_client = None;
-        }
-    }
 
     pub(super) fn update_user_tasks(
         &self,

@@ -7,7 +7,6 @@ use new_process_modal::{NewProcessModal, NewProcessMode};
 use project::debugger::{self, breakpoint_store::SourceBreakpoint, session::ThreadStatus};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use session::DebugSession;
 
 use tasks_ui::{Spawn, TaskOverrides};
 use ui::{FluentBuilder, InteractiveElement};
@@ -109,8 +108,6 @@ actions!(
 );
 
 pub fn init(cx: &mut App) {
-    workspace::FollowableViewRegistry::register::<DebugSession>(cx);
-
     cx.observe_new(|workspace: &mut Workspace, _, _| {
         workspace
             .register_action(spawn_task_or_modal)

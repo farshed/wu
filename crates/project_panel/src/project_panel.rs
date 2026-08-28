@@ -894,7 +894,6 @@ impl ProjectPanel {
                 undo_manager: UndoManager::new(
                     workspace.weak_handle(),
                     weak_project_panel,
-                    project.read(cx).is_via_collab(),
                     &cx,
                 ),
             };
@@ -1106,7 +1105,6 @@ impl ProjectPanel {
             let is_unfoldable = auto_fold_dirs && self.is_unfoldable(entry, worktree);
             let is_read_only = project.is_read_only(cx);
             let is_remote = project.is_remote();
-            let is_collab = project.is_via_collab();
             let is_local = project.is_local() || project.is_via_wsl_with_host_interop(cx);
             let is_markdown = !is_dir
                 && MarkdownPreviewView::is_markdown_path(
@@ -1183,7 +1181,7 @@ impl ProjectPanel {
                             .action("Copy", Box::new(Copy))
                             .action("Duplicate", Box::new(Duplicate))
                             .action_disabled_when(!has_pasteable_content, "Paste", Box::new(Paste))
-                            .when(!is_collab, |menu| {
+                            .map(|menu| {
                                 let can_undo = self.undo_manager.can_undo();
                                 let can_redo = self.undo_manager.can_redo();
 
@@ -1230,13 +1228,13 @@ impl ProjectPanel {
                             .when(!should_hide_rename, |menu| {
                                 menu.separator().action("Rename", Box::new(Rename))
                             })
-                            .when(!is_root && !is_collab, |menu| {
+                            .when(!is_root, |menu| {
                                 menu.action("Trash", Box::new(Trash { skip_prompt: false }))
                             })
                             .when(!is_root, |menu| {
                                 menu.action("Delete", Box::new(Delete { skip_prompt: false }))
                             })
-                            .when(!is_collab && is_root, |menu| {
+                            .when(is_root, |menu| {
                                 menu.separator()
                                     .action(
                                         "Add Folders to Project…",
@@ -7107,15 +7105,6 @@ impl Render for ProjectPanel {
             }
         };
 
-        // Trashing, undo, and redo rely on the `TrashProjectEntry` and
-        // `RestoreProjectEntry` messages, which older collab hosts can't
-        // decode, with the operation silently never completing. As such, we
-        // keep all three disabled for collab guests. Trashing is already
-        // disabled in collab today, so existing users will not lose any
-        // functionality and the plan is to eventually remove this check, once a
-        // considerable portion of collab hosts had the chance to upgrade to a
-        // version that understands these messages.
-        let is_collab = project.is_via_collab();
         let is_local = project.is_local();
 
         if has_worktree {
@@ -7262,11 +7251,9 @@ impl Render for ProjectPanel {
                         .on_action(cx.listener(Self::restore_file))
                         .on_action(cx.listener(Self::add_to_gitignore))
                         .on_action(cx.listener(Self::add_to_git_info_exclude))
-                        .when(!is_collab, |el| el.on_action(cx.listener(Self::trash)))
-                        .when(!is_collab, |el| {
-                            el.on_action(cx.listener(Self::undo))
-                                .on_action(cx.listener(Self::redo))
-                        })
+                        .on_action(cx.listener(Self::trash))
+                        .on_action(cx.listener(Self::undo))
+                        .on_action(cx.listener(Self::redo))
                 })
                 .when(
                     project.is_local() || project.is_via_wsl_with_host_interop(cx),

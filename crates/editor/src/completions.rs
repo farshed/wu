@@ -211,18 +211,12 @@ impl Editor {
             return None;
         }
 
-        // OnTypeFormatting returns a list of edits, no need to pass them between Zed instances,
-        // hence we do LSP request & edit on host side only — add formats to host's history.
-        let push_to_lsp_host_history = true;
-        // If this is not the host, append its history with new edits.
-        let push_to_client_history = project.read(cx).is_via_collab();
-
         let on_type_formatting = project.update(cx, |project, cx| {
             project.on_type_format(
                 buffer.clone(),
                 buffer_position,
                 input,
-                push_to_lsp_host_history,
+                true,
                 cx,
             )
         })?;
@@ -244,10 +238,6 @@ impl Editor {
                     let formatted_ranges = buffer
                         .edited_ranges_for_transaction::<usize>(&transaction)
                         .collect::<Vec<_>>();
-                    if push_to_client_history {
-                        buffer.push_transaction(transaction, Instant::now());
-                        buffer.finalize_last_transaction();
-                    }
                     (buffer.remote_id(), formatted_ranges)
                 });
                 editor.update_in(cx, |editor, window, cx| {

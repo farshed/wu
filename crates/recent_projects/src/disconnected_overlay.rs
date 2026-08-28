@@ -10,7 +10,6 @@ use workspace::{
 use crate::open_remote_project;
 
 enum Host {
-    CollabGuestProject,
     RemoteServerProject(RemoteConnectionOptions, bool),
 }
 
@@ -53,29 +52,25 @@ impl DisconnectedOverlay {
             workspace.project(),
             window,
             |workspace, project, event, window, cx| {
-                if !matches!(
-                    event,
-                    project::Event::DisconnectedFromHost
-                        | project::Event::DisconnectedFromRemote { .. }
-                ) {
+                if !matches!(event, project::Event::DisconnectedFromRemote { .. }) {
                     return;
                 }
                 let handle = cx.entity().downgrade();
 
-                let remote_connection_options = project.read(cx).remote_connection_options(cx);
-                let host = if let Some(remote_connection_options) = remote_connection_options {
-                    Host::RemoteServerProject(
-                        remote_connection_options,
-                        matches!(
-                            event,
-                            project::Event::DisconnectedFromRemote {
-                                server_not_running: true
-                            }
-                        ),
-                    )
-                } else {
-                    Host::CollabGuestProject
+                let Some(remote_connection_options) =
+                    project.read(cx).remote_connection_options(cx)
+                else {
+                    return;
                 };
+                let host = Host::RemoteServerProject(
+                    remote_connection_options,
+                    matches!(
+                        event,
+                        project::Event::DisconnectedFromRemote {
+                            server_not_running: true
+                        }
+                    ),
+                );
 
                 workspace.toggle_modal(window, cx, |_, cx| DisconnectedOverlay {
                     finished: false,
@@ -147,9 +142,6 @@ impl Render for DisconnectedOverlay {
         let can_reconnect = matches!(self.host, Host::RemoteServerProject(..));
 
         let message = match &self.host {
-            Host::CollabGuestProject => {
-                "Your connection to the remote project has been lost.".to_string()
-            }
             Host::RemoteServerProject(options, server_not_running) => {
                 let autosave = if ProjectSettings::get_global(cx)
                     .session

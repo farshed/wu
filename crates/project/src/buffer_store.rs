@@ -66,7 +66,6 @@ enum BufferStoreState {
 }
 
 struct RemoteBufferStore {
-    shared_with_me: HashSet<Entity<Buffer>>,
     upstream_client: AnyProtoClient,
     project_id: u64,
     loading_remote_buffers_by_id: HashMap<BufferId, Entity<Buffer>>,
@@ -237,11 +236,6 @@ impl RemoteBufferStore {
                     }
                 } else if chunk.is_last {
                     self.loading_remote_buffers_by_id.remove(&buffer_id);
-                    if self.upstream_client.is_via_collab() {
-                        // retain buffers sent by peers to avoid races.
-                        self.shared_with_me.insert(buffer.clone());
-                    }
-
                     if let Some(senders) = self.remote_buffer_listeners.remove(&buffer_id) {
                         for sender in senders {
                             sender.send(Ok(buffer.clone())).ok();
@@ -860,7 +854,6 @@ impl BufferStore {
     ) -> Self {
         Self {
             state: BufferStoreState::Remote(RemoteBufferStore {
-                shared_with_me: Default::default(),
                 loading_remote_buffers_by_id: Default::default(),
                 remote_buffer_listeners: Default::default(),
                 project_id: remote_id,
@@ -1154,15 +1147,6 @@ impl BufferStore {
         self.downstream_client = Some((downstream_client, remote_id));
     }
 
-    pub fn unshared(&mut self, _cx: &mut Context<Self>) {
-        self.downstream_client.take();
-        self.forget_shared_buffers();
-    }
-
-    pub fn discard_incomplete(&mut self) {
-        self.opened_buffers
-            .retain(|_, buffer| !matches!(buffer, OpenBuffer::Operations(_)));
-    }
 
     fn buffer_changed_file(&mut self, buffer: Entity<Buffer>, cx: &mut App) -> Option<()> {
         let file = File::from_dyn(buffer.read(cx).file())?;
@@ -1662,26 +1646,10 @@ impl BufferStore {
         self.shared_buffers.clear();
     }
 
-    pub fn forget_shared_buffers_for(&mut self, peer_id: &proto::PeerId) {
-        self.shared_buffers.remove(peer_id);
-    }
-
-    pub fn is_shared(&self, buffer_id: BufferId, cx: &App) -> bool {
+    pub fn is_shared(&self, buffer_id: BufferId, _cx: &App) -> bool {
         self.shared_buffers
             .values()
             .any(|buffers| buffers.contains_key(&buffer_id))
-            || self.as_remote().is_some_and(|remote| {
-                remote
-                    .shared_with_me
-                    .iter()
-                    .any(|buffer| buffer.read(cx).remote_id() == buffer_id)
-            })
-    }
-
-    pub fn update_peer_id(&mut self, old_peer_id: &proto::PeerId, new_peer_id: proto::PeerId) {
-        if let Some(buffers) = self.shared_buffers.remove(old_peer_id) {
-            self.shared_buffers.insert(new_peer_id, buffers);
-        }
     }
 
     pub fn has_shared_buffers(&self) -> bool {

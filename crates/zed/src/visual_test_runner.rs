@@ -97,8 +97,8 @@ use {
     anyhow::{Context as _, Result},
     assets::Assets,
     gpui::{
-        App, AppContext as _, Bounds, KeyBinding, Modifiers, VisualTestAppContext,
-        WindowBounds, WindowHandle, WindowOptions, point, px, size,
+        App, AppContext as _, Bounds, KeyBinding, Modifiers, VisualTestAppContext, WindowBounds,
+        WindowHandle, WindowOptions, point, px, size,
     },
     image::RgbaImage,
     project_panel::ProjectPanel,
@@ -164,7 +164,6 @@ fn run_visual_tests(project_path: PathBuf, update_baseline: bool) -> Result<()> 
     cx.update(|cx| {
         gpui_tokio::init(cx);
         theme_settings::init(theme::LoadThemes::JustBase, cx);
-        client::init(&app_state.client, cx);
         workspace::init(app_state.clone(), cx);
         release_channel::init(semver::Version::new(0, 0, 0), cx);
         command_palette::init(cx);
@@ -195,7 +194,6 @@ fn run_visual_tests(project_path: PathBuf, update_baseline: bool) -> Result<()> 
             editor::actions::ToggleBreakpoint,
             Some("Editor"),
         )]);
-
     });
 
     // Run until all initialization tasks complete
@@ -813,10 +811,9 @@ fn init_app_state(cx: &mut App) -> Arc<AppState> {
     let client = client::Client::new(clock, http_client, cx);
     let session = cx.new(|cx| session::AppSession::new(Session::test(), cx));
     let user_store = cx.new(|cx| client::UserStore::new(client.clone(), cx));
-    let workspace_store = cx.new(|cx| workspace::WorkspaceStore::new(client.clone(), cx));
+    let workspace_store = cx.new(|cx| workspace::WorkspaceStore::new(cx));
 
     theme_settings::init(theme::LoadThemes::JustBase, cx);
-    client::init(&client, cx);
 
     let app_state = Arc::new(AppState {
         client,

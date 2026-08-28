@@ -100,3 +100,8 @@ message RemoteProfilingLocation {
   uint32 line = 2;
   uint32 column = 3;
 }
+
+enum PanelId {
+  AssistantPanel = 0;
+  DebugPanel = 1;
+}

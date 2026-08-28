@@ -1,12 +1,12 @@
 # Zed crate map
 
 This document maps every Cargo crate below `crates/` to its responsibility and
-its place in Zed's dependency hierarchy. It covers 188 manifests: 187 workspace
+its place in Zed's dependency hierarchy. It covers 187 manifests: 186 workspace
 packages plus the excluded `gpui_web/examples/hello_web` example. It does not
 cover the separate crates below `extensions/` or `tooling/`.
 
 The descriptions reflect the code and manifests on August 28, 2026. AI/agent,
-collaboration, call, and audio crates were removed from this fork on that date. Crate
+collaboration, call, audio, and zed.dev account code were removed from this fork on that date. Crate
 boundaries change frequently; treat each linked `Cargo.toml` and crate root as
 the source of truth.
 
@@ -317,17 +317,16 @@ extensions.
 
 ## Client, protocol, and remote editing
 
-There are two distinct network planes. `client`/`rpc` communicate with Zed's
-cloud services. `remote` and `remote_server` connect the desktop UI to a
-headless editor process. Both reuse protocol types where appropriate.
+`remote` and `remote_server` connect the desktop UI to a headless editor
+process over SSH. `rpc` and `proto` define the wire protocol they share, and
+`client` supplies the message-handler registry and telemetry upload.
 
 | Crate                                                | Responsibility and hierarchy                                                                                                                         |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`proto`](../../crates/proto/)                       | Generated protobuf messages, typed envelopes, error conversion, and shared wire protocol between Zed clients and servers.                            |
 | [`rpc`](../../crates/rpc/)                           | Peer-to-peer RPC connections, authentication, request/response routing, notifications, message streams, and reconnecting proto clients over `proto`. |
-| [`client`](../../crates/client/)                     | Long-lived cloud client: authentication, reconnecting RPC, users, telemetry upload, proxy/TLS setup, URLs, and service clients.                      |
-| [`cloud_api_types`](../../crates/cloud_api_types/)   | Serializable HTTP/WebSocket API types for accounts, organizations, plans, extensions, models, feedback, and system settings.                         |
-| [`cloud_api_client`](../../crates/cloud_api_client/) | Typed HTTP and WebSocket client for Zed's cloud API, including LLM token acquisition.                                                                |
+| [`client`](../../crates/client/)                     | Telemetry upload, proto message-handler registry, and URL helpers shared by the app and SSH remoting.                                                   |
+| [`cloud_api_types`](../../crates/cloud_api_types/)   | Serializable HTTP API types for the extension index.                                                                                                       |
 | [`remote`](../../crates/remote/)                     | Desktop-side remote-editing protocol, identity, transport, proxy process, and remote client state.                                                   |
 
 ## Updates, diagnostics, telemetry, and top-level actions

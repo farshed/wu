@@ -66,16 +66,6 @@ impl EncodingSelector {
             );
             return Some(());
         }
-        if project.is_shared() {
-            workspace.show_toast(
-                Toast::new(
-                    NotificationId::unique::<EncodingSelector>(),
-                    "Cannot change encoding during collaboration",
-                ),
-                cx,
-            );
-            return Some(());
-        }
         if project.is_via_remote_server() {
             workspace.show_toast(
                 Toast::new(

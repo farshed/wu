@@ -500,11 +500,7 @@ pub(crate) fn shallow_boundary_notice(
     }
     let in_flight = unshallow_state == UnshallowState::InProgress;
     let avatar_width = CommitAvatar::rendered_size(rems(1.), window);
-    let can_fetch = workspace
-        .read_with(cx, |workspace, cx| {
-            !workspace.project().read(cx).is_via_collab()
-        })
-        .unwrap_or(false);
+    let can_fetch = workspace.upgrade().is_some();
     Some(
         v_flex()
             .py_1()
