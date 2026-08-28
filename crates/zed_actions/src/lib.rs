@@ -112,18 +112,6 @@ pub struct Extensions {
     pub id: Option<String>,
 }
 
-/// Opens the ACP registry.
-#[derive(PartialEq, Clone, Default, Debug, Deserialize, JsonSchema, Action)]
-#[action(namespace = zed)]
-#[serde(deny_unknown_fields)]
-pub struct AcpRegistry;
-
-/// Show call diagnostics and connection quality statistics.
-#[derive(PartialEq, Clone, Default, Debug, Deserialize, JsonSchema, Action)]
-#[action(namespace = collab)]
-#[serde(deny_unknown_fields)]
-pub struct ShowCallStats;
-
 /// Decreases the font size in the editor buffer.
 #[derive(PartialEq, Clone, Default, Debug, Deserialize, JsonSchema, Action)]
 #[action(namespace = zed)]
@@ -673,13 +661,6 @@ pub mod outline {
     pub static TOGGLE_OUTLINE: OnceLock<fn(AnyView, &mut Window, &mut App)> = OnceLock::new();
 }
 
-actions!(
-    zed_predict_onboarding,
-    [
-        /// Opens the Zed Predict onboarding modal.
-        OpenZedPredictOnboarding
-    ]
-);
 actions!(
     git_onboarding,
     [

@@ -581,7 +581,6 @@
       "shift-tab": "editor::PreviousSnippetTabstop",
     },
   },
-  // Bindings for accepting edit predictions
   //
   // alt-l is provided as an alternative to tab/alt-tab. and will be displayed in the UI. This is
   // because alt-tab may not be available, as it is often used for window switching.
@@ -1153,13 +1152,6 @@
       "pagedown": "settings_editor::FocusNextRootNavEntry",
       "home": "settings_editor::FocusFirstNavEntry",
       "end": "settings_editor::FocusLastNavEntry",
-    },
-  },
-  {
-    "context": "EditPredictionContext > Editor",
-    "bindings": {
-      "alt-left": "dev::EditPredictionContextGoBack",
-      "alt-right": "dev::EditPredictionContextGoForward",
     },
   },
   {

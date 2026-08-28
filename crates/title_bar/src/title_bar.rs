@@ -58,7 +58,7 @@ const MAX_BRANCH_NAME_LENGTH: usize = 40;
 const MAX_SHORT_SHA_LENGTH: usize = 8;
 
 actions!(
-    collab,
+    title_bar,
     [
         /// Toggles the user menu dropdown.
         ToggleUserMenu,

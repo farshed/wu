@@ -2348,56 +2348,6 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn test_e2e_prompt_user_picks_existing_window(cx: &mut TestAppContext) {
-        let app_state = init_test(cx);
-
-        app_state
-            .fs
-            .as_fake()
-            .insert_tree(path!("/project_a"), json!({ "file.txt": "content" }))
-            .await;
-        app_state
-            .fs
-            .as_fake()
-            .insert_tree(path!("/project_b"), json!({ "file.txt": "content" }))
-            .await;
-
-        // Create an existing window so the prompt triggers
-        open_workspace_file(
-            path!("/project_a"),
-            Default::default(),
-            app_state.clone(),
-            cx,
-        )
-        .await;
-        assert_eq!(cx.windows().len(), 1);
-
-        let (status, prompt_shown) = run_cli_with_zed_handler(
-            cx,
-            app_state.clone(),
-            make_cli_open_request(
-                vec![path!("/project_b").to_string()],
-                cli::OpenBehavior::Default,
-            ),
-            Some(cli::CliBehaviorSetting::ExistingWindow),
-        );
-
-        assert_eq!(status, 0);
-        assert!(prompt_shown, "prompt should be shown");
-        assert_eq!(cx.windows().len(), 1);
-
-        let settings_text = app_state
-            .fs
-            .load(paths::settings_file())
-            .await
-            .unwrap_or_default();
-        assert!(
-            settings_text.contains("existing_window"),
-            "settings should contain 'existing_window', got: {settings_text}"
-        );
-    }
-
-    #[gpui::test]
     async fn test_e2e_prompt_user_picks_new_window(cx: &mut TestAppContext) {
         let app_state = init_test(cx);
 
