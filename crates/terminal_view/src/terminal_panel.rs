@@ -115,6 +115,28 @@ impl TerminalPanel {
         cx: &mut Context<Self>,
     ) {
         terminal_pane.update(cx, |pane, cx| {
+            pane.set_render_trailing_tab_button(cx, move |pane, _window, cx| {
+                let focus_handle = pane.focus_handle(cx);
+                Some(
+                    IconButton::new("new-terminal", IconName::Plus)
+                        .icon_size(IconSize::Small)
+                        .tooltip(move |_window, cx| {
+                            Tooltip::for_action_in(
+                                "New Terminal",
+                                &workspace::NewTerminal::default(),
+                                &focus_handle,
+                                cx,
+                            )
+                        })
+                        .on_click(cx.listener(|_pane, _, window, cx| {
+                            window.dispatch_action(
+                                workspace::NewTerminal::default().boxed_clone(),
+                                cx,
+                            );
+                        }))
+                        .into_any_element(),
+                )
+            });
             pane.set_render_tab_bar_buttons(cx, move |pane, window, cx| {
                 let split_context = pane
                     .active_item()
@@ -130,37 +152,8 @@ impl TerminalPanel {
                 {
                     return (None, None);
                 }
-                let focus_handle = pane.focus_handle(cx);
                 let right_children = h_flex()
                     .gap(DynamicSpacing::Base02.rems(cx))
-                    .child(
-                        PopoverMenu::new("terminal-tab-bar-popover-menu")
-                            .trigger_with_tooltip(
-                                IconButton::new("plus", IconName::Plus).icon_size(IconSize::Small),
-                                Tooltip::text("New…"),
-                            )
-                            .anchor(Anchor::TopRight)
-                            .with_handle(pane.new_item_context_menu_handle.clone())
-                            .menu(move |window, cx| {
-                                let focus_handle = focus_handle.clone();
-                                let menu = ContextMenu::build(window, cx, |menu, _, _| {
-                                    menu.context(focus_handle.clone())
-                                        .action(
-                                            "New Terminal",
-                                            workspace::NewTerminal::default().boxed_clone(),
-                                        )
-                                        // We want the focus to go back to terminal panel once task modal is dismissed,
-                                        // hence we focus that first. Otherwise, we'd end up without a focused element, as
-                                        // context menu will be gone the moment we spawn the modal.
-                                        .action(
-                                            "Spawn Task",
-                                            zed_actions::Spawn::modal().boxed_clone(),
-                                        )
-                                });
-
-                                Some(menu)
-                            }),
-                    )
                     .child(
                         PopoverMenu::new("terminal-pane-tab-bar-split")
                             .trigger_with_tooltip(
@@ -492,6 +485,7 @@ impl TerminalPanel {
                         };
                         let new_pane =
                             new_terminal_pane(self.workspace.clone(), project, false, window, cx);
+                        self.apply_tab_bar_buttons(&new_pane, cx);
                         new_pane.update(cx, |pane, cx| {
                             pane.add_item(item, true, true, None, window, cx);
                         });

@@ -1,6 +1,6 @@
 use crate::{
-    CloseWindow, NewCenterTerminal, NewFile, NewTerminal, OpenInTerminal, OpenOptions,
-    OpenTerminal, OpenVisible, SplitDirection, ToggleFileFinder, ToggleProjectSymbols, ToggleZoom,
+    CloseWindow, NewFile, OpenInTerminal, OpenOptions,
+    OpenTerminal, OpenVisible, SplitDirection, ToggleZoom,
     Workspace, WorkspaceItemBuilder, ZoomIn, ZoomOut,
     focus_follows_mouse::FocusFollowsMouse as _,
     invalid_item_view::InvalidItemView,
@@ -429,6 +429,8 @@ pub struct Pane {
         ) -> (Option<AnyElement>, Option<AnyElement>),
     >,
     render_tab_bar: Rc<dyn Fn(&mut Pane, &mut Window, &mut Context<Pane>) -> AnyElement>,
+    render_trailing_tab_button:
+        Rc<dyn Fn(&mut Pane, &mut Window, &mut Context<Pane>) -> Option<AnyElement>>,
     show_tab_bar_buttons: bool,
     max_tabs: Option<NonZeroUsize>,
     use_max_tabs: bool,
@@ -608,6 +610,7 @@ impl Pane {
             should_display_welcome_page: false,
             render_tab_bar_buttons: Rc::new(default_render_tab_bar_buttons),
             render_tab_bar: Rc::new(Self::render_tab_bar),
+            render_trailing_tab_button: Rc::new(default_render_trailing_tab_button),
             show_tab_bar_buttons: TabBarSettings::get_global(cx).show_tab_bar_buttons,
             display_nav_history_buttons: Some(
                 TabBarSettings::get_global(cx).show_nav_history_buttons,
@@ -883,6 +886,14 @@ impl Pane {
             ) -> (Option<AnyElement>, Option<AnyElement>),
     {
         self.render_tab_bar_buttons = Rc::new(render);
+        cx.notify();
+    }
+
+    pub fn set_render_trailing_tab_button<F>(&mut self, cx: &mut Context<Self>, render: F)
+    where
+        F: 'static + Fn(&mut Pane, &mut Window, &mut Context<Pane>) -> Option<AnyElement>,
+    {
+        self.render_trailing_tab_button = Rc::new(render);
         cx.notify();
     }
 
@@ -3599,6 +3610,8 @@ impl Pane {
         window: &mut Window,
         cx: &mut Context<Pane>,
     ) -> AnyElement {
+        let render_trailing_tab_button = self.render_trailing_tab_button.clone();
+        let trailing_button = render_trailing_tab_button(self, window, cx);
         let tab_bar = self
             .configure_tab_bar_start(
                 TabBar::new("tab_bar"),
@@ -3623,7 +3636,7 @@ impl Pane {
                             .border_color(cx.theme().colors().border)
                     })
             }))
-            .child(self.render_unpinned_tabs_container(unpinned_tabs, tab_count, cx));
+            .child(self.render_unpinned_tabs_container(unpinned_tabs, trailing_button, tab_count, cx));
         tab_bar.into_any_element()
     }
 
@@ -3637,6 +3650,8 @@ impl Pane {
         window: &mut Window,
         cx: &mut Context<Pane>,
     ) -> AnyElement {
+        let render_trailing_tab_button = self.render_trailing_tab_button.clone();
+        let trailing_button = render_trailing_tab_button(self, window, cx);
         let pinned_tab_bar = self
             .configure_tab_bar_start(
                 TabBar::new("pinned_tab_bar"),
@@ -3661,6 +3676,7 @@ impl Pane {
             .child(
                 TabBar::new("unpinned_tab_bar").child(self.render_unpinned_tabs_container(
                     unpinned_tabs,
+                    trailing_button,
                     tab_count,
                     cx,
                 )),
@@ -3671,6 +3687,7 @@ impl Pane {
     fn render_unpinned_tabs_container(
         &mut self,
         unpinned_tabs: Vec<AnyElement>,
+        trailing_button: Option<AnyElement>,
         tab_count: usize,
         cx: &mut Context<Pane>,
     ) -> impl IntoElement {
@@ -3683,6 +3700,13 @@ impl Pane {
                 this.suppress_scroll = true;
             }))
             .children(unpinned_tabs)
+            .children(trailing_button.map(|button| {
+                h_flex()
+                    .h(Tab::container_height(cx))
+                    .flex_none()
+                    .px(DynamicSpacing::Base02.rems(cx))
+                    .child(button)
+            }))
             .child(self.render_tab_bar_drop_target(tab_count, cx))
     }
 
@@ -4315,30 +4339,6 @@ fn default_render_tab_bar_buttons(
         // Instead we need to replicate the spacing from the [TabBar]'s `end_slot` here.
         .gap(DynamicSpacing::Base04.rems(cx))
         .child(
-            PopoverMenu::new("pane-tab-bar-popover-menu")
-                .trigger_with_tooltip(
-                    IconButton::new("plus", IconName::Plus).icon_size(IconSize::Small),
-                    Tooltip::text("New…"),
-                )
-                .anchor(Anchor::TopRight)
-                .with_handle(pane.new_item_context_menu_handle.clone())
-                .menu(move |window, cx| {
-                    Some(ContextMenu::build(window, cx, |menu, _, _| {
-                        menu.action("New File", NewFile.boxed_clone())
-                            .action("Open File", ToggleFileFinder::default().boxed_clone())
-                            .separator()
-                            .action("Search Project", DeploySearch::default().boxed_clone())
-                            .action("Search Symbols", ToggleProjectSymbols.boxed_clone())
-                            .separator()
-                            .action("New Terminal", NewTerminal::default().boxed_clone())
-                            .action(
-                                "New Center Terminal",
-                                NewCenterTerminal::default().boxed_clone(),
-                            )
-                    }))
-                }),
-        )
-        .child(
             PopoverMenu::new("pane-tab-bar-split")
                 .trigger_with_tooltip(
                     IconButton::new("split", IconName::Split)
@@ -4386,6 +4386,25 @@ fn default_render_tab_bar_buttons(
         .into_any_element()
         .into();
     (None, right_children)
+}
+
+fn default_render_trailing_tab_button(
+    pane: &mut Pane,
+    _window: &mut Window,
+    cx: &mut Context<Pane>,
+) -> Option<AnyElement> {
+    let focus_handle = pane.focus_handle.clone();
+    Some(
+        IconButton::new("new-file", IconName::Plus)
+            .icon_size(IconSize::Small)
+            .tooltip(move |_window, cx| {
+                Tooltip::for_action_in("New File", &NewFile, &focus_handle, cx)
+            })
+            .on_click(cx.listener(|_pane, _, window, cx| {
+                window.dispatch_action(NewFile.boxed_clone(), cx);
+            }))
+            .into_any_element(),
+    )
 }
 
 impl Focusable for Pane {
@@ -8501,7 +8520,7 @@ mod tests {
         // Assert
         let tab_bar_scroll_handle =
             pane.update_in(cx, |pane, _window, _cx| pane.tab_bar_scroll_handle.clone());
-        assert_eq!(tab_bar_scroll_handle.children_count(), 6);
+        assert_eq!(tab_bar_scroll_handle.children_count(), 7);
         let tab_bounds = cx.debug_bounds("TAB-4").unwrap();
         let new_tab_button_bounds = cx.debug_bounds("ICON-Plus").unwrap();
         let scroll_bounds = tab_bar_scroll_handle.bounds();
