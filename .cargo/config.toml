@@ -20,5 +20,17 @@ rustflags = [
 [target.aarch64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
+# Apple's ld (Xcode 15) cannot insert branch islands for calls out of
+# `__text_startup`, so debug builds whose `__text` exceeds 128MB fail to link
+# with "B/BL out of range". LLVM's ld64.lld handles this fine.
+[target.aarch64-apple-darwin]
+# Target rustflags replace `build.rustflags` instead of adding to them, so the
+# global flags are repeated here.
+rustflags = [
+    "-C", "symbol-mangling-version=v0",
+    "--cfg", "tokio_unstable",
+    "-C", "link-arg=-fuse-ld=/opt/homebrew/opt/lld/bin/ld64.lld",
+]
+
 [env]
 MACOSX_DEPLOYMENT_TARGET = "10.15.7"
