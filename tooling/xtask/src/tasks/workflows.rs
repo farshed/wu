@@ -14,7 +14,6 @@ mod bump_zed_version;
 mod cherry_pick;
 mod compliance_check;
 mod danger;
-mod deploy_collab;
 mod deploy_docs;
 mod extension_auto_bump;
 mod extension_bump;
@@ -227,7 +226,6 @@ pub fn run_workflows(args: GenerateWorkflowArgs) -> Result<()> {
         WorkflowFile::zed(cherry_pick::cherry_pick),
         WorkflowFile::zed(compliance_check::compliance_check),
         WorkflowFile::zed(danger::danger),
-        WorkflowFile::zed(deploy_collab::deploy_collab),
         WorkflowFile::zed(deploy_docs::deploy_docs),
         WorkflowFile::zed(deploy_docs::deploy_nightly_docs),
         WorkflowFile::zed(extension_bump::extension_bump),

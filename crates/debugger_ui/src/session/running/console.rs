@@ -81,7 +81,6 @@ impl Console {
             editor.set_use_autoclose(false);
             editor.set_show_wrap_guides(false, cx);
             editor.set_show_indent_guides(false, cx);
-            editor.set_show_edit_predictions(Some(false), window, cx);
             editor.set_use_modal_editing(false);
             editor.disable_mouse_wheel_zoom();
             editor.set_soft_wrap_mode(language::language_settings::SoftWrap::EditorWidth, cx);

@@ -531,7 +531,7 @@ Project panel can be shown/hidden with {#action project_panel::ToggleFocus} ({#k
 }
 ```
 
-See [Zed AI Documentation](./ai/overview.md) for additional non-visual AI settings.
+See Zed AI Documentation for additional non-visual AI settings.
 
 ## Terminal Panel
 

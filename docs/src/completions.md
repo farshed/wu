@@ -34,4 +34,4 @@ For more information, see:
 Zed has built-in support for predicting multiple edits at a time [via Zeta](https://huggingface.co/zed-industries/zeta), Zed's open-source and open-data model.
 Edit predictions appear as you type, and most of the time, you can accept them by pressing `tab`.
 
-See the [edit predictions documentation](./ai/edit-prediction.md) for more information on how to setup and configure Zed's edit predictions.
+See the edit predictions documentation for more information on how to setup and configure Zed's edit predictions.

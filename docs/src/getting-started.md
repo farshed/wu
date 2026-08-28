@@ -70,7 +70,7 @@ See [Languages](./languages.md) for language-specific setup instructions.
 
 Zed includes built-in AI assistance. Open the Agent Panel with `Cmd+Shift+A` (macOS) or `Ctrl+Shift+A` (Linux/Windows) to start a conversation, or use `Cmd+Enter` (macOS) / `Ctrl+Enter` (Linux/Windows) for inline assistance.
 
-See [AI Overview](./ai/overview.md) to configure providers and learn what's possible.
+See AI Overview to configure providers and learn what's possible.
 
 ## Coming from Another Editor?
 

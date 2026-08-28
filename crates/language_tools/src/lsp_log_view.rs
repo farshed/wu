@@ -1,5 +1,4 @@
 use collections::VecDeque;
-use edit_prediction::EditPredictionStore;
 use editor::{Editor, EditorEvent, MultiBufferOffset, actions::MoveToEnd, scroll::Autoscroll};
 use gpui::{
     Anchor, App, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement,
@@ -342,47 +341,7 @@ impl LspLogView {
         );
         (editor, vec![editor_subscription, search_subscription])
     }
-    pub(crate) fn try_ensure_copilot_for_project(&self, cx: &mut App) {
-        self.log_store.update(cx, |this, cx| {
-            let copilot = EditPredictionStore::try_global(cx)
-                .and_then(|store| store.read(cx).copilot_for_project(&self.project))?;
-            let server = copilot.read(cx).language_server()?.clone();
-            let log_subscription = this.copilot_state_for_project(&self.project.downgrade());
-            if let Some(subscription_slot @ None) = log_subscription {
-                let weak_lsp_store = cx.weak_entity();
-                let server_id = server.server_id();
-
-                let name = LanguageServerName::new_static("copilot");
-                *subscription_slot =
-                    Some(server.on_notification::<lsp::notification::LogMessage, _>(
-                        move |params, cx| {
-                            weak_lsp_store
-                                .update(cx, |lsp_store, cx| {
-                                    lsp_store.add_language_server_log(
-                                        server_id,
-                                        MessageType::LOG,
-                                        &params.message,
-                                        cx,
-                                    );
-                                })
-                                .ok();
-                        },
-                    ));
-                this.add_language_server(
-                    LanguageServerKind::Global,
-                    server.server_id(),
-                    Some(name),
-                    None,
-                    Some(server.clone()),
-                    cx,
-                );
-            }
-
-            Some(())
-        });
-    }
     pub(crate) fn menu_items(&self, cx: &mut App) -> Option<Vec<LogMenuItem>> {
-        self.try_ensure_copilot_for_project(cx);
         let log_store = self.log_store.read(cx);
 
         let unknown_server = LanguageServerName::new_static("unknown server");
@@ -1304,7 +1263,6 @@ fn initialize_new_editor(
         editor.set_show_bookmarks(false, cx);
         editor.set_show_breakpoints(false, cx);
         editor.set_read_only(true);
-        editor.set_show_edit_predictions(Some(false), window, cx);
         editor.set_soft_wrap_mode(SoftWrap::EditorWidth, cx);
         if move_to_end {
             editor.move_to_end(&MoveToEnd, window, cx);

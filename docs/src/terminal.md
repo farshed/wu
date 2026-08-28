@@ -354,12 +354,12 @@ The terminal integrates with Zed's [task system](./tasks.md). When you run a tas
 
 ## AI Assistance
 
-Get help with terminal commands using the [Inline Assistant](./ai/inline-assistant.md):
+Get help with terminal commands using the Inline Assistant:
 
 - macOS: `Ctrl+Enter`
 - Linux/Windows: `Ctrl+Enter` or `Ctrl+I`
 
-This opens the Inline Assistant to help explain errors, suggest commands, or troubleshoot issues. AI agents in the [Agent Panel](./ai/agent-panel.md) can also run terminal commands as part of their workflow.
+This opens the Inline Assistant to help explain errors, suggest commands, or troubleshoot issues. AI agents in the Agent Panel can also run terminal commands as part of their workflow.
 
 ## Sending Text and Keystrokes
 

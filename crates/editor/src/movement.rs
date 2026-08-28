@@ -1261,12 +1261,12 @@ mod tests {
             .flat_map(|offset| {
                 let offset = MultiBufferOffset(offset);
                 [
-                    Inlay::edit_prediction(
+                    Inlay::mock_hint(
                         post_inc(&mut id),
                         buffer_snapshot.anchor_before(offset),
                         "test",
                     ),
-                    Inlay::edit_prediction(
+                    Inlay::mock_hint(
                         post_inc(&mut id),
                         buffer_snapshot.anchor_after(offset),
                         "test",

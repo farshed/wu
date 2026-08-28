@@ -2,7 +2,6 @@ mod components;
 mod page_data;
 pub mod pages;
 
-use agent_skills::SkillIndex;
 use anyhow::{Context as _, Result};
 use cloud_api_types::OrganizationConfiguration;
 use editor::{Editor, EditorEvent};
@@ -30,7 +29,6 @@ use std::{
     collections::{HashMap, HashSet},
     num::{NonZero, NonZeroU32},
     ops::Range,
-    path::PathBuf,
     rc::Rc,
     sync::{Arc, LazyLock, RwLock},
     time::Duration,
@@ -48,18 +46,12 @@ use workspace::{
     client_side_decorations,
 };
 use zed_actions::{
-    AGENT_SKILLS_SETTINGS_PATH, OpenProjectSettings, OpenSettings, OpenSettingsAt,
-    OpenSettingsAtTarget, OpenSettingsPage,
+    OpenProjectSettings, OpenSettings, OpenSettingsAt, OpenSettingsAtTarget, OpenSettingsPage,
 };
 
 use crate::components::{
     EnumVariantDropdown, NumberField, NumberFieldMode, NumberFieldType, SettingsInputField,
-    SettingsSectionHeader, font_picker, icon_theme_picker, render_ollama_model_picker,
-    text_field_a11y_state, theme_picker,
-};
-use crate::pages::{
-    CustomAgentForm, LlmProviderForm, McpServerForm, render_input_audio_device_dropdown,
-    render_output_audio_device_dropdown,
+    SettingsSectionHeader, font_picker, icon_theme_picker, text_field_a11y_state, theme_picker,
 };
 
 const NAVBAR_CONTAINER_TAB_INDEX: isize = 0;
@@ -436,13 +428,6 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &OpenSettings, cx| {
         open_settings_editor(None, None, None, cx);
     });
-    cx.on_action(|_: &zed_actions::assistant::OpenSkillCreator, cx| {
-        open_skill_creator(pages::SkillCreatorOpenMode::Form, None, cx);
-    });
-    cx.on_action(|_: &zed_actions::assistant::CreateSkillFromUrl, cx| {
-        let initial_url = pages::skill_url_from_clipboard(cx);
-        open_skill_creator(pages::SkillCreatorOpenMode::Url { initial_url }, None, cx);
-    });
 
     cx.observe_new(|workspace: &mut workspace::Workspace, _, _| {
         workspace
@@ -481,24 +466,7 @@ pub fn init(cx: &mut App) {
                             .then_some(tree.read(cx).id())
                     });
                 open_settings_editor(None, target_worktree_id, window_handle, cx);
-            })
-            .register_action(
-                |_, _: &zed_actions::assistant::OpenSkillCreator, window, cx| {
-                    let window_handle = window.window_handle().downcast::<MultiWorkspace>();
-                    open_skill_creator(pages::SkillCreatorOpenMode::Form, window_handle, cx);
-                },
-            )
-            .register_action(
-                |_, _: &zed_actions::assistant::CreateSkillFromUrl, window, cx| {
-                    let window_handle = window.window_handle().downcast::<MultiWorkspace>();
-                    let initial_url = pages::skill_url_from_clipboard(cx);
-                    open_skill_creator(
-                        pages::SkillCreatorOpenMode::Url { initial_url },
-                        window_handle,
-                        cx,
-                    );
-                },
-            );
+            });
     })
     .detach();
 }
@@ -556,7 +524,6 @@ fn init_renderers(cx: &mut App) {
         .add_basic_renderer::<settings::DockSide>(render_dropdown)
         .add_basic_renderer::<settings::TerminalDockPosition>(render_dropdown)
         .add_basic_renderer::<settings::DockPosition>(render_dropdown)
-        .add_basic_renderer::<settings::SidebarDockPosition>(render_dropdown)
         .add_basic_renderer::<settings::GitGutterSetting>(render_dropdown)
         .add_basic_renderer::<settings::GitHunkStyleSetting>(render_dropdown)
         .add_basic_renderer::<settings::GitDiffBaseSetting>(render_dropdown)
@@ -589,10 +556,7 @@ fn init_renderers(cx: &mut App) {
         .add_basic_renderer::<settings::AlternateScroll>(render_dropdown)
         .add_basic_renderer::<settings::TerminalBlink>(render_dropdown)
         .add_basic_renderer::<settings::CursorShapeContent>(render_dropdown)
-        .add_basic_renderer::<settings::EditPredictionPromptFormatContent>(render_dropdown)
-        .add_basic_renderer::<settings::EditPredictionDataCollectionChoice>(render_dropdown)
         .add_basic_renderer::<f32>(render_editable_number_field)
-        .add_basic_renderer::<settings::AutoCompactThreshold>(render_text_field)
         .add_basic_renderer::<u32>(render_editable_number_field)
         .add_basic_renderer::<u64>(render_editable_number_field)
         .add_basic_renderer::<usize>(render_editable_number_field)
@@ -615,9 +579,6 @@ fn init_renderers(cx: &mut App) {
         .add_basic_renderer::<settings::UseSystemClipboard>(render_dropdown)
         .add_basic_renderer::<settings::VimInsertModeCursorShape>(render_dropdown)
         .add_basic_renderer::<settings::SteppingGranularity>(render_dropdown)
-        .add_basic_renderer::<settings::NotifyWhenAgentWaiting>(render_dropdown)
-        .add_basic_renderer::<settings::PlaySoundWhenAgentDone>(render_dropdown)
-        .add_basic_renderer::<settings::ThinkingBlockDisplay>(render_dropdown)
         .add_basic_renderer::<settings::ImageFileSizeUnit>(render_dropdown)
         .add_basic_renderer::<settings::StatusStyle>(render_dropdown)
         .add_basic_renderer::<settings::GitPanelClickBehavior>(render_dropdown)
@@ -641,19 +602,15 @@ fn init_renderers(cx: &mut App) {
         .add_basic_renderer::<settings::IncludeIgnoredContent>(render_dropdown)
         .add_basic_renderer::<settings::ShowIndentGuides>(render_dropdown)
         .add_basic_renderer::<settings::ShellDiscriminants>(render_dropdown)
-        .add_basic_renderer::<settings::EditPredictionsMode>(render_dropdown)
         .add_basic_renderer::<settings::RelativeLineNumbers>(render_dropdown)
         .add_basic_renderer::<settings::WindowDecorations>(render_dropdown)
         .add_basic_renderer::<settings::FullscreenMode>(render_dropdown)
         .add_basic_renderer::<settings::WindowButtonLayoutContentDiscriminants>(render_dropdown)
         .add_basic_renderer::<settings::ScanSymlinksSetting>(render_dropdown)
         .add_basic_renderer::<settings::FontSize>(render_editable_number_field)
-        .add_basic_renderer::<settings::OllamaModelName>(render_ollama_model_picker)
         .add_basic_renderer::<settings::SemanticTokens>(render_dropdown)
         .add_basic_renderer::<settings::DocumentFoldingRanges>(render_dropdown)
         .add_basic_renderer::<settings::DocumentSymbols>(render_dropdown)
-        .add_basic_renderer::<settings::AudioInputDeviceName>(render_input_audio_device_dropdown)
-        .add_basic_renderer::<settings::AudioOutputDeviceName>(render_output_audio_device_dropdown)
         .add_basic_renderer::<settings::TerminalBell>(render_dropdown)
         // please semicolon stay on next line
         ;
@@ -812,16 +769,6 @@ fn open_settings_editor_at_target(
     });
 }
 
-pub fn open_skill_creator(
-    open_mode: pages::SkillCreatorOpenMode,
-    workspace_handle: Option<WindowHandle<MultiWorkspace>>,
-    cx: &mut App,
-) {
-    open_settings_editor_with(workspace_handle, cx, |settings_window, window, cx| {
-        settings_window.navigate_to_skill_creator(open_mode, window, cx);
-    });
-}
-
 fn open_settings_editor_with(
     workspace_handle: Option<WindowHandle<MultiWorkspace>>,
     cx: &mut App,
@@ -957,37 +904,8 @@ pub struct SettingsWindow {
     search_index: Option<Arc<SearchIndex>>,
     list_state: ListState,
     shown_errors: HashSet<String>,
-    pub(crate) hidden_deleted_skill_directory_paths: HashSet<PathBuf>,
     pub(crate) regex_validation_error: Option<String>,
-    pub(crate) sandbox_host_validation_error: Option<String>,
     last_copied_link_path: Option<&'static str>,
-    /// Cached configuration views per provider, created lazily.
-    pub(crate) provider_configuration_views:
-        HashMap<language_model::LanguageModelProviderId, gpui::AnyView>,
-    /// The provider whose configuration sub-page is currently open, if any.
-    pub(crate) configuring_provider: Option<language_model::LanguageModelProviderId>,
-    /// Directory path of the skill whose share link was most recently copied,
-    /// used to show a transient "copied" checkmark on its share button.
-    pub(crate) last_copied_skill_directory_path: Option<PathBuf>,
-    /// State for the active "add OpenAI/Anthropic-compatible provider" form sub-page, if open.
-    pub(crate) llm_provider_form: Option<LlmProviderForm>,
-    /// Stable focus handle for the LLM "Add Provider" button, so it can show a
-    /// focus ring when the page auto-focuses it on open (which happens via mouse,
-    /// where `focus_visible` styling would otherwise be suppressed).
-    pub(crate) llm_provider_add_focus_handle: FocusHandle,
-    /// State for the active "add/edit custom MCP server" form sub-page, if open.
-    pub(crate) mcp_server_form: Option<McpServerForm>,
-    /// Stable focus handle for the MCP "Add Server" button, so it can show a
-    /// focus ring when the page auto-focuses it on open (which happens via mouse,
-    /// where `focus_visible` styling would otherwise be suppressed).
-    pub(crate) mcp_add_server_focus_handle: FocusHandle,
-    /// State for the active "add/edit custom external agent" form sub-page, if open.
-    pub(crate) custom_agent_form: Option<CustomAgentForm>,
-    /// Stable focus handle for the external agents "Add Agent" button, so it can
-    /// show a focus ring when the page auto-focuses it on open (which happens via
-    /// mouse, where `focus_visible` styling would otherwise be suppressed).
-    pub(crate) external_agent_add_focus_handle: FocusHandle,
-    skill_creator_page: Option<(Entity<pages::SkillCreatorPage>, Subscription)>,
 }
 
 struct SearchDocument {
@@ -1645,7 +1563,6 @@ impl PartialEq for SettingItem {
 #[derive(Clone, PartialEq, Default)]
 enum SubPageType {
     Language,
-    SkillCreator,
     #[default]
     Other,
 }
@@ -1820,34 +1737,6 @@ impl SettingsWindow {
         })
         .detach();
 
-        cx.observe_global_in::<SkillIndex>(window, |this, _window, cx| {
-            if let Some(skill_index) = cx.try_global::<SkillIndex>() {
-                this.hidden_deleted_skill_directory_paths
-                    .retain(|directory_path| {
-                        skill_index
-                            .global_skills
-                            .iter()
-                            .chain(
-                                skill_index
-                                    .project_skills
-                                    .iter()
-                                    .flat_map(|group| group.skills.iter()),
-                            )
-                            .any(|skill| skill.directory_path.as_path() == directory_path.as_path())
-                    });
-            } else {
-                this.hidden_deleted_skill_directory_paths.clear();
-            }
-            cx.notify();
-        })
-        .detach();
-
-        let language_model_registry = language_model::LanguageModelRegistry::global(cx);
-        cx.subscribe(&language_model_registry, |_, _, _event, cx| {
-            cx.notify();
-        })
-        .detach();
-
         cx.on_window_closed(|cx, _window_id| {
             if let Some(existing_window) = cx
                 .windows()
@@ -1995,21 +1884,9 @@ impl SettingsWindow {
                 .tab_stop(false),
             search_index: None,
             shown_errors: HashSet::default(),
-            hidden_deleted_skill_directory_paths: HashSet::default(),
             regex_validation_error: None,
-            sandbox_host_validation_error: None,
             list_state,
             last_copied_link_path: None,
-            provider_configuration_views: HashMap::default(),
-            configuring_provider: None,
-            last_copied_skill_directory_path: None,
-            llm_provider_form: None,
-            llm_provider_add_focus_handle: cx.focus_handle(),
-            mcp_server_form: None,
-            mcp_add_server_focus_handle: cx.focus_handle(),
-            custom_agent_form: None,
-            external_agent_add_focus_handle: cx.focus_handle(),
-            skill_creator_page: None,
         };
 
         this.fetch_files(window, cx);
@@ -2626,10 +2503,6 @@ impl SettingsWindow {
     }
 
     fn open_navbar_entry_page(&mut self, navbar_entry: usize) {
-        // Navigating to another page dismisses the transient "copied share
-        // link" checkmark shown on a Skills page row.
-        self.last_copied_skill_directory_path = None;
-
         if !self.is_nav_entry_visible(navbar_entry) {
             self.open_first_nav_page();
         }
@@ -2754,8 +2627,6 @@ impl SettingsWindow {
         if let SettingsUiFile::Project((_, _)) = &self.current_file {
             telemetry::event!("Setting Project Clicked");
         }
-
-        self.last_copied_skill_directory_path = None;
 
         let sub_page_stack = std::mem::take(&mut self.sub_page_stack);
         self.build_ui(window, cx);
@@ -3660,28 +3531,13 @@ impl SettingsWindow {
             .size_full()
             .overflow_y_scroll()
             .track_scroll(scroll_handle);
-        self.render_sub_page_items_in(page_content, items, false, window, cx)
-    }
-
-    fn render_sub_page_items_section<'a, Items>(
-        &self,
-        items: Items,
-        is_inline_section: bool,
-        window: &mut Window,
-        cx: &mut Context<SettingsWindow>,
-    ) -> impl IntoElement
-    where
-        Items: Iterator<Item = (usize, &'a SettingsPageItem)>,
-    {
-        let page_content = v_flex().id("settings-ui-sub-page-section").size_full();
-        self.render_sub_page_items_in(page_content, items, is_inline_section, window, cx)
+        self.render_sub_page_items_in(page_content, items, window, cx)
     }
 
     fn render_sub_page_items_in<'a, Items>(
         &self,
         page_content: Stateful<Div>,
         items: Items,
-        is_inline_section: bool,
         window: &mut Window,
         cx: &mut Context<SettingsWindow>,
     ) -> impl IntoElement
@@ -3722,10 +3578,9 @@ impl SettingsWindow {
                         let next_is_header = items.get(index + 1).is_some_and(|(_, next_item)| {
                             matches!(next_item, SettingsPageItem::SectionHeader(_))
                         });
-                        let bottom_border = !is_inline_section && !next_is_header && !is_last_item;
+                        let bottom_border = !next_is_header && !is_last_item;
 
-                        let extra_bottom_padding =
-                            !is_inline_section && (next_is_header || is_last_item);
+                        let extra_bottom_padding = next_is_header || is_last_item;
 
                         v_flex()
                             .w_full()
@@ -3753,13 +3608,6 @@ impl SettingsWindow {
         let page_content;
 
         if let Some(current_sub_page) = self.sub_page_stack.last() {
-            let is_skills_page =
-                current_sub_page.link.json_path == Some(AGENT_SKILLS_SETTINGS_PATH);
-            let is_llm_providers_page = current_sub_page.link.json_path == Some("llm_providers")
-                && current_sub_page.link.title.as_ref() == "LLM Providers";
-            let is_external_agents_page = current_sub_page.link.json_path == Some("agent_servers");
-            let is_mcp_servers_page = current_sub_page.link.json_path == Some("context_servers");
-
             page_header = h_flex()
                 .w_full()
                 .min_w_0()
@@ -3796,29 +3644,6 @@ impl SettingsWindow {
                                         this.open_current_settings_file(window, cx);
                                     })),
                             )
-                        })
-                        .when(is_llm_providers_page, |this| {
-                            this.child(pages::render_add_llm_provider_popover(self, window, cx))
-                        })
-                        .when(is_skills_page, |this| {
-                            this.child(
-                                Button::new("open-skill-creator", "Create Skill")
-                                    .tab_index(0_isize)
-                                    .style(ButtonStyle::OutlinedGhost)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.open_skill_creator_sub_page(
-                                            pages::SkillCreatorOpenMode::Form,
-                                            window,
-                                            cx,
-                                        );
-                                    })),
-                            )
-                        })
-                        .when(is_external_agents_page, |this| {
-                            this.child(pages::render_add_agent_popover(self, window, cx))
-                        })
-                        .when(is_mcp_servers_page, |this| {
-                            this.child(pages::render_add_server_popover(self, window, cx))
                         }),
                 )
                 .into_any_element();
@@ -4223,7 +4048,6 @@ impl SettingsWindow {
         window: &mut Window,
         cx: &mut Context<SettingsWindow>,
     ) {
-        self.sandbox_host_validation_error = None;
         self.sub_page_stack
             .push(SubPage::new(sub_page_link, section_header));
         self.content_focus_handle.focus_handle(cx).focus(window, cx);
@@ -4259,102 +4083,6 @@ impl SettingsWindow {
             render,
         };
         self.push_sub_page(sub_page_link, section_header.into(), window, cx);
-    }
-
-    pub(crate) fn skill_creator_page(&self) -> Option<Entity<pages::SkillCreatorPage>> {
-        self.skill_creator_page
-            .as_ref()
-            .map(|(page, _)| page.clone())
-    }
-
-    /// If the creator is already the active sub-page, the open mode is applied
-    /// to the existing form instead
-    pub fn open_skill_creator_sub_page(
-        &mut self,
-        open_mode: pages::SkillCreatorOpenMode,
-        window: &mut Window,
-        cx: &mut Context<SettingsWindow>,
-    ) {
-        let creator_is_active_sub_page = self
-            .sub_page_stack
-            .last()
-            .is_some_and(|sub_page| sub_page.link.r#type == SubPageType::SkillCreator);
-
-        if creator_is_active_sub_page && let Some((page, _)) = &self.skill_creator_page {
-            let page = page.clone();
-            page.update(cx, |page, cx| page.apply_open_mode(open_mode, window, cx));
-            return;
-        }
-
-        let settings_window = cx.weak_entity();
-        let page = cx.new(|cx| pages::SkillCreatorPage::new(settings_window, window, cx));
-
-        let subscription =
-            cx.subscribe_in(
-                &page,
-                window,
-                |this, _page, event: &pages::SkillCreatorEvent, window, cx| match event {
-                    pages::SkillCreatorEvent::Dismissed | pages::SkillCreatorEvent::Saved => {
-                        if this.sub_page_stack.last().is_some_and(|sub_page| {
-                            sub_page.link.r#type == SubPageType::SkillCreator
-                        }) {
-                            this.pop_sub_page(window, cx);
-                        }
-                    }
-                },
-            );
-
-        self.skill_creator_page = Some((page.clone(), subscription));
-
-        let sub_page_link = SubPageLink {
-            title: "Create Skill".into(),
-            r#type: SubPageType::SkillCreator,
-            description: None,
-            search_aliases: &[],
-            json_path: None,
-            in_json: false,
-            files: USER | PROJECT,
-            render: pages::render_skill_creator_page,
-        };
-
-        self.push_sub_page(sub_page_link, "Agent".into(), window, cx);
-
-        let creating_from_url = !matches!(open_mode, pages::SkillCreatorOpenMode::Url { .. });
-        page.update(cx, |page, cx| {
-            page.apply_open_mode(open_mode, window, cx);
-        });
-        if creating_from_url {
-            let name_editor_focus_handle = page.read(cx).name_editor_focus_handle(cx);
-            window.focus(&name_editor_focus_handle, cx);
-        }
-    }
-
-    pub fn navigate_to_skill_creator(
-        &mut self,
-        open_mode: pages::SkillCreatorOpenMode,
-        window: &mut Window,
-        cx: &mut Context<SettingsWindow>,
-    ) {
-        self.sub_page_stack.clear();
-        let skills_page_index = self.pages.iter().position(|page| {
-            page.items.iter().any(|item| {
-                matches!(
-                    item,
-                    SettingsPageItem::SubPageLink(link)
-                        if link.json_path == Some(AGENT_SKILLS_SETTINGS_PATH)
-                )
-            })
-        });
-        if let Some(page_index) = skills_page_index
-            && let Some(navbar_entry_index) = self
-                .navbar_entries
-                .iter()
-                .position(|entry| entry.page_index == page_index && entry.is_root)
-        {
-            self.open_navbar_entry_page(navbar_entry_index);
-        }
-        self.navigate_to_sub_page(AGENT_SKILLS_SETTINGS_PATH, window, cx);
-        self.open_skill_creator_sub_page(open_mode, window, cx);
     }
 
     /// Navigate to a sub-page by its json_path.
@@ -4430,20 +4158,9 @@ impl SettingsWindow {
 
     pub(crate) fn pop_sub_page(&mut self, window: &mut Window, cx: &mut Context<SettingsWindow>) {
         self.regex_validation_error = None;
-        self.sandbox_host_validation_error = None;
-        if let Some(popped) = self.sub_page_stack.pop()
-            && popped.link.r#type == SubPageType::SkillCreator
-        {
-            self.skill_creator_page = None;
-        }
+        self.sub_page_stack.pop();
         self.content_focus_handle.focus_handle(cx).focus(window, cx);
         cx.notify();
-    }
-
-    pub(crate) fn active_project(&self, cx: &App) -> Option<Entity<Project>> {
-        let original_window = self.original_window.as_ref()?;
-        let multi_workspace = original_window.read(cx).ok()?;
-        Some(multi_workspace.workspace().read(cx).project().clone())
     }
 
     fn focus_file_at_index(&mut self, index: usize, window: &mut Window, cx: &mut App) {
@@ -5338,20 +5055,8 @@ pub mod test {
                 search_index: None,
                 list_state: ListState::new(0, gpui::ListAlignment::Top, px(0.0)),
                 shown_errors: HashSet::default(),
-                hidden_deleted_skill_directory_paths: HashSet::default(),
                 regex_validation_error: None,
-                sandbox_host_validation_error: None,
                 last_copied_link_path: None,
-                provider_configuration_views: HashMap::default(),
-                configuring_provider: None,
-                last_copied_skill_directory_path: None,
-                llm_provider_form: None,
-                llm_provider_add_focus_handle: cx.focus_handle(),
-                mcp_server_form: None,
-                mcp_add_server_focus_handle: cx.focus_handle(),
-                custom_agent_form: None,
-                external_agent_add_focus_handle: cx.focus_handle(),
-                skill_creator_page: None,
             }
         }
     }
@@ -5372,7 +5077,6 @@ pub mod test {
         theme_settings::init(theme::LoadThemes::JustBase, cx);
         editor::init(cx);
         menu::init();
-        language_model::init(cx);
     }
 
     fn parse(input: &'static str, window: &mut Window, cx: &mut App) -> SettingsWindow {
@@ -5477,20 +5181,8 @@ pub mod test {
             search_index: None,
             list_state: ListState::new(0, gpui::ListAlignment::Top, px(0.0)),
             shown_errors: HashSet::default(),
-            hidden_deleted_skill_directory_paths: HashSet::default(),
             regex_validation_error: None,
-            sandbox_host_validation_error: None,
             last_copied_link_path: None,
-            provider_configuration_views: HashMap::default(),
-            configuring_provider: None,
-            last_copied_skill_directory_path: None,
-            llm_provider_form: None,
-            llm_provider_add_focus_handle: cx.focus_handle(),
-            mcp_server_form: None,
-            mcp_add_server_focus_handle: cx.focus_handle(),
-            custom_agent_form: None,
-            external_agent_add_focus_handle: cx.focus_handle(),
-            skill_creator_page: None,
         };
 
         settings_window.build_filter_table();
@@ -6108,359 +5800,6 @@ pub mod test {
                 project_files
             );
         });
-    }
-
-    #[gpui::test]
-    async fn test_skills_page_scope_switch_updates_displayed_skills(cx: &mut gpui::TestAppContext) {
-        use agent_skills::{
-            ProjectSkillGroup, Skill, SkillScopeId, SkillSource, load_skills_from_directory,
-        };
-        use project::Project;
-        use serde_json::json;
-        use std::path::Path;
-
-        cx.update(|cx| {
-            register_settings(cx);
-        });
-
-        let app_state = cx.update(|cx| {
-            let app_state = AppState::test(cx);
-            AppState::set_global(app_state.clone(), cx);
-            app_state
-        });
-
-        let fake_fs = app_state.fs.as_fake();
-
-        fake_fs
-            .insert_tree(
-                "/global-skills",
-                json!({
-                    "global-skill": {
-                        "SKILL.md": "---\nname: global-skill\ndescription: A user level skill\n---\n\nGlobal instructions."
-                    }
-                }),
-            )
-            .await;
-
-        fake_fs
-            .insert_tree(
-                "/project",
-                json!({
-                    ".agents": {
-                        "skills": {
-                            "project-skill": {
-                                "SKILL.md": "---\nname: project-skill\ndescription: A project level skill\n---\n\nProject instructions."
-                            }
-                        }
-                    },
-                    "main.rs": "fn main() {}"
-                }),
-            )
-            .await;
-
-        let project = cx.update(|cx| {
-            Project::local(
-                app_state.client.clone(),
-                app_state.node_runtime.clone(),
-                app_state.user_store.clone(),
-                app_state.languages.clone(),
-                app_state.fs.clone(),
-                None,
-                project::LocalProjectFlags::default(),
-                cx,
-            )
-        });
-
-        let (worktree, _) = project
-            .update(cx, |project, cx| {
-                project.find_or_create_worktree("/project", true, cx)
-            })
-            .await
-            .expect("Failed to create worktree");
-        let worktree_id = worktree.read_with(cx, |worktree, _| worktree.id());
-
-        // Load both skills from the fake filesystem the same way the agent
-        // does, then publish them as the global skill index.
-        let fs = app_state.fs.clone();
-        let global_skills: Vec<Skill> =
-            load_skills_from_directory(&fs, Path::new("/global-skills"), SkillSource::Global)
-                .await
-                .into_iter()
-                .map(|result| result.expect("global skill should load"))
-                .collect();
-        let project_skills: Vec<Skill> = load_skills_from_directory(
-            &fs,
-            Path::new("/project/.agents/skills"),
-            SkillSource::ProjectLocal {
-                worktree_id: SkillScopeId(worktree_id.to_usize()),
-                worktree_root_name: "project".into(),
-            },
-        )
-        .await
-        .into_iter()
-        .map(|result| result.expect("project skill should load"))
-        .collect();
-        assert_eq!(global_skills.len(), 1);
-        assert_eq!(project_skills.len(), 1);
-
-        cx.update(|cx| {
-            cx.set_global(SkillIndex {
-                global_skills,
-                project_skills: vec![ProjectSkillGroup {
-                    worktree_id: SkillScopeId(worktree_id.to_usize()),
-                    worktree_root_name: "project".into(),
-                    skills: project_skills,
-                }],
-            });
-        });
-
-        let (_multi_workspace, cx) = cx.add_window_view(|window, cx| {
-            let workspace = cx.new(|cx| {
-                Workspace::new(
-                    Default::default(),
-                    project.clone(),
-                    app_state.clone(),
-                    window,
-                    cx,
-                )
-            });
-            MultiWorkspace::new(workspace, window, cx)
-        });
-        let workspace_handle = cx.window_handle().downcast::<MultiWorkspace>().unwrap();
-
-        cx.run_until_parked();
-
-        let (settings_window, cx) = cx
-            .add_window_view(|window, cx| SettingsWindow::new(Some(workspace_handle), window, cx));
-
-        cx.run_until_parked();
-
-        settings_window.update_in(cx, |settings_window, window, cx| {
-            fn displayed_skill_names(settings_window: &SettingsWindow, cx: &App) -> Vec<String> {
-                crate::pages::displayed_skills(settings_window, cx)
-                    .iter()
-                    .map(|skill| skill.name.to_string())
-                    .collect()
-            }
-
-            assert_eq!(settings_window.current_file, SettingsUiFile::User);
-            assert!(
-                settings_window.navigate_to_sub_page(AGENT_SKILLS_SETTINGS_PATH, window, cx),
-                "Skills sub-page should exist"
-            );
-            assert_eq!(displayed_skill_names(settings_window, cx), ["global-skill"]);
-
-            let project_file_index = settings_window
-                .files
-                .iter()
-                .position(|(file, _)| file.worktree_id() == Some(worktree_id))
-                .expect("project settings file should be listed");
-            settings_window.change_file_in_sub_page(project_file_index, window, cx);
-
-            assert_eq!(
-                settings_window.current_file.worktree_id(),
-                Some(worktree_id)
-            );
-            assert_eq!(
-                settings_window.sub_page_stack.len(),
-                1,
-                "Skills sub-page should stay open when switching scope"
-            );
-            assert_eq!(settings_window.sub_page_stack[0].link.title, "Skills");
-            assert_eq!(
-                displayed_skill_names(settings_window, cx),
-                ["project-skill"]
-            );
-
-            let user_file_index = settings_window
-                .files
-                .iter()
-                .position(|(file, _)| file == &SettingsUiFile::User)
-                .expect("user settings file should be listed");
-            settings_window.change_file_in_sub_page(user_file_index, window, cx);
-
-            assert_eq!(settings_window.current_file, SettingsUiFile::User);
-            assert_eq!(settings_window.sub_page_stack.len(), 1);
-            assert_eq!(displayed_skill_names(settings_window, cx), ["global-skill"]);
-        });
-    }
-
-    #[gpui::test]
-    async fn test_open_skill_creator_navigates_to_sub_page(cx: &mut gpui::TestAppContext) {
-        use project::Project;
-
-        cx.update(|cx| {
-            register_settings(cx);
-        });
-
-        let app_state = cx.update(|cx| {
-            let app_state = AppState::test(cx);
-            AppState::set_global(app_state.clone(), cx);
-            app_state
-        });
-
-        app_state
-            .fs
-            .as_fake()
-            .insert_tree("/project", serde_json::json!({ "main.rs": "fn main() {}" }))
-            .await;
-
-        let project = cx.update(|cx| {
-            Project::local(
-                app_state.client.clone(),
-                app_state.node_runtime.clone(),
-                app_state.user_store.clone(),
-                app_state.languages.clone(),
-                app_state.fs.clone(),
-                None,
-                project::LocalProjectFlags::default(),
-                cx,
-            )
-        });
-        project
-            .update(cx, |project, cx| {
-                project.find_or_create_worktree("/project", true, cx)
-            })
-            .await
-            .expect("Failed to create worktree");
-
-        let (_multi_workspace, cx) = cx.add_window_view(|window, cx| {
-            let workspace = cx.new(|cx| {
-                Workspace::new(
-                    Default::default(),
-                    project.clone(),
-                    app_state.clone(),
-                    window,
-                    cx,
-                )
-            });
-            MultiWorkspace::new(workspace, window, cx)
-        });
-        let workspace_handle = cx.window_handle().downcast::<MultiWorkspace>().unwrap();
-
-        cx.run_until_parked();
-
-        let (settings_window, cx) = cx
-            .add_window_view(|window, cx| SettingsWindow::new(Some(workspace_handle), window, cx));
-
-        cx.run_until_parked();
-
-        settings_window.update_in(cx, |settings_window, window, cx| {
-            settings_window.navigate_to_skill_creator(
-                pages::SkillCreatorOpenMode::Form,
-                window,
-                cx,
-            );
-        });
-
-        cx.run_until_parked();
-
-        settings_window.read_with(cx, |settings_window, _| {
-            let titles: Vec<_> = settings_window
-                .sub_page_stack
-                .iter()
-                .map(|sub_page| sub_page.link.title.to_string())
-                .collect();
-            assert_eq!(
-                titles,
-                ["Skills", "Create Skill"],
-                "skill creator should be pushed on top of the skills page"
-            );
-            assert!(
-                settings_window.skill_creator_page().is_some(),
-                "skill creator page state should exist"
-            );
-        });
-    }
-
-    #[gpui::test]
-    async fn test_open_skill_creator_action_opens_settings_window_at_sub_page(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        use project::Project;
-
-        cx.update(|cx| {
-            register_settings(cx);
-            release_channel::init("0.0.0".parse().unwrap(), cx);
-            crate::init(cx);
-        });
-
-        let app_state = cx.update(|cx| {
-            let app_state = AppState::test(cx);
-            AppState::set_global(app_state.clone(), cx);
-            app_state
-        });
-
-        app_state
-            .fs
-            .as_fake()
-            .insert_tree("/project", serde_json::json!({ "main.rs": "fn main() {}" }))
-            .await;
-
-        let project = cx.update(|cx| {
-            Project::local(
-                app_state.client.clone(),
-                app_state.node_runtime.clone(),
-                app_state.user_store.clone(),
-                app_state.languages.clone(),
-                app_state.fs.clone(),
-                None,
-                project::LocalProjectFlags::default(),
-                cx,
-            )
-        });
-        project
-            .update(cx, |project, cx| {
-                project.find_or_create_worktree("/project", true, cx)
-            })
-            .await
-            .expect("Failed to create worktree");
-
-        let (multi_workspace, cx) = cx.add_window_view(|window, cx| {
-            let workspace = cx.new(|cx| {
-                Workspace::new(
-                    Default::default(),
-                    project.clone(),
-                    app_state.clone(),
-                    window,
-                    cx,
-                )
-            });
-            MultiWorkspace::new(workspace, window, cx)
-        });
-
-        cx.run_until_parked();
-
-        // Dispatch the action the way the command palette does: on the
-        // workspace window.
-        multi_workspace.update_in(cx, |_multi_workspace, window, cx| {
-            window.dispatch_action(Box::new(zed_actions::assistant::OpenSkillCreator), cx);
-        });
-
-        cx.run_until_parked();
-
-        let settings_window = cx
-            .update(|_, cx| {
-                cx.windows()
-                    .into_iter()
-                    .find_map(|window| window.downcast::<SettingsWindow>())
-            })
-            .expect("dispatching agent::OpenSkillCreator should open the settings window");
-
-        settings_window
-            .read_with(cx, |settings_window, _| {
-                let titles: Vec<_> = settings_window
-                    .sub_page_stack
-                    .iter()
-                    .map(|sub_page| sub_page.link.title.to_string())
-                    .collect();
-                assert_eq!(
-                    titles,
-                    ["Skills", "Create Skill"],
-                    "skill creator should be pushed on top of the skills page"
-                );
-            })
-            .unwrap();
     }
 }
 

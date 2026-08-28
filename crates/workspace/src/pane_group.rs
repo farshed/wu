@@ -469,10 +469,6 @@ impl PaneLeaderDecorator for PaneRenderContext<'_> {
                     .color_for_participant(leader.participant_index.0)
                     .cursor;
             }
-            CollaboratorId::Agent => {
-                status_box = None;
-                leader_color = cx.theme().players().agent().cursor;
-            }
         }
 
         let is_in_panel = follower_state.dock_pane.is_some();

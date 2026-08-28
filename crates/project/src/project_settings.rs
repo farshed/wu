@@ -1,6 +1,5 @@
 use anyhow::Context as _;
 use collections::HashMap;
-use context_server::ContextServerCommand;
 use dap::adapters::DebugAdapterName;
 use fs::Fs;
 use futures::StreamExt as _;
@@ -28,7 +27,7 @@ use settings::{
 };
 use std::{cell::OnceCell, collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 use task::{DebugTaskFile, TaskTemplates, VsCodeDebugTaskFile, VsCodeTaskFile};
-use util::{ResultExt, rel_path::RelPath, serde::default_true};
+use util::{ResultExt, rel_path::RelPath};
 use worktree::{PathChange, UpdatedEntriesSet, Worktree, WorktreeId};
 
 use crate::{
@@ -58,12 +57,6 @@ pub struct ProjectSettings {
 
     /// Configuration for Debugger-related features
     pub dap: HashMap<DebugAdapterName, DapSettings>,
-
-    /// Settings for context servers used for AI-related features.
-    pub context_servers: HashMap<Arc<str>, ContextServerSettings>,
-
-    /// Default timeout for context server requests in seconds.
-    pub context_server_timeout: u64,
 
     /// Configuration for Diagnostics-related features.
     pub diagnostics: DiagnosticsSettings,
@@ -178,171 +171,6 @@ impl Default for LspNotificationSettings {
     fn default() -> Self {
         Self {
             dismiss_timeout_ms: Some(5000),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Clone, PartialEq, Eq, JsonSchema, Debug)]
-#[serde(tag = "source", rename_all = "snake_case")]
-pub enum ContextServerSettings {
-    Stdio {
-        /// Whether the context server is enabled.
-        #[serde(default = "default_true")]
-        enabled: bool,
-        /// If true, run this server on the remote server when using remote development.
-        #[serde(default)]
-        remote: bool,
-        #[serde(flatten)]
-        command: ContextServerCommand,
-    },
-    Http {
-        /// Whether the context server is enabled.
-        #[serde(default = "default_true")]
-        enabled: bool,
-        /// The URL of the remote context server.
-        url: String,
-        /// Optional authentication configuration for the remote server.
-        #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-        headers: HashMap<String, String>,
-        /// Timeout for tool calls in milliseconds.
-        timeout: Option<u64>,
-        /// Pre-registered OAuth client credentials for authorization servers that
-        /// require out-of-band client registration.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        oauth: Option<OAuthClientSettings>,
-    },
-    Extension {
-        /// Whether the context server is enabled.
-        #[serde(default = "default_true")]
-        enabled: bool,
-        /// If true, run this server on the remote server when using remote development.
-        #[serde(default)]
-        remote: bool,
-        /// The settings for this context server specified by the extension.
-        ///
-        /// Consult the documentation for the context server to see what settings
-        /// are supported.
-        settings: serde_json::Value,
-    },
-}
-
-impl From<settings::ContextServerSettingsContent> for ContextServerSettings {
-    fn from(value: settings::ContextServerSettingsContent) -> Self {
-        match value {
-            settings::ContextServerSettingsContent::Stdio {
-                enabled,
-                remote,
-                command,
-            } => ContextServerSettings::Stdio {
-                enabled,
-                remote,
-                command,
-            },
-            settings::ContextServerSettingsContent::Extension {
-                enabled,
-                remote,
-                settings,
-            } => ContextServerSettings::Extension {
-                enabled,
-                remote,
-                settings,
-            },
-            settings::ContextServerSettingsContent::Http {
-                enabled,
-                url,
-                headers,
-                timeout,
-                oauth,
-            } => ContextServerSettings::Http {
-                enabled,
-                url,
-                headers,
-                timeout,
-                oauth: oauth.map(|o| OAuthClientSettings {
-                    client_id: o.client_id,
-                    client_secret: o.client_secret,
-                }),
-            },
-        }
-    }
-}
-impl Into<settings::ContextServerSettingsContent> for ContextServerSettings {
-    fn into(self) -> settings::ContextServerSettingsContent {
-        match self {
-            ContextServerSettings::Stdio {
-                enabled,
-                remote,
-                command,
-            } => settings::ContextServerSettingsContent::Stdio {
-                enabled,
-                remote,
-                command,
-            },
-            ContextServerSettings::Extension {
-                enabled,
-                remote,
-                settings,
-            } => settings::ContextServerSettingsContent::Extension {
-                enabled,
-                remote,
-                settings,
-            },
-            ContextServerSettings::Http {
-                enabled,
-                url,
-                headers,
-                timeout,
-                oauth,
-            } => settings::ContextServerSettingsContent::Http {
-                enabled,
-                url,
-                headers,
-                timeout,
-                oauth: oauth.map(|o| settings::OAuthClientSettings {
-                    client_id: o.client_id,
-                    client_secret: o.client_secret,
-                }),
-            },
-        }
-    }
-}
-
-/// Pre-registered OAuth client credentials for MCP servers that don't support
-/// Dynamic Client Registration.
-#[derive(Deserialize, Serialize, Clone, PartialEq, Eq, JsonSchema, Debug)]
-pub struct OAuthClientSettings {
-    /// The OAuth client ID obtained from out-of-band registration with the
-    /// authorization server.
-    pub client_id: String,
-    /// The OAuth client secret, if this is a confidential client. For security,
-    /// prefer providing this interactively; we will prompt and store it in
-    /// the system keychain.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_secret: Option<String>,
-}
-
-impl ContextServerSettings {
-    pub fn default_extension() -> Self {
-        Self::Extension {
-            enabled: true,
-            remote: false,
-            settings: serde_json::json!({}),
-        }
-    }
-
-    pub fn enabled(&self) -> bool {
-        match self {
-            ContextServerSettings::Stdio { enabled, .. } => *enabled,
-            ContextServerSettings::Http { enabled, .. } => *enabled,
-            ContextServerSettings::Extension { enabled, .. } => *enabled,
-        }
-    }
-
-    pub fn set_enabled(&mut self, enabled: bool) {
-        match self {
-            ContextServerSettings::Stdio { enabled: e, .. } => *e = enabled,
-            ContextServerSettings::Http { enabled: e, .. } => *e = enabled,
-            ContextServerSettings::Extension { enabled: e, .. } => *e = enabled,
         }
     }
 }
@@ -721,13 +549,6 @@ impl Settings for ProjectSettings {
                 .unwrap_or_else(|| DEFAULT_WORKTREE_DIRECTORY.to_string()),
         };
         Self {
-            context_servers: project
-                .context_servers
-                .clone()
-                .into_iter()
-                .map(|(key, value)| (key, value.into()))
-                .collect(),
-            context_server_timeout: project.context_server_timeout.unwrap_or(60),
             lsp: project
                 .lsp
                 .clone()

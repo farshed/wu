@@ -13,7 +13,7 @@ Zed lets you add new functionality using user-defined extensions.
   - [Developing Debugger Extensions](./extensions/debugger-extensions.md)
   - [Developing Icon Themes](./extensions/icon-themes.md)
   - [Developing Language Extensions](./extensions/languages.md)
-  - [Developing MCP Servers](./extensions/mcp-extensions.md)
+  - Developing MCP Servers
   - [Developing Snippets](./extensions/snippets.md)
   - [Developing Themes](./extensions/themes.md)
 

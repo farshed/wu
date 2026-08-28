@@ -59,7 +59,6 @@ use workspace::{
         Direction, SearchEvent, SearchOptions, SearchToken, SearchableItem, SearchableItemHandle,
     },
 };
-use zed_actions::{agent::AddSelectionToThread, assistant::InlineAssist};
 
 struct ImeState {
     marked_text: String,
@@ -522,15 +521,9 @@ impl TerminalView {
     pub fn deploy_context_menu(
         &mut self,
         position: GpuiPoint<Pixels>,
-        has_selection: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let assistant_enabled = self
-            .workspace
-            .upgrade()
-            .and_then(|workspace| workspace.read(cx).panel::<TerminalPanel>(cx))
-            .is_some_and(|terminal_panel| terminal_panel.read(cx).assistant_enabled());
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
             menu.context(self.focus_handle.clone())
                 .when(self.shows_workspace_actions(), |menu| {
@@ -553,16 +546,6 @@ impl TerminalView {
                 .when(
                     !matches!(self.mode, TerminalMode::Embedded { .. }),
                     |menu| menu.action("Clear", Box::new(Clear)),
-                )
-                .when(
-                    assistant_enabled && !matches!(self.mode, TerminalMode::Embedded { .. }),
-                    |menu| {
-                        menu.separator()
-                            .action("Inline Assist", Box::new(InlineAssist::default()))
-                            .when(has_selection && self.shows_workspace_actions(), |menu| {
-                                menu.action("Add to Agent Thread", Box::new(AddSelectionToThread))
-                            })
-                    },
                 )
                 .when(self.shows_workspace_actions(), |menu| {
                     menu.separator().action(
@@ -1381,15 +1364,7 @@ impl Render for TerminalView {
                                 terminal.select_word_at_event_position(event);
                             });
                         }
-                        let has_selection = !had_selection
-                            || this
-                                .terminal
-                                .read(cx)
-                                .last_content
-                                .selection_text
-                                .as_ref()
-                                .is_some_and(|text| !text.is_empty());
-                        this.deploy_context_menu(event.position, has_selection, window, cx);
+                        this.deploy_context_menu(event.position, window, cx);
                         cx.notify();
                     }
                 }),

@@ -769,7 +769,6 @@ impl DapLogView {
             editor.set_input_enabled(false);
             editor.set_use_autoclose(false);
             editor.set_read_only(true);
-            editor.set_show_edit_predictions(Some(false), window, cx);
             editor
         });
         let editor_subscription = cx.subscribe(

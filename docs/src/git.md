@@ -221,7 +221,7 @@ See [All Settings](./reference/all-settings.md#git-worktree-directory) for examp
 ### Init Setup
 
 To run setup steps after Zed creates a linked worktree, use the [`create_worktree` task hook](./tasks.md#hooks).
-For agent-specific workflows, see [Worktree Isolation](./ai/parallel-agents.md#worktree-isolation).
+For agent-specific workflows, see Worktree Isolation.
 
 ### Multi-root Workspaces
 
@@ -298,10 +298,10 @@ Zed currently supports LLM-powered commit message generation.
 You can ask AI to generate a commit message by focusing on the message editor within the Git Panel and either clicking on the pencil icon in the bottom left, or reaching for the {#action git::GenerateCommitMessage}, or through the {#kb git::GenerateCommitMessage} keybinding.
 
 > Note that you need to have an LLM provider configured either via your own API keys or through Zed's hosted AI models.
-> Visit [AI Quick Start](./ai/quick-start.md) to learn how to configure AI.
+> Visit AI Quick Start to learn how to configure AI.
 
 You can specify your preferred model for this task by adding a `commit_message_model` field to your agent settings.
-See [Feature-specific models](./ai/agent-settings.md#feature-specific-models) for more information.
+See Feature-specific models for more information.
 
 ```json [settings]
 {
@@ -329,7 +329,7 @@ To add custom instructions that apply only to commit message generation, use the
 These instructions are sent to the model in addition to any instruction files, such as `.rules` or `AGENTS.md`. To add instructions that apply to both commit messages and the agent more broadly, use the global `AGENTS.md` file located at `~/.config/zed/AGENTS.md` on macOS and Linux, `%APPDATA%\Zed\AGENTS.md` on Windows.
 
 > Before Zed v1.4.0, this was done through the Rules Library, which has been removed.
-> See [Migrating from Rules](./ai/instructions.md#migrating-from-rules) for more information.
+> See Migrating from Rules for more information.
 
 ## Git Integrations
 

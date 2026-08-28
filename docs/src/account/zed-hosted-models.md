@@ -5,7 +5,7 @@ description: AI models available via Zed Pro including Claude Fable 5, Claude So
 
 # Zed-Hosted Models
 
-Zed's plans offer hosted versions of major LLMs with higher rate limits than direct API access. Model availability is updated regularly. To use your own API keys instead, see [LLM Providers](../ai/llm-providers.md). For general setup, see [AI Quick Start](../ai/quick-start.md).
+Zed's plans offer hosted versions of major LLMs with higher rate limits than direct API access. Model availability is updated regularly. To use your own API keys instead, see LLM Providers. For general setup, see AI Quick Start.
 
 > **Note:** Claude Fable 5, Claude Opus models, GPT-5.5 pro, and GPT-5.4 pro are only available on Zed Pro and Zed Business.
 
@@ -95,7 +95,7 @@ Zed's plans offer hosted versions of major LLMs with higher rate limits than dir
 | Gemini 3 Flash    | Google    | Input               | $0.50                        | $0.55                   |
 |                   | Google    | Output              | $3.00                        | $3.30                   |
 
-> **Warn:** Anthropic retains prompts and outputs sent to Claude Fable 5 for at least 30 days for trust and safety purposes. The no-training commitment still applies, and Zed does not retain your prompts or outputs. See [Provider Safety Retention for Designated Models](../ai/privacy-and-security.md#provider-safety-retention).
+> **Warn:** Anthropic retains prompts and outputs sent to Claude Fable 5 for at least 30 days for trust and safety purposes. The no-training commitment still applies, and Zed does not retain your prompts or outputs. See Provider Safety Retention for Designated Models.
 
 The Claude Sonnet 5 prices shown above use Anthropic's introductory pricing through August 31, 2026.
 
@@ -161,4 +161,4 @@ Start a new thread for each distinct task to keep context focused.
 
 ## Tool Calls {#tool-calls}
 
-Models can use [tools](../ai/tools.md) to interface with your code, search the web, and perform other useful functions.
+Models can use tools to interface with your code, search the web, and perform other useful functions.

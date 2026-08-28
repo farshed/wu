@@ -1,48 +1,26 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/acp_thread",
-    "crates/acp_tools",
-    "crates/action_log",
     "crates/activity_indicator",
-    "crates/agent",
-    "crates/agent_servers",
-    "crates/agent_settings",
-    "crates/agent_skills",
-    "crates/agent_ui",
-    "crates/ai_onboarding",
-    "crates/anthropic",
     "crates/askpass",
     "crates/assets",
-    "crates/audio",
     "crates/auto_update",
     "crates/auto_update_helper",
     "crates/auto_update_ui",
-    "crates/aws_http_client",
-    "crates/bedrock",
     "crates/benchmarks",
     "crates/breadcrumbs",
     "crates/buffer_diff",
-    "crates/call",
     "crates/call_hierarchy",
-    "crates/channel",
     "crates/cli",
     "crates/client",
     "crates/clock",
     "crates/cloud_api_client",
     "crates/cloud_api_types",
-    "crates/cloud_llm_client",
-    "crates/codestral",
-    "crates/collab",
-    "crates/collab_ui",
     "crates/collections",
     "crates/command_palette",
     "crates/command_palette_hooks",
     "crates/component",
     "crates/component_preview",
-    "crates/context_server",
-    "crates/copilot",
-    "crates/copilot_chat",
     "crates/crashes",
     "crates/credentials_provider",
     "crates/dap",
@@ -51,23 +29,14 @@ members = [
     "crates/debug_adapter_extension",
     "crates/debugger_tools",
     "crates/debugger_ui",
-    "crates/deepseek",
     "crates/dev_container",
     "crates/diagnostics",
     "crates/docs_preprocessor",
-    "crates/edit_prediction",
-    "crates/edit_prediction_cli",
-    "crates/edit_prediction_context",
-    "crates/edit_prediction_metrics",
-    "crates/edit_prediction_types",
-    "crates/edit_prediction_ui",
     "crates/editor",
     "crates/editor_benchmarks",
     "crates/encoding_selector",
     "crates/env_var",
     "crates/etw_tracing",
-    "crates/eval_cli",
-    "crates/eval_utils",
     "crates/explorer_command_injector",
     "crates/extension",
     "crates/extension_api",
@@ -88,7 +57,6 @@ members = [
     "crates/git_ui",
     "crates/git_ui_core",
     "crates/go_to_line",
-    "crates/google_ai",
     "crates/gpui",
     "crates/gpui_apple",
     "crates/gpui_linux",
@@ -105,7 +73,6 @@ members = [
     "crates/html_to_markdown",
     "crates/http_client",
     "crates/http_client_tls",
-    "crates/http_proxy",
     "crates/icons",
     "crates/image_viewer",
     "crates/input_latency_ui",
@@ -117,19 +84,11 @@ members = [
     "crates/language",
     "crates/language_core",
     "crates/language_extension",
-    "crates/language_model",
-    "crates/language_model_core",
-    "crates/language_models",
-    "crates/language_models_cloud",
     "crates/language_onboarding",
     "crates/language_selector",
     "crates/language_tools",
     "crates/languages",
     "crates/line_ending_selector",
-    "crates/livekit_api",
-    "crates/livekit_client",
-    "crates/llama_cpp",
-    "crates/lmstudio",
     "crates/lsp",
     "crates/lsp_locations",
     "crates/markdown",
@@ -139,19 +98,13 @@ members = [
     "crates/mermaid_render",
     "crates/migrator",
     "crates/miniprofiler_ui",
-    "crates/mistral",
     "crates/multi_buffer",
     "crates/net",
     "crates/node_runtime",
     "crates/notifications",
     "crates/oauth_callback_server",
-    "crates/ollama",
     "crates/onboarding",
-    "crates/open_ai",
     "crates/open_path_prompt",
-    "crates/open_router",
-    "crates/openai_subscribed",
-    "crates/opencode",
     "crates/outline",
     "crates/outline_panel",
     "crates/panel",
@@ -165,7 +118,6 @@ members = [
     "crates/project_benchmarks",
     "crates/project_panel",
     "crates/project_symbols",
-    "crates/prompt_store",
     "crates/proto",
     "crates/proxy_handshake",
     "crates/recent_projects",
@@ -179,7 +131,6 @@ members = [
     "crates/reqwest_client",
     "crates/rope",
     "crates/rpc",
-    "crates/sandbox",
     "crates/scheduler",
     "crates/schema_generator",
     "crates/search",
@@ -190,14 +141,11 @@ members = [
     "crates/settings_macros",
     "crates/settings_profile_selector",
     "crates/settings_ui",
-    "crates/shell_command_parser",
-    "crates/sidebar",
     "crates/snippet",
     "crates/snippet_provider",
     "crates/snippets_ui",
     "crates/sqlez",
     "crates/sqlez_macros",
-    "crates/streaming_diff",
     "crates/sum_tree",
     "crates/svg_preview",
     "crates/syntax_theme",
@@ -228,19 +176,15 @@ members = [
     "crates/vim",
     "crates/vim_mode_setting",
     "crates/watch",
-    "crates/web_search",
-    "crates/web_search_providers",
     "crates/which_key",
     "crates/windows_resources",
     "crates/workspace",
     "crates/worktree",
     "crates/worktree_benchmarks",
-    "crates/x_ai",
     "crates/zed",
     "crates/zed_actions",
     "crates/zed_credentials_provider",
     "crates/zed_env_vars",
-    "crates/zeta_prompt",
     "crates/zlog",
     "crates/zlog_settings",
     "crates/ztracing",
@@ -275,48 +219,25 @@ edition = "2024"
 # Workspace member crates
 #
 
-acp_thread = { path = "crates/acp_thread" }
-acp_tools = { path = "crates/acp_tools" }
-action_log = { path = "crates/action_log" }
 activity_indicator = { path = "crates/activity_indicator" }
-agent = { path = "crates/agent" }
-agent_servers = { path = "crates/agent_servers" }
-agent_settings = { path = "crates/agent_settings" }
-agent_skills = { path = "crates/agent_skills" }
-agent_ui = { path = "crates/agent_ui" }
-ai_onboarding = { path = "crates/ai_onboarding" }
-anthropic = { path = "crates/anthropic" }
 askpass = { path = "crates/askpass" }
 assets = { path = "crates/assets" }
-audio = { path = "crates/audio" }
 auto_update = { path = "crates/auto_update" }
 auto_update_ui = { path = "crates/auto_update_ui" }
-aws_http_client = { path = "crates/aws_http_client" }
-bedrock = { path = "crates/bedrock" }
 breadcrumbs = { path = "crates/breadcrumbs" }
 buffer_diff = { path = "crates/buffer_diff" }
-call = { path = "crates/call" }
 call_hierarchy = { path = "crates/call_hierarchy" }
-channel = { path = "crates/channel" }
 cli = { path = "crates/cli" }
 client = { path = "crates/client" }
 clock = { path = "crates/clock" }
 cloud_api_client = { path = "crates/cloud_api_client" }
 cloud_api_types = { path = "crates/cloud_api_types" }
-cloud_llm_client = { path = "crates/cloud_llm_client" }
-codestral = { path = "crates/codestral" }
-collab = { path = "crates/collab" }
-collab_ui = { path = "crates/collab_ui" }
 collections = { path = "crates/collections", version = "0.1.0" }
 command_palette = { path = "crates/command_palette" }
 command_palette_hooks = { path = "crates/command_palette_hooks" }
 compliance = { path = "tooling/compliance" }
 component = { path = "crates/component" }
 component_preview = { path = "crates/component_preview" }
-context_server = { path = "crates/context_server" }
-copilot = { path = "crates/copilot" }
-copilot_chat = { path = "crates/copilot_chat" }
-copilot_ui = { path = "crates/copilot_ui" }
 crashes = { path = "crates/crashes" }
 credentials_provider = { path = "crates/credentials_provider" }
 dap = { path = "crates/dap" }
@@ -325,20 +246,13 @@ db = { path = "crates/db" }
 debug_adapter_extension = { path = "crates/debug_adapter_extension" }
 debugger_tools = { path = "crates/debugger_tools" }
 debugger_ui = { path = "crates/debugger_ui" }
-deepseek = { path = "crates/deepseek" }
 derive_refineable = { path = "crates/refineable/derive_refineable" }
 dev_container = { path = "crates/dev_container" }
 diagnostics = { path = "crates/diagnostics" }
-edit_prediction = { path = "crates/edit_prediction" }
-edit_prediction_context = { path = "crates/edit_prediction_context" }
-edit_prediction_metrics = { path = "crates/edit_prediction_metrics" }
-edit_prediction_types = { path = "crates/edit_prediction_types" }
-edit_prediction_ui = { path = "crates/edit_prediction_ui" }
 editor = { path = "crates/editor" }
 encoding_selector = { path = "crates/encoding_selector" }
 env_var = { path = "crates/env_var" }
 etw_tracing = { path = "crates/etw_tracing" }
-eval_utils = { path = "crates/eval_utils" }
 extension = { path = "crates/extension" }
 extension_host = { path = "crates/extension_host" }
 extensions_ui = { path = "crates/extensions_ui" }
@@ -355,7 +269,6 @@ git_hosting_providers = { path = "crates/git_hosting_providers" }
 git_ui = { path = "crates/git_ui" }
 git_ui_core = { path = "crates/git_ui_core" }
 go_to_line = { path = "crates/go_to_line" }
-google_ai = { path = "crates/google_ai" }
 gpui = { path = "crates/gpui", default-features = false }
 gpui_apple = { path = "crates/gpui_apple" }
 gpui_linux = { path = "crates/gpui_linux", default-features = false }
@@ -372,7 +285,6 @@ grammars = { path = "crates/grammars" }
 html_to_markdown = { path = "crates/html_to_markdown" }
 http_client = { path = "crates/http_client" }
 http_client_tls = { path = "crates/http_client_tls" }
-http_proxy = { path = "crates/http_proxy" }
 icons = { path = "crates/icons" }
 image_viewer = { path = "crates/image_viewer" }
 input_latency_ui = { path = "crates/input_latency_ui" }
@@ -384,19 +296,11 @@ keymap_editor = { path = "crates/keymap_editor" }
 language = { path = "crates/language" }
 language_core = { path = "crates/language_core" }
 language_extension = { path = "crates/language_extension" }
-language_model = { path = "crates/language_model" }
-language_model_core = { path = "crates/language_model_core" }
-language_models = { path = "crates/language_models" }
-language_models_cloud = { path = "crates/language_models_cloud" }
 language_onboarding = { path = "crates/language_onboarding" }
 language_selector = { path = "crates/language_selector" }
 language_tools = { path = "crates/language_tools" }
 languages = { path = "crates/languages" }
 line_ending_selector = { path = "crates/line_ending_selector" }
-livekit_api = { path = "crates/livekit_api" }
-livekit_client = { path = "crates/livekit_client" }
-llama_cpp = { path = "crates/llama_cpp" }
-lmstudio = { path = "crates/lmstudio" }
 lsp = { path = "crates/lsp" }
 lsp_locations = { path = "crates/lsp_locations" }
 markdown = { path = "crates/markdown" }
@@ -406,19 +310,13 @@ menu = { path = "crates/menu" }
 mermaid_render = { path = "crates/mermaid_render" }
 migrator = { path = "crates/migrator" }
 miniprofiler_ui = { path = "crates/miniprofiler_ui" }
-mistral = { path = "crates/mistral" }
 multi_buffer = { path = "crates/multi_buffer" }
 net = { path = "crates/net" }
 node_runtime = { path = "crates/node_runtime" }
 notifications = { path = "crates/notifications" }
 oauth_callback_server = { path = "crates/oauth_callback_server" }
-ollama = { path = "crates/ollama" }
 onboarding = { path = "crates/onboarding" }
-open_ai = { path = "crates/open_ai" }
 open_path_prompt = { path = "crates/open_path_prompt" }
-open_router = { path = "crates/open_router", features = ["schemars"] }
-openai_subscribed = { path = "crates/openai_subscribed" }
-opencode = { path = "crates/opencode" }
 outline = { path = "crates/outline" }
 outline_panel = { path = "crates/outline_panel" }
 panel = { path = "crates/panel" }
@@ -432,7 +330,6 @@ prettier = { path = "crates/prettier" }
 project = { path = "crates/project" }
 project_panel = { path = "crates/project_panel" }
 project_symbols = { path = "crates/project_symbols" }
-prompt_store = { path = "crates/prompt_store" }
 proto = { path = "crates/proto" }
 proxy_handshake = { path = "crates/proxy_handshake" }
 recent_projects = { path = "crates/recent_projects" }
@@ -446,7 +343,6 @@ reqwest_client = { path = "crates/reqwest_client" }
 rodio = { git = "https://github.com/RustAudio/rodio", rev = "e50e726ddd0292f6ef9de0dda6b90af4ed1fb66a", features = ["wav", "playback", "wav_output", "recording"] }
 rope = { path = "crates/rope" }
 rpc = { path = "crates/rpc" }
-sandbox = { path = "crates/sandbox" }
 scheduler = { path = "crates/scheduler" }
 search = { path = "crates/search" }
 session = { path = "crates/session" }
@@ -456,14 +352,11 @@ settings_json = { path = "crates/settings_json" }
 settings_macros = { path = "crates/settings_macros" }
 settings_profile_selector = { path = "crates/settings_profile_selector" }
 settings_ui = { path = "crates/settings_ui" }
-shell_command_parser = { path = "crates/shell_command_parser" }
-sidebar = { path = "crates/sidebar" }
 snippet = { path = "crates/snippet" }
 snippet_provider = { path = "crates/snippet_provider" }
 snippets_ui = { path = "crates/snippets_ui" }
 sqlez = { path = "crates/sqlez" }
 sqlez_macros = { path = "crates/sqlez_macros" }
-streaming_diff = { path = "crates/streaming_diff" }
 sum_tree = { path = "crates/sum_tree" }
 svg_preview = { path = "crates/svg_preview" }
 syntax_theme = { path = "crates/syntax_theme" }
@@ -493,16 +386,12 @@ util_macros = { path = "crates/util_macros" }
 vim = { path = "crates/vim" }
 vim_mode_setting = { path = "crates/vim_mode_setting" }
 watch = { path = "crates/watch" }
-web_search = { path = "crates/web_search" }
-web_search_providers = { path = "crates/web_search_providers" }
 which_key = { path = "crates/which_key" }
 workspace = { path = "crates/workspace" }
 worktree = { path = "crates/worktree" }
-x_ai = { path = "crates/x_ai" }
 zed_actions = { path = "crates/zed_actions" }
 zed_credentials_provider = { path = "crates/zed_credentials_provider" }
 zed_env_vars = { path = "crates/zed_env_vars" }
-zeta_prompt = { path = "crates/zeta_prompt" }
 zlog = { path = "crates/zlog" }
 zlog_settings = { path = "crates/zlog_settings" }
 ztracing = { path = "crates/ztracing" }
@@ -516,7 +405,6 @@ accesskit = { version = "0.24.0", features = ["enumn"] }
 accesskit_macos = "0.26.0"
 accesskit_unix = "0.21.0"
 accesskit_windows = "0.33.1"
-agent-client-protocol = { version = "=2.0.0", features = ["unstable"] }
 aho-corasick = "1.1"
 alacritty_terminal = { git = "https://github.com/zed-industries/alacritty", rev = "4c129667ce56611becdc82de6e28218c80e2e88f" }
 any_vec = "0.14"
@@ -671,7 +559,6 @@ libc = "0.2"
 libsqlite3-sys = { version = "0.30.1", features = ["bundled"] }
 libwebrtc = "0.3.26"
 linkify = "0.10.0"
-livekit = { version = "0.7.32", features = ["tokio", "rustls-tls-native-roots"] }
 log = { version = "0.4.16", features = ["kv_unstable_serde", "serde"] }
 lru = "0.16"
 lsp-types = { git = "https://github.com/zed-industries/lsp-types", rev = "f1783e63a7f4eb4397bf51d4148b4895a1f7ab16" }
@@ -976,11 +863,8 @@ async-process = { git = "https://github.com/zed-industries/async-process.git", r
 async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
-livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "0a1c519cfce9b365229026b55de9b9dbdb6fed3c" }
-libwebrtc = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "0a1c519cfce9b365229026b55de9b9dbdb6fed3c" }
 notify = { git = "https://github.com/zed-industries/notify", rev = "0890bbb8ca40a4b5d1f67031698dd7918b37d991" }
 notify-types = { git = "https://github.com/zed-industries/notify", rev = "0890bbb8ca40a4b5d1f67031698dd7918b37d991" }
-webrtc-sys = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "0a1c519cfce9b365229026b55de9b9dbdb6fed3c" }
 
 [profile.dev]
 split-debuginfo = "unpacked"
@@ -1033,18 +917,14 @@ breadcrumbs = { codegen-units = 1 }
 collections = { codegen-units = 1 }
 command_palette = { codegen-units = 1 }
 command_palette_hooks = { codegen-units = 1 }
-edit_prediction_ui = { codegen-units = 1 }
 feature_flags = { codegen-units = 1 }
 file_icons = { codegen-units = 1 }
 image_viewer = { codegen-units = 1 }
 install_cli = { codegen-units = 1 }
 journal = { codegen-units = 1 }
 json_schema_store = { codegen-units = 1 }
-llama_cpp = { codegen-units = 1 }
-lmstudio = { codegen-units = 1 }
 menu = { codegen-units = 1 }
 notifications = { codegen-units = 1 }
-ollama = { codegen-units = 1 }
 outline = { codegen-units = 1 }
 paths = { codegen-units = 1 }
 prettier = { codegen-units = 1 }
@@ -1053,7 +933,6 @@ refineable = { codegen-units = 1 }
 release_channel = { codegen-units = 1 }
 reqwest_client = { codegen-units = 1 }
 session = { codegen-units = 1 }
-sidebar = { codegen-units = 1 }
 snippet = { codegen-units = 1 }
 snippets_ui = { codegen-units = 1 }
 telemetry_events = { codegen-units = 1 }

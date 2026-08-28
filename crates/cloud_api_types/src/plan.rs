@@ -20,7 +20,6 @@ pub struct PlanInfo {
     #[serde(rename = "plan_v3")]
     pub plan: KnownOrUnknown<Plan, String>,
     pub subscription_period: Option<SubscriptionPeriod>,
-    pub usage: cloud_llm_client::CurrentUsage,
     pub trial_started_at: Option<Timestamp>,
     pub is_account_too_young: bool,
     pub has_overdue_invoices: bool,

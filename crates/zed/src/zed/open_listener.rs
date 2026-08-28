@@ -1,10 +1,8 @@
 use crate::handle_open_request;
 use crate::restore_or_create_workspace;
-use agent_ui::ExternalSourcePrompt;
 use anyhow::{Context as _, Result, anyhow};
 use cli::{CliRequest, CliResponse, CliResponseSink};
 use cli::{IpcHandshake, ipc};
-use client::{ZedLink, parse_zed_link};
 use db::kvp::KeyValueStore;
 use editor::Editor;
 use fs::Fs;
@@ -40,8 +38,6 @@ pub struct OpenRequest {
     pub diff_paths: Vec<[String; 2]>,
     pub diff_all: bool,
     pub dev_container: bool,
-    pub open_channel_notes: Vec<(u64, Option<String>)>,
-    pub join_channel: Option<u64>,
     pub remote_connection: Option<RemoteConnectionOptions>,
     pub open_behavior: Option<cli::OpenBehavior>,
 }
@@ -56,13 +52,6 @@ pub enum OpenRequestKind {
     FocusApp,
     Extension {
         extension_id: String,
-    },
-    AgentPanel {
-        external_source_prompt: Option<ExternalSourcePrompt>,
-    },
-    InstallSkill {
-        /// Full `SKILL.md` contents embedded in a `zed://skill` share link.
-        content: String,
     },
     DockMenuAction {
         index: usize,
@@ -91,16 +80,6 @@ impl std::fmt::Debug for OpenRequestKind {
                 .debug_struct("Extension")
                 .field("extension_id", extension_id)
                 .finish(),
-            Self::AgentPanel {
-                external_source_prompt,
-            } => f
-                .debug_struct("AgentPanel")
-                .field("external_source_prompt", external_source_prompt)
-                .finish(),
-            Self::InstallSkill { content } => f
-                .debug_struct("InstallSkill")
-                .field("content_len", &content.len())
-                .finish(),
             Self::DockMenuAction { index } => f
                 .debug_struct("DockMenuAction")
                 .field("index", index)
@@ -128,8 +107,6 @@ impl OpenRequest {
             && self.open_paths.is_empty()
             && self.diff_paths.is_empty()
             && self.remote_connection.is_none()
-            && self.join_channel.is_none()
-            && self.open_channel_notes.is_empty()
     }
 
     pub fn parse(request: RawOpenRequest, cx: &App) -> Result<Self> {
@@ -172,10 +149,6 @@ impl OpenRequest {
                 this.kind = Some(OpenRequestKind::Extension {
                     extension_id: extension_id.to_string(),
                 });
-            } else if url.starts_with(agent_skills::SKILL_SHARE_LINK_PREFIX) {
-                this.parse_skill_install_url(&url)?
-            } else if let Some(agent_path) = url.strip_prefix("zed://agent") {
-                this.parse_agent_url(agent_path)
             } else if url == "zed://" || url == "zed://open" || url == "zed://open/" {
                 this.kind = Some(OpenRequestKind::FocusApp);
             } else if let Some(schema_path) = url.strip_prefix("zed://schemas/") {
@@ -194,18 +167,6 @@ impl OpenRequest {
                 this.parse_git_commit_url(commit_path)?
             } else if url.starts_with("ssh://") {
                 this.parse_ssh_file_path(&url, cx)?
-            } else if let Some(zed_link) = parse_zed_link(&url, cx) {
-                match zed_link {
-                    ZedLink::Channel { channel_id } => {
-                        this.join_channel = Some(channel_id);
-                    }
-                    ZedLink::ChannelNotes {
-                        channel_id,
-                        heading,
-                    } => {
-                        this.open_channel_notes.push((channel_id, heading));
-                    }
-                }
             } else {
                 log::error!("unhandled url: {}", url);
             }
@@ -218,26 +179,6 @@ impl OpenRequest {
         if let Some(decoded) = urlencoding::decode(file).log_err() {
             self.open_paths.push(decoded.into_owned())
         }
-    }
-
-    fn parse_agent_url(&mut self, agent_path: &str) {
-        // Format: "" or "?prompt=<text>".
-        let agent_path = agent_path.strip_prefix('/').unwrap_or(agent_path);
-        let external_source_prompt = agent_path.strip_prefix('?').and_then(|query| {
-            url::form_urlencoded::parse(query.as_bytes())
-                .find_map(|(key, value)| (key == "prompt").then_some(value))
-                .and_then(|prompt| ExternalSourcePrompt::new(prompt.as_ref()))
-        });
-        self.kind = Some(OpenRequestKind::AgentPanel {
-            external_source_prompt,
-        });
-    }
-
-    fn parse_skill_install_url(&mut self, url: &str) -> Result<()> {
-        // Format: zed://skill?data=<base64url of SKILL.md contents>
-        let content = agent_skills::decode_skill_share_link(url)?;
-        self.kind = Some(OpenRequestKind::InstallSkill { content });
-        Ok(())
     }
 
     fn parse_git_clone_url(&mut self, clone_path: &str) -> Result<()> {
@@ -1470,144 +1411,6 @@ mod tests {
     }
 
     #[gpui::test]
-    fn test_parse_agent_url(cx: &mut TestAppContext) {
-        let _app_state = init_test(cx);
-
-        let request = cx.update(|cx| {
-            OpenRequest::parse(
-                RawOpenRequest {
-                    urls: vec!["zed://agent".into()],
-                    ..Default::default()
-                },
-                cx,
-            )
-            .unwrap()
-        });
-
-        match request.kind {
-            Some(OpenRequestKind::AgentPanel {
-                external_source_prompt,
-            }) => {
-                assert_eq!(external_source_prompt, None);
-            }
-            _ => panic!("Expected AgentPanel kind"),
-        }
-    }
-
-    #[gpui::test]
-    fn test_parse_skill_install_url(cx: &mut TestAppContext) {
-        let _app_state = init_test(cx);
-
-        let content =
-            "---\nname: my-skill\ndescription: Does a thing.\n---\n\nDo the thing.\n".to_string();
-        let link = agent_skills::encode_skill_share_link(&content);
-
-        let request = cx.update(|cx| {
-            OpenRequest::parse(
-                RawOpenRequest {
-                    urls: vec![link],
-                    ..Default::default()
-                },
-                cx,
-            )
-            .unwrap()
-        });
-
-        match request.kind {
-            Some(OpenRequestKind::InstallSkill {
-                content: parsed_content,
-            }) => {
-                assert_eq!(parsed_content, content);
-            }
-            _ => panic!("Expected InstallSkill kind"),
-        }
-    }
-
-    #[gpui::test]
-    fn test_parse_malformed_skill_install_url_errors(cx: &mut TestAppContext) {
-        let _app_state = init_test(cx);
-
-        let result = cx.update(|cx| {
-            OpenRequest::parse(
-                RawOpenRequest {
-                    urls: vec!["zed://skill?data=!!!notbase64".into()],
-                    ..Default::default()
-                },
-                cx,
-            )
-        });
-
-        assert!(result.is_err());
-    }
-
-    fn agent_url_with_prompt(prompt: &str) -> String {
-        let mut serializer = url::form_urlencoded::Serializer::new("zed://agent?".to_string());
-        serializer.append_pair("prompt", prompt);
-        serializer.finish()
-    }
-
-    #[gpui::test]
-    fn test_parse_agent_url_with_prompt(cx: &mut TestAppContext) {
-        let _app_state = init_test(cx);
-        let prompt = "Write me a script\nThanks";
-
-        let request = cx.update(|cx| {
-            OpenRequest::parse(
-                RawOpenRequest {
-                    urls: vec![agent_url_with_prompt(prompt)],
-                    ..Default::default()
-                },
-                cx,
-            )
-            .unwrap()
-        });
-
-        match request.kind {
-            Some(OpenRequestKind::AgentPanel {
-                external_source_prompt,
-            }) => {
-                assert_eq!(
-                    external_source_prompt
-                        .as_ref()
-                        .map(ExternalSourcePrompt::as_str),
-                    Some("Write me a script\nThanks")
-                );
-            }
-            _ => panic!("Expected AgentPanel kind"),
-        }
-    }
-
-    #[gpui::test]
-    fn test_parse_agent_url_with_trailing_slash(cx: &mut TestAppContext) {
-        let _app_state = init_test(cx);
-
-        let request = cx.update(|cx| {
-            OpenRequest::parse(
-                RawOpenRequest {
-                    urls: vec!["zed://agent/?prompt=hello".into()],
-                    ..Default::default()
-                },
-                cx,
-            )
-            .unwrap()
-        });
-
-        match request.kind {
-            Some(OpenRequestKind::AgentPanel {
-                external_source_prompt,
-            }) => {
-                assert_eq!(
-                    external_source_prompt
-                        .as_ref()
-                        .map(ExternalSourcePrompt::as_str),
-                    Some("hello")
-                );
-            }
-            _ => panic!("Expected AgentPanel kind"),
-        }
-    }
-
-    #[gpui::test]
     fn test_parse_focus_app_url(cx: &mut TestAppContext) {
         let _app_state = init_test(cx);
 
@@ -1631,31 +1434,6 @@ mod tests {
                 request.is_focus_app_only(),
                 "expected is_focus_app_only for {url}"
             );
-        }
-    }
-
-    #[gpui::test]
-    fn test_parse_agent_url_with_empty_prompt(cx: &mut TestAppContext) {
-        let _app_state = init_test(cx);
-
-        let request = cx.update(|cx| {
-            OpenRequest::parse(
-                RawOpenRequest {
-                    urls: vec![agent_url_with_prompt("")],
-                    ..Default::default()
-                },
-                cx,
-            )
-            .unwrap()
-        });
-
-        match request.kind {
-            Some(OpenRequestKind::AgentPanel {
-                external_source_prompt,
-            }) => {
-                assert_eq!(external_source_prompt, None);
-            }
-            _ => panic!("Expected AgentPanel kind"),
         }
     }
 

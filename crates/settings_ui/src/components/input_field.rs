@@ -2,13 +2,10 @@ use std::rc::Rc;
 
 use editor::{Editor, MultiBufferOffset};
 use gpui::{
-    A11ySubtreeBuilder, AccessibleAction, AnyElement, ElementId, Entity, Focusable, Role,
-    TextStyleRefinement,
+    A11ySubtreeBuilder, AccessibleAction, ElementId, Entity, Focusable, Role,
     accesskit::{self, ActionData},
 };
-use settings::Settings as _;
-use theme_settings::ThemeSettings;
-use ui::{Tooltip, prelude::*, rems};
+use ui::{Tooltip, prelude::*};
 
 #[derive(IntoElement)]
 pub struct SettingsInputField {
@@ -17,13 +14,9 @@ pub struct SettingsInputField {
     placeholder: Option<&'static str>,
     confirm: Option<Rc<dyn Fn(Option<String>, &mut Window, &mut App)>>,
     tab_index: Option<isize>,
-    use_buffer_font: bool,
     display_confirm_button: bool,
     display_clear_button: bool,
-    clear_on_confirm: bool,
     confirm_on_focus_out: bool,
-    action_slot: Option<AnyElement>,
-    color: Option<Color>,
     aria_label: Option<SharedString>,
     aria_description: Option<SharedString>,
 }
@@ -42,13 +35,9 @@ impl SettingsInputField {
             placeholder: None,
             confirm: None,
             tab_index: None,
-            use_buffer_font: false,
             display_confirm_button: false,
             display_clear_button: false,
-            clear_on_confirm: false,
             confirm_on_focus_out: false,
-            action_slot: None,
-            color: None,
             aria_label: None,
             aria_description: None,
         }
@@ -82,33 +71,13 @@ impl SettingsInputField {
         self
     }
 
-    pub fn clear_on_confirm(mut self) -> Self {
-        self.clear_on_confirm = true;
-        self
-    }
-
     pub fn confirm_on_focus_out(mut self) -> Self {
         self.confirm_on_focus_out = true;
         self
     }
 
-    pub fn action_slot(mut self, action: impl IntoElement) -> Self {
-        self.action_slot = Some(action.into_any_element());
-        self
-    }
-
     pub(crate) fn tab_index(mut self, arg: isize) -> Self {
         self.tab_index = Some(arg);
-        self
-    }
-
-    pub fn with_buffer_font(mut self) -> Self {
-        self.use_buffer_font = true;
-        self
-    }
-
-    pub fn color(mut self, color: Color) -> Self {
-        self.color = Some(color);
         self
     }
 
@@ -129,16 +98,6 @@ impl SettingsInputField {
 
 impl RenderOnce for SettingsInputField {
     fn render(self, window: &mut Window, cx: &mut App) -> impl ui::IntoElement {
-        let settings = ThemeSettings::get_global(cx);
-        let use_buffer_font = self.use_buffer_font;
-        let color = self.color.map(|c| c.color(cx));
-        let styles = TextStyleRefinement {
-            font_family: use_buffer_font.then(|| settings.buffer_font.family.clone()),
-            font_size: use_buffer_font.then(|| rems(0.75).into()),
-            color,
-            ..Default::default()
-        };
-
         let first_render_initial_text = window.use_keyed_state(
             (self.id.clone(), "first-render-initial-text"),
             cx,
@@ -159,9 +118,7 @@ impl RenderOnce for SettingsInputField {
 
                 if let Some(confirm) = confirm.take()
                     && (self.confirm_on_focus_out
-                        || (!self.display_confirm_button
-                            && !self.display_clear_button
-                            && !self.clear_on_confirm))
+                        || (!self.display_confirm_button && !self.display_clear_button))
                 {
                     cx.on_focus_out(
                         &editor_focus_handle,
@@ -177,7 +134,6 @@ impl RenderOnce for SettingsInputField {
                 if let Some(placeholder) = placeholder {
                     editor.set_placeholder_text(placeholder, window, cx);
                 }
-                editor.set_text_style_refinement(styles);
                 editor
             }
         });
@@ -208,9 +164,6 @@ impl RenderOnce for SettingsInputField {
         let weak_editor = editor.downgrade();
         let weak_editor_for_button = editor.downgrade();
         let weak_editor_for_clear = editor.downgrade();
-
-        let clear_on_confirm = self.clear_on_confirm;
-        let clear_on_confirm_for_button = self.clear_on_confirm;
 
         let display_confirm_button = self.display_confirm_button;
         let display_clear_button = self.display_clear_button;
@@ -329,16 +282,10 @@ impl RenderOnce for SettingsInputField {
                                         let new_value =
                                             (!new_value.is_empty()).then_some(new_value);
                                         confirm(new_value, window, cx);
-                                        if clear_on_confirm_for_button {
-                                            editor.update(cx, |editor, cx| {
-                                                editor.set_text("", window, cx);
-                                            });
-                                        }
                                     }),
                             )
                         },
-                    )
-                    .when_some(self.action_slot, |this, action| this.child(action)),
+                    ),
             )
             .when_some(self.confirm, |this, confirm| {
                 this.on_action::<menu::Confirm>({
@@ -349,11 +296,6 @@ impl RenderOnce for SettingsInputField {
                         let new_value = editor.read_with(cx, |editor, cx| editor.text(cx));
                         let new_value = (!new_value.is_empty()).then_some(new_value);
                         confirm(new_value, window, cx);
-                        if clear_on_confirm {
-                            editor.update(cx, |editor, cx| {
-                                editor.set_text("", window, cx);
-                            });
-                        }
                     }
                 })
             })

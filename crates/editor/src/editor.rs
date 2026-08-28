@@ -50,8 +50,6 @@ mod bookmarks;
 #[cfg(test)]
 mod code_completion_tests;
 #[cfg(test)]
-mod edit_prediction_tests;
-#[cfg(test)]
 mod editor_block_comment_tests;
 #[cfg(test)]
 mod editor_tests;
@@ -64,7 +62,6 @@ mod code_actions;
 mod completions;
 mod config;
 mod diagnostics;
-mod edit_prediction;
 mod input;
 mod markdown_actions;
 mod navigation;
@@ -85,17 +82,6 @@ pub use display_map::{
     ChunkRenderer, ChunkRendererContext, DisplayPoint, FoldPlaceholder, HighlightKey,
     NavigationOverlayKey, SemanticTokenHighlight,
 };
-pub use edit_prediction::make_suggestion_styles;
-pub(crate) use edit_prediction::{
-    EditDisplayMode, EditPrediction, EditPredictionPreview, EditPredictionSettings,
-    EditPredictionState, MenuEditPredictionsPolicy, RegisteredEditPredictionDelegate,
-};
-#[cfg(test)]
-pub(crate) use edit_prediction::{
-    EditPredictionKeybindAction, EditPredictionKeybindSurface, edit_prediction_edit_text,
-};
-pub use edit_prediction_types::Direction;
-pub use edit_prediction_types::EditPredictionRequestTrigger;
 pub use editor_settings::{
     CompletionDetailAlignment, CompletionMenuItemKind, CurrentLineHighlight, DiffViewStyle,
     DocumentColorsRenderMode, EditorSettings, EditorSettingsScrollbarProxy, OpenResultsIn,
@@ -112,9 +98,8 @@ pub use git::{
     RestoreOnlyUnstagedDiffHunkDelegate, UncommittedDiffHunkDelegate, render_diff_hunk_controls,
     set_blame_renderer,
 };
-pub(crate) use git::{DiffHunkKey, StoredReviewComment};
-use git::{DiffReviewDragState, DiffReviewOverlay, InlineBlamePopover};
-pub(crate) use git::{DisplayDiffHunk, PhantomDiffReviewIndicator};
+use git::InlineBlamePopover;
+pub(crate) use git::DisplayDiffHunk;
 pub use hover_popover::hover_markdown_style;
 pub use inlays::Inlay;
 pub use items::MAX_TAB_TITLE_LEN;
@@ -147,12 +132,8 @@ use dap::TelemetrySpawnLocation;
 use display_map::*;
 use document_colors::LspColorData;
 use document_links::LspDocumentLinks;
-use edit_prediction_types::{
-    EditPredictionDelegate, EditPredictionDelegateHandle, EditPredictionDiscardReason,
-    EditPredictionGranularity, SuggestionDisplayType,
-};
 use editor_settings::{GoToDefinitionFallback, Minimap as MinimapSettings};
-use element::{LineWithInvisibles, PositionMap, layout_line};
+use element::{LineWithInvisibles, PositionMap};
 use futures::{
     FutureExt,
     future::{self, Shared},
@@ -160,15 +141,14 @@ use futures::{
 use fuzzy::{StringMatch, StringMatchCandidate};
 use git::blame::GlobalBlameRenderer;
 use gpui::{
-    Action, Animation, AnimationExt, AnyElement, App, AppContext, AsyncWindowContext,
-    AvailableSpace, Background, Bounds, ClickEvent, ClipboardEntry, ClipboardItem, Context,
-    DispatchPhase, Edges, Entity, EntityId, EntityInputHandler, EventEmitter, FocusHandle,
+    Action, AnyElement, App, AppContext, AsyncWindowContext, Background, Bounds, ClickEvent, ClipboardEntry, ClipboardItem, Context,
+    DispatchPhase, Entity, EntityId, EntityInputHandler, EventEmitter, FocusHandle,
     FocusOutEvent, Focusable, FontId, FontStyle, FontWeight, Global, HighlightStyle, Hsla, IsZero,
     KeyContext, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, PaintQuad, ParentElement,
-    Pixels, PressureStage, Render, ScrollHandle, SharedString, SharedUri, Size, Stateful, Styled,
+    Pixels, PressureStage, Render, ScrollHandle, SharedString, Size, Styled,
     Subscription, Task, TextRun, TextStyle, TextStyleRefinement, UTF16Selection, UnderlineStyle,
     UniformListScrollHandle, WeakEntity, WeakFocusHandle, Window, div, point, prelude::*,
-    pulsating_between, px, relative, size,
+    px, relative, size,
 };
 use hover_links::{HoverLink, HoveredLinkState, find_file};
 use hover_popover::{HoverState, hide_hover};
@@ -178,13 +158,13 @@ use itertools::{Either, Itertools};
 use language::{
     AutoindentMode, BlockCommentConfig, BracketMatch, BracketPair, Buffer, BufferRow,
     BufferSnapshot, Capability, CharClassifier, CharKind, CharScopeContext, CodeLabel, CursorShape,
-    DiagnosticEntryRef, DiffOptions, EditPredictionsMode, EditPreview, HighlightedText, IndentKind,
+    DiagnosticEntryRef, DiffOptions, HighlightedText, IndentKind,
     IndentSize, Language, LanguageAwareStyling, LanguageName, LanguageRegistry, LanguageScope,
     LocalFile, OffsetRangeExt, OutlineItem, Point, Selection, SelectionGoal, TextObject,
     TransactionId, TreeSitterOptions, WordsQuery,
     language_settings::{
         self, AllLanguageSettings, LanguageSettings, LspInsertMode, RewrapBehavior,
-        WordsCompletionMode, all_language_settings,
+        WordsCompletionMode,
     },
     point_from_lsp, point_to_lsp, text_diff_with_options,
 };
@@ -204,7 +184,7 @@ use parking_lot::Mutex;
 use persistence::EditorDb;
 use project::{
     BreakpointWithPosition, CodeAction, Completion, CompletionDisplayOptions, CompletionIntent,
-    CompletionResponse, CompletionSource, DisableAiSettings, DocumentHighlight, InlayHint, InlayId,
+    CompletionResponse, CompletionSource, DocumentHighlight, InlayHint,
     InvalidationStrategy, Location, LocationLink, LspAction, PrepareRenameResponse, Project,
     ProjectItem, ProjectPath, ProjectTransaction,
     bookmark_store::BookmarkStore,
@@ -243,7 +223,7 @@ use std::{
     iter::{self, Peekable},
     mem,
     num::NonZeroU32,
-    ops::{ControlFlow, Deref, DerefMut, Not, Range, RangeInclusive},
+    ops::{Deref, DerefMut, Not, Range, RangeInclusive},
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
@@ -256,7 +236,7 @@ use theme::{
 };
 use theme_settings::{ThemeSettings, observe_buffer_font_size_adjustment};
 use ui::{
-    Avatar, ContextMenu, Disclosure, IconButtonShape, Indicator, Key, KeyBinding, Tooltip,
+    ContextMenu, Disclosure, IconButtonShape, Indicator, KeyBinding, Tooltip,
     prelude::*, scrollbars::ScrollbarAutoHide, tooltip_container, utils::WithRemSize,
 };
 use ui_input::ErasedEditor;
@@ -282,7 +262,7 @@ use crate::{
         inlay_hints::{LspInlayHintData, inlay_hint_settings},
     },
     runnables::{ResolvedTasks, RunnableData, RunnableTaskStatus, RunnableTasks},
-    scroll::{ScrollOffset, ScrollPixelOffset},
+    scroll::ScrollOffset,
     selections_collection::resolve_selections_wrapping_blocks,
     semantic_tokens::SemanticTokenState,
     signature_help::{SignatureHelpHiddenBy, SignatureHelpState},
@@ -305,8 +285,13 @@ pub(crate) const FORMAT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const SCROLL_CENTER_TOP_BOTTOM_DEBOUNCE_TIMEOUT: Duration = Duration::from_secs(1);
 pub const LSP_REQUEST_DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(50);
 
-pub(crate) const EDIT_PREDICTION_KEY_CONTEXT: &str = "edit_prediction";
 pub(crate) const MINIMAP_FONT_SIZE: AbsoluteLength = AbsoluteLength::Pixels(px(2.));
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Prev,
+    Next,
+}
 
 enum ReportEditorEvent {
     Saved { auto_saved: bool },
@@ -528,7 +513,6 @@ pub struct EditorStyle {
     pub syntax: Arc<SyntaxTheme>,
     pub status: StatusColors,
     pub inlay_hints_style: HighlightStyle,
-    pub edit_prediction_styles: EditPredictionStyles,
     pub unnecessary_code_fade: f32,
     pub show_underlines: bool,
 }
@@ -549,10 +533,6 @@ impl Default for EditorStyle {
             // style and retrieve them directly from the theme.
             status: StatusColors::dark(),
             inlay_hints_style: HighlightStyle::default(),
-            edit_prediction_styles: EditPredictionStyles {
-                insertion: HighlightStyle::default(),
-                whitespace: HighlightStyle::default(),
-            },
             unnecessary_code_fade: Default::default(),
             show_underlines: true,
         }
@@ -1012,7 +992,6 @@ pub struct Editor {
     show_runnables: Option<bool>,
     show_bookmarks: Option<bool>,
     show_breakpoints: Option<bool>,
-    show_diff_review_button: bool,
     show_wrap_guides: Option<bool>,
     show_indent_guides: Option<bool>,
     buffers_with_disabled_indent_guides: HashSet<BufferId>,
@@ -1068,18 +1047,8 @@ pub struct Editor {
     prev_pressure_stage: Option<PressureStage>,
     gutter_hovered: bool,
     hovered_link_state: Option<HoveredLinkState>,
-    edit_prediction_provider: Option<RegisteredEditPredictionDelegate>,
     code_action_providers: Vec<Rc<dyn CodeActionProvider>>,
-    active_edit_prediction: Option<EditPredictionState>,
-    /// Used to prevent flickering as the user types while the menu is open
-    stale_edit_prediction_in_menu: Option<EditPredictionState>,
-    edit_prediction_settings: EditPredictionSettings,
-    edit_predictions_hidden_for_vim_mode: bool,
-    show_edit_predictions_override: Option<bool>,
     show_completions_on_input_override: Option<bool>,
-    menu_edit_predictions_policy: MenuEditPredictionsPolicy,
-    edit_prediction_preview: EditPredictionPreview,
-    in_leading_whitespace: bool,
     next_inlay_id: usize,
     next_color_inlay_id: usize,
     _subscriptions: Vec<Subscription>,
@@ -1135,17 +1104,6 @@ pub struct Editor {
     bookmarks_tab_subscription: Option<Subscription>,
     breakpoint_store: Option<Entity<BreakpointStore>>,
     gutter_hover_button: (Option<GutterHoverButton>, Option<Task<()>>),
-    pub(crate) gutter_diff_review_indicator: (Option<PhantomDiffReviewIndicator>, Option<Task<()>>),
-    pub(crate) diff_review_drag_state: Option<DiffReviewDragState>,
-    /// Active diff review overlays. Multiple overlays can be open simultaneously
-    /// when hunks have comments stored.
-    pub(crate) diff_review_overlays: Vec<DiffReviewOverlay>,
-    /// Stored review comments grouped by hunk.
-    /// Uses a Vec instead of HashMap because DiffHunkKey contains an Anchor
-    /// which doesn't implement Hash/Eq in a way suitable for HashMap keys.
-    stored_review_comments: Vec<(DiffHunkKey, Vec<StoredReviewComment>)>,
-    /// Counter for generating unique comment IDs.
-    next_review_comment_id: usize,
     hovered_diff_hunk_row: Option<DisplayRow>,
     pull_diagnostics_task: Task<()>,
     in_project_search: bool,
@@ -2350,7 +2308,6 @@ impl Editor {
             show_runnables: None,
             show_bookmarks: None,
             show_breakpoints: None,
-            show_diff_review_button: false,
             show_wrap_guides: None,
             show_indent_guides,
             buffers_with_disabled_indent_guides: HashSet::default(),
@@ -2408,12 +2365,6 @@ impl Editor {
             pending_mouse_down: None,
             prev_pressure_stage: None,
             hovered_link_state: None,
-            edit_prediction_provider: None,
-            active_edit_prediction: None,
-            stale_edit_prediction_in_menu: None,
-            edit_prediction_preview: EditPredictionPreview::Inactive {
-                released_too_fast: false,
-            },
             inline_diagnostics_enabled: full_mode,
             diagnostics_enabled: full_mode,
             word_completions_enabled: full_mode,
@@ -2431,12 +2382,7 @@ impl Editor {
             hovered_cursors: HashMap::default(),
             next_editor_action_id: EditorActionId::default(),
             editor_actions: Rc::default(),
-            edit_predictions_hidden_for_vim_mode: false,
-            show_edit_predictions_override: None,
             show_completions_on_input_override: None,
-            menu_edit_predictions_policy: MenuEditPredictionsPolicy::ByProvider,
-            edit_prediction_settings: EditPredictionSettings::Disabled,
-            in_leading_whitespace: false,
             custom_context_menu: None,
             show_git_blame_gutter: false,
             show_git_blame_inline: false,
@@ -2460,11 +2406,6 @@ impl Editor {
             bookmarks_tab_subscription: None,
             breakpoint_store,
             gutter_hover_button: (None, None),
-            gutter_diff_review_indicator: (None, None),
-            diff_review_drag_state: None,
-            diff_review_overlays: Vec::new(),
-            stored_review_comments: Vec::new(),
-            next_review_comment_id: 0,
             hovered_diff_hunk_row: None,
             _subscriptions: (!is_minimap)
                 .then(|| {
@@ -2705,15 +2646,6 @@ impl Editor {
     }
 
     pub fn key_context(&self, window: &mut Window, cx: &mut App) -> KeyContext {
-        self.key_context_internal(self.has_active_edit_prediction(), window, cx)
-    }
-
-    fn key_context_internal(
-        &self,
-        has_active_edit_prediction: bool,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> KeyContext {
         let mut key_context = KeyContext::new_with_defaults();
         key_context.add("Editor");
         let mode = match self.mode {
@@ -2786,20 +2718,6 @@ impl Editor {
             }
         } else {
             key_context.add("multibuffer");
-        }
-
-        if has_active_edit_prediction {
-            key_context.add(EDIT_PREDICTION_KEY_CONTEXT);
-            key_context.add("copilot_suggestion");
-        }
-
-        if self.in_leading_whitespace {
-            key_context.add("in_leading_whitespace");
-        }
-        if self.edit_prediction_requires_modifier() {
-            key_context.set("edit_prediction_mode", "subtle")
-        } else {
-            key_context.set("edit_prediction_mode", "eager");
         }
 
         if self.selection_mark_mode {
@@ -3470,7 +3388,7 @@ impl Editor {
         self.selection_mark_mode = false;
         self.selection_drag_state = SelectionDragState::None;
 
-        if self.dismiss_menus_and_popups(true, window, cx) {
+        if self.dismiss_menus_and_popups(window, cx) {
             cx.notify();
             return;
         }
@@ -3501,7 +3419,6 @@ impl Editor {
 
     pub fn dismiss_menus_and_popups(
         &mut self,
-        is_user_requested: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -3513,17 +3430,7 @@ impl Editor {
         dismissed |= self.hide_signature_help(cx, SignatureHelpHiddenBy::Escape);
         dismissed |= self.hide_context_menu(window, cx).is_some();
         dismissed |= self.mouse_context_menu.take().is_some();
-        dismissed |= is_user_requested
-            && self.discard_edit_prediction(EditPredictionDiscardReason::Rejected, cx);
         dismissed |= self.snippet_stack.pop().is_some();
-        if self.diff_review_drag_state.is_some() {
-            self.cancel_diff_review_drag(cx);
-            dismissed = true;
-        }
-        if !self.diff_review_overlays.is_empty() {
-            self.dismiss_all_diff_review_overlays(cx);
-            dismissed = true;
-        }
 
         if self.mode.is_full() && self.has_active_diagnostic_group() {
             self.dismiss_diagnostics(cx);
@@ -4056,20 +3963,6 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.update_edit_prediction_settings(cx);
-
-        // Ensure that the edit prediction preview is updated, even when not
-        // enabled, if there's an active edit prediction preview.
-        if self.show_edit_predictions_in_menu()
-            || self.edit_prediction_requires_modifier()
-            || matches!(
-                self.edit_prediction_preview,
-                EditPredictionPreview::Active { .. }
-            )
-        {
-            self.update_edit_prediction_preview(&modifiers, window, cx);
-        }
-
         self.update_selection_mode(&modifiers, position_map, window, cx);
 
         let mouse_position = window.mouse_position();
@@ -4796,9 +4689,7 @@ impl Editor {
     }
 
     pub fn context_menu_visible(&self) -> bool {
-        !self.edit_prediction_preview_is_active()
-            && self
-                .context_menu
+        self.context_menu
                 .borrow()
                 .as_ref()
                 .is_some_and(|menu| menu.visible())
@@ -4862,8 +4753,6 @@ impl Editor {
         cx.notify();
         self.completion_tasks.clear();
         let context_menu = self.context_menu.borrow_mut().take();
-        self.stale_edit_prediction_in_menu.take();
-        self.update_visible_edit_prediction(window, cx);
         if let Some(CodeContextMenu::Completions(_)) = &context_menu
             && let Some(completion_provider) = &self.completion_provider
         {
@@ -5180,13 +5069,6 @@ impl Editor {
             this.change_selections(Default::default(), window, cx, |s| s.select(selections));
             this.insert("", window, cx);
             linked_edits.apply_with_left_expansion(cx);
-            this.refresh_edit_prediction(
-                true,
-                false,
-                EditPredictionRequestTrigger::BufferEdit,
-                window,
-                cx,
-            );
             refresh_linked_ranges(this, window, cx);
         });
     }
@@ -5209,13 +5091,6 @@ impl Editor {
             let linked_edits = this.linked_edits_for_selections(Arc::from(""), cx);
             this.insert("", window, cx);
             linked_edits.apply(cx);
-            this.refresh_edit_prediction(
-                true,
-                false,
-                EditPredictionRequestTrigger::BufferEdit,
-                window,
-                cx,
-            );
             refresh_linked_ranges(this, window, cx);
         });
     }
@@ -5400,13 +5275,6 @@ impl Editor {
         self.transact(window, cx, |this, window, cx| {
             this.buffer.update(cx, |b, cx| b.edit(edits, None, cx));
             this.change_selections(Default::default(), window, cx, |s| s.select(selections));
-            this.refresh_edit_prediction(
-                true,
-                false,
-                EditPredictionRequestTrigger::BufferEdit,
-                window,
-                cx,
-            );
         });
     }
 
@@ -7849,13 +7717,6 @@ impl Editor {
             self.restore_selections(selections, window, cx);
             self.request_autoscroll(Autoscroll::fit(), cx);
             self.unmark_text(window, cx);
-            self.refresh_edit_prediction(
-                true,
-                false,
-                EditPredictionRequestTrigger::BufferEdit,
-                window,
-                cx,
-            );
             cx.emit(EditorEvent::Edited { transaction_id });
             cx.emit(EditorEvent::TransactionUndone { transaction_id });
         }
@@ -7874,13 +7735,6 @@ impl Editor {
             self.restore_selections(selections, window, cx);
             self.request_autoscroll(Autoscroll::fit(), cx);
             self.unmark_text(window, cx);
-            self.refresh_edit_prediction(
-                true,
-                false,
-                EditPredictionRequestTrigger::BufferEdit,
-                window,
-                cx,
-            );
             cx.emit(EditorEvent::Edited { transaction_id });
         }
     }
@@ -8142,9 +7996,6 @@ impl Editor {
                                                     font_weight: Some(FontWeight::BOLD),
                                                     ..make_inlay_hints_style(cx.app)
                                                 },
-                                                edit_prediction_styles: make_suggestion_styles(
-                                                    cx.app,
-                                                ),
                                                 ..EditorStyle::default()
                                             },
                                         ))
@@ -9007,7 +8858,7 @@ impl Editor {
         if self.read_only(cx) {
             return;
         }
-        self.transact(window, cx, |this, window, cx| {
+        self.transact(window, cx, |this, _, cx| {
             let edits = this
                 .selections
                 .all::<Point>(&this.display_snapshot(cx))
@@ -9021,13 +8872,6 @@ impl Editor {
                     (selection.range(), uuid.to_string())
                 });
             this.edit(edits, cx);
-            this.refresh_edit_prediction(
-                true,
-                false,
-                EditPredictionRequestTrigger::BufferEdit,
-                window,
-                cx,
-            );
         });
     }
 
@@ -9836,7 +9680,7 @@ impl Editor {
         match event {
             multi_buffer::Event::Edited {
                 edited_buffer,
-                source,
+                source: _,
             } => {
                 self.scrollbar_marker_state.dirty = true;
                 self.active_indent_guides_state.dirty = true;
@@ -9848,12 +9692,6 @@ impl Editor {
                 self.refresh_matching_bracket_highlights(&snapshot, cx);
                 self.refresh_outline_symbols_at_cursor(cx);
                 self.refresh_sticky_headers(&snapshot, cx);
-                if source.is_local() && self.has_active_edit_prediction() {
-                    self.update_visible_edit_prediction(window, cx);
-                }
-
-                // Clean up orphaned review comments after edits
-                self.cleanup_orphaned_review_comments(cx);
 
                 if let Some(buffer) = edited_buffer {
                     if buffer.read(cx).file().is_none() {
@@ -9968,7 +9806,6 @@ impl Editor {
                 }
                 jsx_tag_auto_close::refresh_enabled_in_any_buffer(self, multibuffer, cx);
                 cx.emit(EditorEvent::Reparsed(*buffer_id));
-                self.update_edit_prediction_settings(cx);
                 cx.notify();
             }
             multi_buffer::Event::DirtyChanged => cx.emit(EditorEvent::DirtyChanged),
@@ -10077,14 +9914,6 @@ impl Editor {
             self.set_max_diagnostics_severity(new_severity, cx);
         }
         self.refresh_runnables(None, window, cx);
-        self.update_edit_prediction_settings(cx);
-        self.refresh_edit_prediction(
-            true,
-            false,
-            EditPredictionRequestTrigger::SettingsChanged,
-            window,
-            cx,
-        );
         self.refresh_inline_values(cx);
 
         let old_cursor_shape = self.cursor_shape;
@@ -10547,15 +10376,6 @@ impl Editor {
             .map(|vim_mode| vim_mode.0)
             .unwrap_or(false);
 
-        let edit_predictions_provider = all_language_settings(file, cx).edit_predictions.provider;
-        let copilot_enabled = edit_predictions_provider
-            == language::language_settings::EditPredictionProvider::Copilot;
-        let copilot_enabled_for_language = self
-            .buffer
-            .read(cx)
-            .language_settings(cx)
-            .show_edit_predictions;
-
         let project = project.read(cx);
         let event_type = reported_event.event_type();
 
@@ -10565,9 +10385,6 @@ impl Editor {
                 type = if auto_saved {"autosave"} else {"manual"},
                 file_extension,
                 vim_mode,
-                copilot_enabled,
-                copilot_enabled_for_language,
-                edit_predictions_provider,
                 is_via_ssh = project.is_via_remote_server(),
             );
         } else {
@@ -10575,9 +10392,6 @@ impl Editor {
                 event_type,
                 file_extension,
                 vim_mode,
-                copilot_enabled,
-                copilot_enabled_for_language,
-                edit_predictions_provider,
                 is_via_ssh = project.is_via_remote_server(),
             );
         };
@@ -10772,7 +10586,6 @@ impl Editor {
         {
             self.hide_context_menu(window, cx);
         }
-        self.take_active_edit_prediction(true, cx);
         cx.emit(EditorEvent::Blurred);
         cx.notify();
     }
@@ -11206,7 +11019,6 @@ impl Editor {
             syntax: cx.theme().syntax().clone(),
             status: cx.theme().status().clone(),
             inlay_hints_style: make_inlay_hints_style(cx),
-            edit_prediction_styles: make_suggestion_styles(cx),
             unnecessary_code_fade: settings.unnecessary_code_fade,
             show_underlines: self.diagnostics_enabled(),
         }
@@ -11805,34 +11617,22 @@ impl EditorSnapshot {
         self.buffer_snapshot()
             .selections_in_range(range, false)
             .filter_map(move |(replica_id, line_mode, cursor_shape, selection)| {
-                if replica_id == ReplicaId::AGENT {
-                    Some(RemoteSelection {
-                        replica_id,
-                        selection,
-                        cursor_shape,
-                        line_mode,
-                        collaborator_id: CollaboratorId::Agent,
-                        user_name: Some("Agent".into()),
-                        color: cx.theme().players().agent(),
-                    })
-                } else {
-                    let collaborator = collaborators_by_replica_id.get(&replica_id)?;
-                    let participant_index = participant_indices.get(&collaborator.user_id).copied();
-                    let user_name = participant_names.get(&collaborator.user_id).cloned();
-                    Some(RemoteSelection {
-                        replica_id,
-                        selection,
-                        cursor_shape,
-                        line_mode,
-                        collaborator_id: CollaboratorId::PeerId(collaborator.peer_id),
-                        user_name,
-                        color: if let Some(index) = participant_index {
-                            cx.theme().players().color_for_participant(index.0)
-                        } else {
-                            cx.theme().players().absent()
-                        },
-                    })
-                }
+                let collaborator = collaborators_by_replica_id.get(&replica_id)?;
+                let participant_index = participant_indices.get(&collaborator.user_id).copied();
+                let user_name = participant_names.get(&collaborator.user_id).cloned();
+                Some(RemoteSelection {
+                    replica_id,
+                    selection,
+                    cursor_shape,
+                    line_mode,
+                    collaborator_id: CollaboratorId::PeerId(collaborator.peer_id),
+                    user_name,
+                    color: if let Some(index) = participant_index {
+                        cx.theme().players().color_for_participant(index.0)
+                    } else {
+                        cx.theme().players().absent()
+                    },
+                })
             })
     }
 
@@ -12081,11 +11881,6 @@ impl Deref for EditorSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorEvent {
-    /// Emitted when the stored review comments change (added, removed, or updated).
-    ReviewCommentsChanged {
-        /// The new total count of review comments.
-        total_count: usize,
-    },
     InputIgnored {
         text: Arc<str>,
     },

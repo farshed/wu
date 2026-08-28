@@ -6,14 +6,14 @@ fn test_find_binding_prefers_exact_match_over_parameterized() {
     let keymap: KeymapFile = serde_json::from_value(json!([
         {
             "bindings": {
-                "ctrl-tab": "agents_sidebar::ToggleThreadSwitcher",
-                "ctrl-shift-tab": ["agents_sidebar::ToggleThreadSwitcher", { "select_last": true }]
+                "ctrl-tab": "projects::OpenRecent",
+                "ctrl-shift-tab": ["projects::OpenRecent", { "create_new_window": true }]
             }
         }
     ]))
     .unwrap();
 
-    let binding = find_binding_in_keymap(&keymap, "agents_sidebar::ToggleThreadSwitcher");
+    let binding = find_binding_in_keymap(&keymap, "projects::OpenRecent");
     assert_eq!(binding.as_deref(), Some("ctrl-tab"));
 }
 
@@ -22,13 +22,13 @@ fn test_find_binding_falls_back_to_parameterized_match() {
     let keymap: KeymapFile = serde_json::from_value(json!([
         {
             "bindings": {
-                "ctrl-shift-tab": ["agents_sidebar::ToggleThreadSwitcher", { "select_last": true }]
+                "ctrl-shift-tab": ["projects::OpenRecent", { "create_new_window": true }]
             }
         }
     ]))
     .unwrap();
 
-    let binding = find_binding_in_keymap(&keymap, "agents_sidebar::ToggleThreadSwitcher");
+    let binding = find_binding_in_keymap(&keymap, "projects::OpenRecent");
     assert_eq!(binding.as_deref(), Some("ctrl-shift-tab"));
 }
 
@@ -37,14 +37,14 @@ fn test_find_binding_prefers_exact_match_regardless_of_order() {
     let keymap: KeymapFile = serde_json::from_value(json!([
         {
             "bindings": {
-                "ctrl-shift-tab": ["agents_sidebar::ToggleThreadSwitcher", { "select_last": true }],
-                "ctrl-tab": "agents_sidebar::ToggleThreadSwitcher"
+                "ctrl-shift-tab": ["projects::OpenRecent", { "create_new_window": true }],
+                "ctrl-tab": "projects::OpenRecent"
             }
         }
     ]))
     .unwrap();
 
-    let binding = find_binding_in_keymap(&keymap, "agents_sidebar::ToggleThreadSwitcher");
+    let binding = find_binding_in_keymap(&keymap, "projects::OpenRecent");
     assert_eq!(binding.as_deref(), Some("ctrl-tab"));
 }
 

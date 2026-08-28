@@ -5,7 +5,7 @@ use crate::{
     state::Mode,
 };
 use editor::{
-    Bias, DisplayPoint, EditPredictionRequestTrigger,
+    Bias, DisplayPoint,
     display_map::{DisplaySnapshot, ToDisplayPoint},
     movement::TextLayoutDetails,
 };
@@ -90,13 +90,6 @@ impl Vim {
                 if let Some(kind) = motion_kind {
                     vim.copy_selections_content(editor, kind, window, cx);
                     editor.delete_selections_with_linked_edits(window, cx);
-                    editor.refresh_edit_prediction(
-                        true,
-                        false,
-                        EditPredictionRequestTrigger::BufferEdit,
-                        window,
-                        cx,
-                    );
                 }
             });
         });
@@ -133,13 +126,6 @@ impl Vim {
                     };
                     vim.copy_selections_content(editor, kind, window, cx);
                     editor.delete_selections_with_linked_edits(window, cx);
-                    editor.refresh_edit_prediction(
-                        true,
-                        false,
-                        EditPredictionRequestTrigger::BufferEdit,
-                        window,
-                        cx,
-                    );
                 }
             });
         });

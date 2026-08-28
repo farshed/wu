@@ -706,7 +706,7 @@ Non-negative integer values representing milliseconds. Set this to `0` to disabl
 }
 ```
 
-See [Configuring the Prediction Debounce](../ai/edit-prediction.md#configuring-the-prediction-debounce) for more information.
+See Configuring the Prediction Debounce for more information.
 
 ## Edit Predictions Disabled in
 
@@ -5649,7 +5649,7 @@ Run the {#action theme_selector::Toggle} action in the command palette to see a 
 
 ## Agent
 
-Visit [AI Quick Start](../ai/quick-start.md) under the AI section to learn more about AI setup.
+Visit AI Quick Start under the AI section to learn more about AI setup.
 
 ## Collaboration Panel
 

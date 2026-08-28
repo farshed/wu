@@ -11,7 +11,7 @@ It's for teams that want modern AI tooling without security trade-offs, and for 
 
 ## What's included
 
-Every member gets access to all [hosted AI models](../account/zed-hosted-models.md) and [Edit Predictions](../ai/edit-prediction.md).
+Every member gets access to all [hosted AI models](../account/zed-hosted-models.md) and Edit Predictions.
 
 For the organization:
 
@@ -24,7 +24,7 @@ For the organization:
   can't override these settings individually.
 - **Private by default:** Zed doesn't store your prompts or train on them
   without explicit opt-in.
-  [Data sharing for AI improvement](../ai/ai-improvement.md) is opt-in: members
+  Data sharing for AI improvement is opt-in: members
   can choose to share but are never enrolled automatically. Administrators can
   [enforce this org-wide](./admin-controls.md#data-sharing), blocking members
   from opting in at all.

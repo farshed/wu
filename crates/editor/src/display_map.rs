@@ -170,7 +170,6 @@ pub enum HighlightKey {
     DebugStackFrameLine,
     DocumentHighlightRead,
     DocumentHighlightWrite,
-    EditPredictionHighlight,
     Editor,
     HighlightOnYank,
     HighlightsTreeView(usize),
@@ -1388,16 +1387,9 @@ pub(crate) struct Highlights<'a> {
     pub styles: HighlightStyles,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct EditPredictionStyles {
-    pub insertion: HighlightStyle,
-    pub whitespace: HighlightStyle,
-}
-
 #[derive(Default, Debug, Clone, Copy)]
 pub struct HighlightStyles {
     pub inlay_hint: Option<HighlightStyle>,
-    pub edit_prediction: Option<EditPredictionStyles>,
 }
 
 #[derive(Clone)]
@@ -1853,7 +1845,6 @@ impl DisplaySnapshot {
             language_aware,
             HighlightStyles {
                 inlay_hint: Some(editor_style.inlay_hints_style),
-                edit_prediction: Some(editor_style.edit_prediction_styles),
             },
         )
         .flat_map({
@@ -3213,7 +3204,7 @@ pub mod tests {
         map.update(cx, |map, cx| {
             map.splice_inlays(
                 &[],
-                vec![Inlay::edit_prediction(
+                vec![Inlay::mock_hint(
                     0,
                     buffer_snapshot.anchor_after(MultiBufferOffset(0)),
                     "\n",

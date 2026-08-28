@@ -167,13 +167,6 @@ pub struct OpenSettingsPage {
     pub target: Option<OpenSettingsAtTarget>,
 }
 
-/// `OpenSettingsAt` path of the agent skills page in the settings UI.
-pub const AGENT_SKILLS_SETTINGS_PATH: &str = "agent.skills";
-
-/// `OpenSettingsAt` path of the agent sandbox permissions page in the settings
-/// UI.
-pub const AGENT_SANDBOX_SETTINGS_PATH: &str = "agent.sandbox_permissions";
-
 #[derive(PartialEq, Clone, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OpenSettingsAtTarget {
@@ -569,128 +562,6 @@ pub mod settings_profile_selector {
     pub struct Toggle;
 }
 
-pub mod agent {
-    use gpui::{Action, SharedString, actions};
-    use schemars::JsonSchema;
-    use serde::Deserialize;
-
-    actions!(
-        agent,
-        [
-            /// Opens the agent settings UI.
-            #[action(deprecated_aliases = ["agent::OpenConfiguration"])]
-            OpenSettings,
-            /// Opens the agent onboarding modal.
-            OpenOnboardingModal,
-            /// Resets the agent onboarding state.
-            ResetOnboarding,
-            /// Starts a chat conversation with the agent.
-            Chat,
-            /// Toggles the language model selector dropdown.
-            #[action(deprecated_aliases = ["assistant::ToggleModelSelector", "assistant2::ToggleModelSelector"])]
-            ToggleModelSelector,
-            /// Triggers re-authentication on Gemini
-            ReauthenticateAgent,
-            /// Logs out of the current external agent
-            LogoutAgent,
-            /// Add the current selection as context for threads in the agent panel.
-            #[action(deprecated_aliases = ["assistant::QuoteSelection", "agent::QuoteSelection"])]
-            AddSelectionToThread,
-            /// Resets the agent panel zoom levels (agent UI and buffer font sizes).
-            ResetAgentZoom,
-            /// Pastes clipboard content without any formatting.
-            PasteRaw,
-        ]
-    );
-
-    /// Selects the agent used for new threads in the agent panel, without
-    /// opening the panel. The selected agent is launched the next time the
-    /// panel is opened.
-    #[derive(Clone, PartialEq, Deserialize, JsonSchema, Action)]
-    #[action(namespace = agent)]
-    #[serde(deny_unknown_fields)]
-    pub struct SelectAgent {
-        /// The id of the agent to select.
-        pub agent: String,
-    }
-
-    /// Opens a new agent thread with the provided branch diff for review.
-    #[derive(Clone, PartialEq, Deserialize, JsonSchema, Action)]
-    #[action(namespace = agent)]
-    #[serde(deny_unknown_fields)]
-    pub struct ReviewBranchDiff {
-        /// The full text of the diff to review.
-        pub diff_text: SharedString,
-        /// The base ref that the diff was computed against (e.g. "main").
-        pub base_ref: SharedString,
-    }
-
-    /// A single merge conflict region extracted from a file.
-    #[derive(Clone, Debug, PartialEq, Deserialize, JsonSchema)]
-    pub struct ConflictContent {
-        pub file_path: String,
-        pub conflict_text: String,
-        pub ours_branch_name: String,
-        pub theirs_branch_name: String,
-    }
-
-    /// Opens a new agent thread to resolve specific merge conflicts.
-    #[derive(Clone, PartialEq, Deserialize, JsonSchema, Action)]
-    #[action(namespace = agent)]
-    #[serde(deny_unknown_fields)]
-    pub struct ResolveConflictsWithAgent {
-        /// Individual conflicts with their full text.
-        pub conflicts: Vec<ConflictContent>,
-    }
-
-    /// Opens a new agent thread to resolve merge conflicts in the given file paths.
-    #[derive(Clone, PartialEq, Deserialize, JsonSchema, Action)]
-    #[action(namespace = agent)]
-    #[serde(deny_unknown_fields)]
-    pub struct ResolveConflictedFilesWithAgent {
-        /// File paths with unresolved conflicts (for project-wide resolution).
-        pub conflicted_file_paths: Vec<String>,
-    }
-}
-
-pub mod assistant {
-    use gpui::{Action, actions};
-    use schemars::JsonSchema;
-    use serde::Deserialize;
-
-    actions!(
-        agent,
-        [
-            /// Toggles the agent panel.
-            Toggle,
-            #[action(deprecated_aliases = ["assistant::ToggleFocus"])]
-            ToggleFocus,
-            FocusAgent,
-            /// Opens the skill creator window for creating a new skill.
-            OpenSkillCreator,
-            /// Opens the skill creator window to import a skill from a GitHub URL.
-            CreateSkillFromUrl,
-            /// Opens the user-global AGENTS.md rules file.
-            #[action(name = "OpenGlobalAGENTS.mdRules")]
-            OpenGlobalAgentsMdRules,
-            /// Opens the project AGENTS.md rules file.
-            #[action(name = "OpenProjectAGENTS.mdRules")]
-            OpenProjectAgentsMdRules,
-            /// Opens the skills manager in the settings window.
-            #[action(deprecated_aliases = ["agent::OpenRulesLibrary", "assistant::OpenRulesLibrary", "assistant::DeployPromptLibrary"])]
-            ManageSkills,
-        ]
-    );
-
-    /// Deploys the assistant interface with the specified configuration.
-    #[derive(Clone, Default, Deserialize, PartialEq, JsonSchema, Action)]
-    #[action(namespace = assistant)]
-    #[serde(deny_unknown_fields)]
-    pub struct InlineAssist {
-        pub prompt: Option<String>,
-    }
-}
-
 /// Opens the recent projects interface.
 #[derive(PartialEq, Clone, Deserialize, Default, JsonSchema, Action)]
 #[action(namespace = projects)]
@@ -918,29 +789,6 @@ pub mod preview {
             ]
         );
     }
-}
-
-pub mod agents_sidebar {
-    use gpui::{Action, actions};
-    use schemars::JsonSchema;
-    use serde::Deserialize;
-
-    /// Toggles the thread switcher popup when the sidebar is focused.
-    #[derive(PartialEq, Clone, Deserialize, JsonSchema, Default, Action)]
-    #[action(namespace = agents_sidebar)]
-    #[serde(deny_unknown_fields)]
-    pub struct ToggleThreadSwitcher {
-        #[serde(default)]
-        pub select_last: bool,
-    }
-
-    actions!(
-        agents_sidebar,
-        [
-            /// Moves focus to the sidebar's search/filter editor.
-            FocusSidebarFilter,
-        ]
-    );
 }
 
 pub mod notebook {

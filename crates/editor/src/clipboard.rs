@@ -74,7 +74,6 @@ impl Editor {
         let clipboard_text = Cow::Borrowed(text.as_str());
 
         self.transact(window, cx, |this, window, cx| {
-            let had_active_edit_prediction = this.has_active_edit_prediction();
             let display_map = this.display_snapshot(cx);
             let old_selections = this.selections.all::<MultiBufferOffset>(&display_map);
             let cursor_offset = this
@@ -238,14 +237,7 @@ impl Editor {
                 });
             }
 
-            //   🤔                 |    ..     | show_in_menu |
-            // | ..                  |   true        true
-            // | had_edit_prediction |   false       true
-
-            let trigger_in_words =
-                this.show_edit_predictions_in_menu() || !had_active_edit_prediction;
-
-            this.trigger_completion_on_input(text, trigger_in_words, window, cx);
+            this.trigger_completion_on_input(text, true, window, cx);
         });
     }
 

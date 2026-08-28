@@ -89,6 +89,6 @@ This adds the folder as an additional root in your current project's file tree, 
 
 ## See Also
 
-- [Threads Sidebar](./ai/parallel-agents.md#threads-sidebar): Managing threads across projects
+- Threads Sidebar: Managing threads across projects
 - [Getting Started](./getting-started.md): Essential commands and setup
 - [VS Code Migration](./migrate/vs-code.md): How Zed's project model differs from VS Code

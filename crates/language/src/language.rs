@@ -29,10 +29,7 @@ pub mod buffer_tests;
 #[cfg(test)]
 mod proto_diagnostics_tests;
 
-pub use crate::language_settings::{
-    AutoIndentMode, EditPredictionPromptFormat, EditPredictionsMode, IndentGuideSettings,
-    ZetaVersion,
-};
+pub use crate::language_settings::{AutoIndentMode, IndentGuideSettings};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use collections::{HashMap, HashSet};

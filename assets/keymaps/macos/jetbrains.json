@@ -81,7 +81,6 @@
       "ctrl-space": "editor::ShowCompletions",
       "cmd-j": "editor::Hover",
       "cmd-p": "editor::ShowSignatureHelp",
-      "cmd-\\": "assistant::InlineAssist",
       "ctrl-alt-h": "call_hierarchy::ShowIncomingCalls",
     },
   },
@@ -96,12 +95,6 @@
     "context": "BufferSearchBar",
     "bindings": {
       "shift-enter": "search::SelectPreviousMatch",
-    },
-  },
-  {
-    "context": "AcpThreadSearchBar > Editor",
-    "bindings": {
-      "shift-enter": "agent::SelectPreviousThreadMatch",
     },
   },
   {
@@ -199,24 +192,6 @@
   { "context": "DebugPanel", "bindings": { "cmd-5": "workspace::CloseActiveDock" } },
   { "context": "Diagnostics > Editor", "bindings": { "cmd-6": "pane::CloseActiveItem" } },
   { "context": "OutlinePanel", "bindings": { "cmd-7": "workspace::CloseActiveDock" } },
-  {
-    // `cmd-alt-l` is bound to `editor::Format` (jetbrains "Reformat Code") in
-    // the Editor context above, which collides with the default
-    // `agent::OpenRulesLibrary` binding. Mirror the windows keymap and use
-    // `shift-alt-l` instead so the menu hint and the action stay in sync.
-    "context": "AgentPanel",
-    "bindings": {
-      "cmd-alt-l": null,
-      "shift-alt-l": "agent::OpenRulesLibrary",
-    },
-  },
-  {
-    "context": "Dock || Workspace || OutlinePanel || ProjectPanel || CollabPanel",
-    "bindings": {
-      "escape": "editor::ToggleFocus",
-      "shift-escape": "workspace::CloseActiveDock",
-    },
-  },
   {
     "context": "Editor && mode == auto_height",
     "bindings": {

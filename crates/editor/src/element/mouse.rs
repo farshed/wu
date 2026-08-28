@@ -2,7 +2,6 @@ use std::ops::Range;
 use std::time::{Duration, Instant};
 
 use collections::HashMap;
-use feature_flags::{DiffReviewFeatureFlag, FeatureFlagAppExt as _};
 use gpui::{
     AnyElement, App, AvailableSpace, ClickEvent, Context, DispatchPhase, Element, MouseButton,
     MouseClickEvent, MouseDownEvent, MouseMoveEvent, MousePressureEvent, MouseUpEvent,
@@ -10,7 +9,6 @@ use gpui::{
     deferred, point, px,
 };
 use multi_buffer::MultiBufferRow;
-use project::DisableAiSettings;
 use settings::Settings;
 use sum_tree::Bias;
 use text::SelectionGoal;
@@ -20,7 +18,7 @@ use super::{EditorElement, EditorLayout, LineNumberLayout, PositionMap, SplitSid
 use crate::{
     CURSORS_VISIBLE_FOR, ColumnarMode, DisplayDiffHunk, DisplayPoint, DisplayRow, Editor,
     EditorSettings, EditorSnapshot, GutterHoverButton, HoveredCursor, JumpData,
-    PhantomDiffReviewIndicator, SelectPhase, Selection, SelectionDragState,
+    SelectPhase, Selection, SelectionDragState,
     display_map::ToDisplayPoint, editor_settings::DoubleClickInMultibuffer,
     hover_popover::hover_at, mouse_context_menu, scroll::ScrollPixelOffset,
 };
@@ -43,11 +41,6 @@ impl EditorElement {
 
         let point_for_position = position_map.point_for_position(event.position);
         let valid_point = point_for_position.nearest_valid;
-
-        // Update diff review drag state if we're dragging
-        if editor.diff_review_drag_state.is_some() {
-            editor.update_diff_review_drag(valid_point.row(), window, cx);
-        }
 
         let hovered_diff_control = position_map
             .diff_hunk_control_bounds
@@ -111,72 +104,7 @@ impl EditorElement {
             }
         }
 
-        // Handle diff review indicator when gutter is hovered in diff mode with AI enabled
-        let show_diff_review = editor.show_diff_review_button()
-            && cx.has_flag::<DiffReviewFeatureFlag>()
-            && !DisableAiSettings::is_ai_disabled_for_buffer(
-                editor.buffer.read(cx).as_singleton().as_ref(),
-                cx,
-            );
-
-        let diff_review_indicator = if gutter_hovered && show_diff_review {
-            let is_visible = editor
-                .gutter_diff_review_indicator
-                .0
-                .is_some_and(|indicator| indicator.is_active);
-
-            if !is_visible {
-                editor
-                    .gutter_diff_review_indicator
-                    .1
-                    .get_or_insert_with(|| {
-                        cx.spawn(async move |this, cx| {
-                            cx.background_executor()
-                                .timer(Duration::from_millis(200))
-                                .await;
-
-                            this.update(cx, |this, cx| {
-                                if let Some(indicator) =
-                                    this.gutter_diff_review_indicator.0.as_mut()
-                                {
-                                    indicator.is_active = true;
-                                    cx.notify();
-                                }
-                            })
-                            .ok();
-                        })
-                    });
-            }
-
-            let anchor = position_map
-                .snapshot
-                .display_point_to_anchor(valid_point, Bias::Left);
-            Some(PhantomDiffReviewIndicator {
-                start: anchor,
-                end: anchor,
-                is_active: is_visible,
-            })
-        } else {
-            editor.gutter_diff_review_indicator.1 = None;
-            None
-        };
-
-        if diff_review_indicator != editor.gutter_diff_review_indicator.0 {
-            editor.gutter_diff_review_indicator.0 = diff_review_indicator;
-            cx.notify();
-        }
-
-        // Don't show breakpoint indicator when diff review indicator is active on this row
-        let is_on_diff_review_button_row = diff_review_indicator.is_some_and(|indicator| {
-            let start_row = indicator
-                .start
-                .to_display_point(&position_map.snapshot.display_snapshot)
-                .row();
-            indicator.is_active && start_row == valid_point.row()
-        });
-
         let gutter_hover_button = if gutter_hovered
-            && !is_on_diff_review_button_row
             && split_side != Some(SplitSide::Left)
         {
             let buffer_anchor = position_map
@@ -825,13 +753,6 @@ impl EditorElement {
         window: &mut Window,
         cx: &mut Context<Editor>,
     ) {
-        // Handle diff review drag completion
-        if editor.diff_review_drag_state.is_some() {
-            editor.end_diff_review_drag(window, cx);
-            cx.stop_propagation();
-            return;
-        }
-
         let text_hitbox = &position_map.text_hitbox;
         let end_selection = editor.has_pending_selection();
         let pending_nonempty_selections = editor.has_pending_nonempty_selection();

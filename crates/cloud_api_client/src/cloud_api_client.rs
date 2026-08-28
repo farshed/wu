@@ -1,4 +1,3 @@
-mod llm_token;
 mod websocket;
 
 use std::sync::Arc;
@@ -14,7 +13,6 @@ use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-pub use llm_token::LlmApiToken;
 
 struct Credentials {
     user_id: u32,
@@ -123,30 +121,6 @@ impl CloudApiClient {
 
         self.send_authenticated_json_request(request_builder, AsyncBody::default())
             .await
-    }
-
-    async fn create_llm_token(
-        &self,
-        system_id: Option<String>,
-        organization_id: OrganizationId,
-    ) -> Result<CreateLlmTokenResponse, ClientApiError> {
-        let request_builder = Request::builder()
-            .method(Method::POST)
-            .uri(
-                self.http_client
-                    .build_zed_cloud_url("/client/llm_tokens")
-                    .map_err(ClientApiError::RequestBuildFailed)?
-                    .as_ref(),
-            )
-            .when_some(system_id, |builder, system_id| {
-                builder.header(ZED_SYSTEM_ID_HEADER_NAME, system_id)
-            });
-
-        self.send_authenticated_json_request(
-            request_builder,
-            Json(CreateLlmTokenBody { organization_id }),
-        )
-        .await
     }
 
     pub async fn update_system_settings(
@@ -267,48 +241,6 @@ impl CloudApiClient {
                 ))
             }
         }
-    }
-
-    pub async fn submit_agent_feedback(&self, body: SubmitAgentThreadFeedbackBody) -> Result<()> {
-        let request = Request::builder().method(Method::POST).uri(
-            self.http_client
-                .build_zed_cloud_url("/client/feedback/agent_thread")?
-                .as_ref(),
-        );
-
-        self.send_authenticated_request(request, AsyncBody::from(serde_json::to_string(&body)?))
-            .await?;
-        Ok(())
-    }
-
-    pub async fn submit_agent_feedback_comments(
-        &self,
-        body: SubmitAgentThreadFeedbackCommentsBody,
-    ) -> Result<()> {
-        let request = Request::builder().method(Method::POST).uri(
-            self.http_client
-                .build_zed_cloud_url("/client/feedback/agent_thread_comments")?
-                .as_ref(),
-        );
-
-        self.send_authenticated_request(request, AsyncBody::from(serde_json::to_string(&body)?))
-            .await?;
-        Ok(())
-    }
-
-    pub async fn submit_edit_prediction_feedback(
-        &self,
-        body: SubmitEditPredictionFeedbackBody,
-    ) -> Result<()> {
-        let request = Request::builder().method(Method::POST).uri(
-            self.http_client
-                .build_zed_cloud_url("/client/feedback/edit_prediction")?
-                .as_ref(),
-        );
-
-        self.send_authenticated_request(request, AsyncBody::from(serde_json::to_string(&body)?))
-            .await?;
-        Ok(())
     }
 }
 

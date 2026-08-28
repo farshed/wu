@@ -3,28 +3,14 @@ use ui::{Divider, DividerColor, prelude::*};
 
 #[derive(IntoElement)]
 pub struct SettingsSectionHeader {
-    icon: Option<IconName>,
     label: SharedString,
-    no_padding: bool,
 }
 
 impl SettingsSectionHeader {
     pub fn new(label: impl Into<SharedString>) -> Self {
         Self {
             label: label.into(),
-            icon: None,
-            no_padding: false,
         }
-    }
-
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
-        self
-    }
-
-    pub fn no_padding(mut self, no_padding: bool) -> Self {
-        self.no_padding = no_padding;
-        self
     }
 }
 
@@ -42,20 +28,9 @@ impl RenderOnce for SettingsSectionHeader {
             .aria_level(2)
             .aria_label(label_text)
             .w_full()
-            .when(!self.no_padding, |this| this.px_8())
+            .px_8()
             .gap_1p5()
-            .map(|this| {
-                if let Some(icon) = self.icon {
-                    this.child(
-                        h_flex()
-                            .gap_1p5()
-                            .child(Icon::new(icon).color(Color::Muted))
-                            .child(label),
-                    )
-                } else {
-                    this.child(label)
-                }
-            })
+            .child(label)
             .child(Divider::horizontal().color(DividerColor::BorderFaded))
     }
 }

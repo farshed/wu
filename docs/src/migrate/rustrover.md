@@ -469,6 +469,6 @@ Now that you're set up, here are some resources to help you get the most out of 
 - [All Settings](../reference/all-settings.md) — Customize settings, themes, and editor behavior
 - [Key Bindings](../key-bindings.md) — Learn how to customize and extend your keymap
 - [Tasks](../tasks.md) — Set up build and run commands for your projects
-- [AI Features](../ai/overview.md) — Explore Zed's AI capabilities beyond code completion
-- [Collaboration](../collaboration/overview.md) — Share your projects and code together in real time
+- AI Features — Explore Zed's AI capabilities beyond code completion
+- Collaboration — Share your projects and code together in real time
 - [Rust in Zed](../languages/rust.md) — Rust-specific setup and configuration

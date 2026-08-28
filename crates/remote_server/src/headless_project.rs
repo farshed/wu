@@ -14,11 +14,9 @@ use http_client::HttpClient;
 use language::{Buffer, BufferEvent, LanguageRegistry, proto::serialize_operation};
 use node_runtime::NodeRuntime;
 use project::{
-    AgentRegistryStore, LspStore, LspStoreEvent, ManifestTree, PrettierStore, ProjectEnvironment,
+    LspStore, LspStoreEvent, ManifestTree, PrettierStore, ProjectEnvironment,
     ProjectPath, ToolchainStore, WorktreeId,
-    agent_server_store::AgentServerStore,
     buffer_store::{BufferStore, BufferStoreEvent},
-    context_server_store::ContextServerStore,
     debugger::{breakpoint_store::BreakpointStore, dap_store::DapStore},
     git_store::GitStore,
     image_store::ImageId,
@@ -58,8 +56,6 @@ pub struct HeadlessProject {
     pub task_store: Entity<TaskStore>,
     pub dap_store: Entity<DapStore>,
     pub breakpoint_store: Entity<BreakpointStore>,
-    pub agent_server_store: Entity<AgentServerStore>,
-    pub context_server_store: Entity<ContextServerStore>,
     pub settings_observer: Entity<SettingsObserver>,
     pub next_entry_id: Arc<AtomicUsize>,
     pub languages: Arc<LanguageRegistry>,
@@ -231,27 +227,6 @@ impl HeadlessProject {
             lsp_store
         });
 
-        AgentRegistryStore::init_global(cx, fs.clone(), http_client.clone());
-
-        let agent_server_store = cx.new(|cx| {
-            let mut agent_server_store = AgentServerStore::local(
-                node_runtime.clone(),
-                fs.clone(),
-                environment.clone(),
-                http_client.clone(),
-                cx,
-            );
-            agent_server_store.shared(REMOTE_SERVER_PROJECT_ID, session.clone(), cx);
-            agent_server_store
-        });
-
-        let context_server_store = cx.new(|cx| {
-            let mut context_server_store =
-                ContextServerStore::local(worktree_store.clone(), None, true, cx);
-            context_server_store.shared(REMOTE_SERVER_PROJECT_ID, session.clone());
-            context_server_store
-        });
-
         cx.subscribe(&lsp_store, Self::on_lsp_store_event).detach();
         language_extension::init(
             language_extension::LspAccess::ViaLspStore(lsp_store.downgrade()),
@@ -286,8 +261,6 @@ impl HeadlessProject {
         session.subscribe_to_entity(REMOTE_SERVER_PROJECT_ID, &breakpoint_store);
         session.subscribe_to_entity(REMOTE_SERVER_PROJECT_ID, &settings_observer);
         session.subscribe_to_entity(REMOTE_SERVER_PROJECT_ID, &git_store);
-        session.subscribe_to_entity(REMOTE_SERVER_PROJECT_ID, &agent_server_store);
-        session.subscribe_to_entity(REMOTE_SERVER_PROJECT_ID, &context_server_store);
 
         session.add_request_handler(cx.weak_entity(), Self::handle_list_remote_directory);
         session.add_request_handler(cx.weak_entity(), Self::handle_get_path_metadata);
@@ -336,8 +309,6 @@ impl HeadlessProject {
         // todo(debugger): Re init breakpoint store when we set it up for collab
         BreakpointStore::init(&session);
         GitStore::init(&session);
-        AgentServerStore::init_headless(&session);
-        ContextServerStore::init_headless(&session);
 
         HeadlessProject {
             next_entry_id: Default::default(),
@@ -350,8 +321,6 @@ impl HeadlessProject {
             task_store,
             dap_store,
             breakpoint_store,
-            agent_server_store,
-            context_server_store,
             languages,
             extensions,
             git_store,

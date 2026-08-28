@@ -8,11 +8,9 @@ use crate::{
 };
 use gpui::prelude::FluentBuilder;
 use gpui::{Context, DismissEvent, Entity, Focusable as _, Pixels, Point, Subscription, Window};
-use project::DisableAiSettings;
 use std::ops::Range;
 use text::PointUtf16;
 use workspace::OpenInTerminal;
-use zed_actions::agent::AddSelectionToThread;
 use zed_actions::preview::{
     markdown::OpenPreview as OpenMarkdownPreview, svg::OpenPreview as OpenSvgPreview,
 };
@@ -220,10 +218,6 @@ pub fn deploy_context_menu(
         let evaluate_selection = window.is_action_available(&EvaluateSelectedText, cx);
         let run_to_cursor = window.is_action_available(&RunToCursor, cx);
         let format_selections = window.is_action_available(&FormatSelections, cx);
-        let disable_ai = DisableAiSettings::is_ai_disabled_for_buffer(
-            editor.buffer.read(cx).as_singleton().as_ref(),
-            cx,
-        );
 
         let is_markdown = editor
             .buffer()
@@ -291,9 +285,6 @@ pub fn deploy_context_menu(
                         quick_launch: false,
                     }),
                 )
-                .when(!disable_ai && has_selections, |this| {
-                    this.action("Add to Agent Thread", Box::new(AddSelectionToThread))
-                })
                 .separator()
                 .action("Cut", Box::new(Cut))
                 .action("Copy", Box::new(Copy))

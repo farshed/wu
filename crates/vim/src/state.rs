@@ -84,10 +84,6 @@ impl Mode {
     pub fn has_selection(&self) -> bool {
         self.is_visual() || matches!(self, Self::HelixNormal)
     }
-
-    pub fn is_normal(&self) -> bool {
-        matches!(self, Self::Normal | Self::HelixNormal)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

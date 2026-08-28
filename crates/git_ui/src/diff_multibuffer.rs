@@ -52,7 +52,6 @@ pub struct DiffMultibuffer {
     workspace: WeakEntity<Workspace>,
     focus_handle: FocusHandle,
     pending_scroll: Option<PathKey>,
-    review_comment_count: usize,
     empty_label: SharedString,
     _task: Task<Result<()>>,
     _subscription: Subscription,
@@ -85,21 +84,9 @@ impl DiffMultibuffer {
                 cx,
             );
             configure_editor(&mut diff_display_editor, cx);
-            diff_display_editor.rhs_editor().update(cx, |editor, cx| {
-                editor.set_show_diff_review_button(true, cx);
-            });
             diff_display_editor
         });
         let editor_subscription = cx.subscribe_in(&editor, window, Self::handle_editor_event);
-
-        let primary_editor = editor.read(cx).rhs_editor().clone();
-        let review_comment_subscription =
-            cx.subscribe(&primary_editor, |this, _editor, event: &EditorEvent, cx| {
-                if let EditorEvent::ReviewCommentsChanged { total_count } = event {
-                    this.review_comment_count = *total_count;
-                    cx.notify();
-                }
-            });
 
         let branch_diff_subscription = cx.subscribe_in(
             &branch_diff,
@@ -164,13 +151,9 @@ impl DiffMultibuffer {
             multibuffer,
             buffer_subscriptions: Default::default(),
             pending_scroll: None,
-            review_comment_count: 0,
             empty_label: empty_label.into(),
             _task: task,
-            _subscription: Subscription::join(
-                branch_diff_subscription,
-                Subscription::join(editor_subscription, review_comment_subscription),
-            ),
+            _subscription: Subscription::join(branch_diff_subscription, editor_subscription),
         }
     }
 
@@ -287,11 +270,6 @@ impl DiffMultibuffer {
 
     pub(crate) fn calculate_changed_lines(&self, cx: &App) -> (u32, u32) {
         self.multibuffer.read(cx).snapshot(cx).total_changed_lines()
-    }
-
-    /// Returns the total count of review comments across all hunks/files.
-    pub(crate) fn total_review_comment_count(&self) -> usize {
-        self.review_comment_count
     }
 
     /// Returns a reference to the splittable editor.

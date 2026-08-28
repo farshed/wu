@@ -31,11 +31,8 @@ mod workspace_settings;
 
 pub use dock::Panel;
 pub use multi_workspace::{
-    CloseWorkspaceSidebar, DraggedSidebar, FocusWorkspaceSidebar, MoveProjectDown,
-    MoveProjectToNewWindow, MoveProjectUp, MultiWorkspace, MultiWorkspaceEvent, NewThread,
-    NextProject, NextThread, PreviousProject, PreviousThread, ProjectGroup, ProjectGroupKey,
-    RemovalIntent, SerializedProjectGroupState, Sidebar, SidebarEvent, SidebarHandle,
-    SidebarRenderState, SidebarSide, ToggleWorkspaceSidebar, sidebar_side_context_menu,
+    MultiWorkspace, MultiWorkspaceEvent, ProjectGroup, ProjectGroupKey, RemovalIntent,
+    SerializedProjectGroupState,
 };
 pub use path_list::{PathList, SerializedPathList};
 pub use remote::{
@@ -74,7 +71,7 @@ pub use item::{
     ProjectItem, SerializableItem, SerializableItemHandle, WeakItemHandle,
 };
 use itertools::Itertools;
-use language::{Buffer, LanguageRegistry, Rope, language_settings::all_language_settings};
+use language::{Buffer, LanguageRegistry, Rope};
 pub use modal_layer::*;
 use node_runtime::NodeRuntime;
 use notifications::{
@@ -113,7 +110,6 @@ use serde::Deserialize;
 use session::AppSession;
 use settings::{
     CenteredPaddingSettings, DefaultOpenBehavior, Settings, SettingsLocation, SettingsStore,
-    update_settings_file,
 };
 
 use sqlez::{
@@ -333,8 +329,6 @@ actions!(
         ToggleBottomDock,
         /// Toggles centered layout mode.
         ToggleCenteredLayout,
-        /// Toggles edit prediction feature globally for all files.
-        ToggleEditPrediction,
         /// Toggles the left dock.
         ToggleLeftDock,
         /// Toggles the right dock.
@@ -898,9 +892,6 @@ pub fn init(app_state: Arc<AppState>, cx: &mut App) {
         });
 }
 
-type BuildProjectItemFn =
-    fn(AnyEntity, Entity<Project>, Option<&Pane>, &mut Window, &mut App) -> Box<dyn ItemHandle>;
-
 type BuildProjectItemForPathFn =
     fn(
         &Entity<Project>,
@@ -911,20 +902,11 @@ type BuildProjectItemForPathFn =
 
 #[derive(Clone, Default)]
 struct ProjectItemRegistry {
-    build_project_item_fns_by_type: TypeIdHashMap<BuildProjectItemFn>,
     build_project_item_for_path_fns: Vec<BuildProjectItemForPathFn>,
 }
 
 impl ProjectItemRegistry {
     fn register<T: ProjectItem>(&mut self) {
-        self.build_project_item_fns_by_type.insert(
-            TypeId::of::<T::Item>(),
-            |item, project, pane, window, cx| {
-                let item = item.downcast().unwrap();
-                Box::new(cx.new(|cx| T::for_project_item(project, pane, item, window, cx)))
-                    as Box<dyn ItemHandle>
-            },
-        );
         self.build_project_item_for_path_fns
             .push(|project, project_path, window, cx| {
                 let project_path = project_path.clone();
@@ -1011,19 +993,6 @@ impl ProjectItemRegistry {
         open_project_item
     }
 
-    fn build_item<T: project::ProjectItem>(
-        &self,
-        item: Entity<T>,
-        project: Entity<Project>,
-        pane: Option<&Pane>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Option<Box<dyn ItemHandle>> {
-        let build = self
-            .build_project_item_fns_by_type
-            .get(&TypeId::of::<T>())?;
-        Some(build(item.into_any(), project, pane, window, cx))
-    }
 }
 
 type WorkspaceItemBuilder =
@@ -1233,7 +1202,6 @@ pub struct WorkspaceStore {
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub enum CollaboratorId {
     PeerId(PeerId),
-    Agent,
 }
 
 impl From<PeerId> for CollaboratorId {
@@ -1501,7 +1469,6 @@ pub struct Workspace {
     open_in_dev_container: bool,
     _dev_container_task: Option<Task<Result<()>>>,
     _panels_task: Option<Task<Result<()>>>,
-    sidebar_focus_handle: Option<FocusHandle>,
     multi_workspace: Option<WeakEntity<MultiWorkspace>>,
     /// Shared with the parent `MultiWorkspace` and any sibling workspaces: holds
     /// the id of the single workspace currently presented in this OS window.
@@ -1712,10 +1679,6 @@ impl Workspace {
                             })
                         },
                     );
-                }
-
-                project::Event::AgentLocationChanged => {
-                    this.handle_agent_location_changed(window, cx)
                 }
 
                 _ => {}
@@ -1973,7 +1936,6 @@ impl Workspace {
             scheduled_tasks: Vec::new(),
             last_open_dock_positions: Vec::new(),
             removing: false,
-            sidebar_focus_handle: None,
             multi_workspace,
             active_workspace_id: None,
             active_worktree_creation: ActiveWorktreeCreation::default(),
@@ -2702,10 +2664,6 @@ impl Workspace {
 
     pub fn status_bar(&self) -> &Entity<StatusBar> {
         &self.status_bar
-    }
-
-    pub fn set_sidebar_focus_handle(&mut self, handle: Option<FocusHandle>) {
-        self.sidebar_focus_handle = handle;
     }
 
     pub fn status_bar_visible(&self, cx: &App) -> bool {
@@ -5402,35 +5360,26 @@ impl Workspace {
     ) {
         use ActivateInDirectionTarget as Target;
         enum Origin {
-            Sidebar,
             LeftDock,
             RightDock,
             BottomDock,
             Center,
         }
 
-        let origin: Origin = if self
-            .sidebar_focus_handle
-            .as_ref()
-            .is_some_and(|h| h.contains_focused(window, cx))
-        {
-            Origin::Sidebar
-        } else {
-            [
-                (&self.left_dock, Origin::LeftDock),
-                (&self.right_dock, Origin::RightDock),
-                (&self.bottom_dock, Origin::BottomDock),
-            ]
-            .into_iter()
-            .find_map(|(dock, origin)| {
-                if dock.focus_handle(cx).contains_focused(window, cx) && dock.read(cx).is_open() {
-                    Some(origin)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(Origin::Center)
-        };
+        let origin: Origin = [
+            (&self.left_dock, Origin::LeftDock),
+            (&self.right_dock, Origin::RightDock),
+            (&self.bottom_dock, Origin::BottomDock),
+        ]
+        .into_iter()
+        .find_map(|(dock, origin)| {
+            if dock.focus_handle(cx).contains_focused(window, cx) && dock.read(cx).is_open() {
+                Some(origin)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(Origin::Center);
 
         let get_last_active_pane = || {
             let pane = self
@@ -5449,39 +5398,7 @@ impl Workspace {
         let try_dock =
             |dock: &Entity<Dock>| dock.read(cx).is_open().then(|| Target::Dock(dock.clone()));
 
-        let sidebar_target = self
-            .sidebar_focus_handle
-            .as_ref()
-            .map(|h| Target::Sidebar(h.clone()));
-
-        let sidebar_on_right = self
-            .multi_workspace
-            .as_ref()
-            .and_then(|mw| mw.upgrade())
-            .map_or(false, |mw| {
-                mw.read(cx).sidebar_side(cx) == SidebarSide::Right
-            });
-
-        let away_from_sidebar = if sidebar_on_right {
-            SplitDirection::Left
-        } else {
-            SplitDirection::Right
-        };
-
-        let (near_dock, far_dock) = if sidebar_on_right {
-            (&self.right_dock, &self.left_dock)
-        } else {
-            (&self.left_dock, &self.right_dock)
-        };
-
         let target = match (origin, direction) {
-            (Origin::Sidebar, dir) if dir == away_from_sidebar => try_dock(near_dock)
-                .or_else(|| get_last_active_pane().map(Target::Pane))
-                .or_else(|| try_dock(&self.bottom_dock))
-                .or_else(|| try_dock(far_dock)),
-
-            (Origin::Sidebar, _) => None,
-
             // We're in the center, so we first try to go to a different pane,
             // otherwise try to go to a dock.
             (Origin::Center, direction) => {
@@ -5491,22 +5408,8 @@ impl Workspace {
                     match direction {
                         SplitDirection::Up => None,
                         SplitDirection::Down => try_dock(&self.bottom_dock),
-                        SplitDirection::Left => {
-                            let dock_target = try_dock(&self.left_dock);
-                            if sidebar_on_right {
-                                dock_target
-                            } else {
-                                dock_target.or(sidebar_target)
-                            }
-                        }
-                        SplitDirection::Right => {
-                            let dock_target = try_dock(&self.right_dock);
-                            if sidebar_on_right {
-                                dock_target.or(sidebar_target)
-                            } else {
-                                dock_target
-                            }
-                        }
+                        SplitDirection::Left => try_dock(&self.left_dock),
+                        SplitDirection::Right => try_dock(&self.right_dock),
                     }
                 }
             }
@@ -5519,48 +5422,18 @@ impl Workspace {
                 }
             }
 
-            (Origin::LeftDock, SplitDirection::Left) => {
-                if sidebar_on_right {
-                    None
-                } else {
-                    sidebar_target
-                }
-            }
-
             (Origin::LeftDock, SplitDirection::Down)
             | (Origin::RightDock, SplitDirection::Down) => try_dock(&self.bottom_dock),
 
             (Origin::BottomDock, SplitDirection::Up) => get_last_active_pane().map(Target::Pane),
-            (Origin::BottomDock, SplitDirection::Left) => {
-                let dock_target = try_dock(&self.left_dock);
-                if sidebar_on_right {
-                    dock_target
-                } else {
-                    dock_target.or(sidebar_target)
-                }
-            }
-            (Origin::BottomDock, SplitDirection::Right) => {
-                let dock_target = try_dock(&self.right_dock);
-                if sidebar_on_right {
-                    dock_target.or(sidebar_target)
-                } else {
-                    dock_target
-                }
-            }
+            (Origin::BottomDock, SplitDirection::Left) => try_dock(&self.left_dock),
+            (Origin::BottomDock, SplitDirection::Right) => try_dock(&self.right_dock),
 
             (Origin::RightDock, SplitDirection::Left) => {
                 if let Some(last_active_pane) = get_last_active_pane() {
                     Some(Target::Pane(last_active_pane))
                 } else {
                     try_dock(&self.bottom_dock).or_else(|| try_dock(&self.left_dock))
-                }
-            }
-
-            (Origin::RightDock, SplitDirection::Right) => {
-                if sidebar_on_right {
-                    sidebar_target
-                } else {
-                    None
                 }
             }
 
@@ -5588,9 +5461,6 @@ impl Workspace {
                         log::error!("Could not find a focus target when in switching focus in {direction} direction for a {:?} dock", dock.position());
                     }
                 })
-            }
-            Some(ActivateInDirectionTarget::Sidebar(focus_handle)) => {
-                focus_handle.focus(window, cx);
             }
             None => {}
         }
@@ -6183,10 +6053,6 @@ impl Workspace {
                     Ok(())
                 }))
             }
-            CollaboratorId::Agent => {
-                self.leader_updated(leader_id, window, cx)?;
-                Some(Task::ready(Ok(())))
-            }
         }
     }
 
@@ -6216,7 +6082,6 @@ impl Workspace {
                         None
                     }
                 }
-                CollaboratorId::Agent => Some(CollaboratorId::Agent),
             }
         } else {
             None
@@ -6246,7 +6111,8 @@ impl Workspace {
     ) {
         let leader_id = leader_id.into();
 
-        if let CollaboratorId::PeerId(peer_id) = leader_id {
+        let CollaboratorId::PeerId(peer_id) = leader_id;
+        {
             let Some(active_call) = GlobalAnyActiveCall::try_global(cx) else {
                 return;
             };
@@ -6315,7 +6181,8 @@ impl Workspace {
             item.view.set_leader_id(None, window, cx);
         }
 
-        if let CollaboratorId::PeerId(leader_peer_id) = leader_id {
+        let CollaboratorId::PeerId(leader_peer_id) = leader_id;
+        {
             let project_id = self.project.read(cx).remote_id();
             let room_id = self.active_call()?.room_id(cx)?;
             self.app_state
@@ -6571,7 +6438,7 @@ impl Workspace {
             .and_then(|pane| self.leader_for_pane(&pane));
         let leader_peer_id = match leader_id {
             Some(CollaboratorId::PeerId(peer_id)) => Some(peer_id),
-            Some(CollaboratorId::Agent) | None => None,
+            None => None,
         };
 
         let item_handle = item.to_followable_item_handle(cx)?;
@@ -6790,69 +6657,6 @@ impl Workspace {
         Ok(())
     }
 
-    fn handle_agent_location_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(follower_state) = self.follower_states.get_mut(&CollaboratorId::Agent) else {
-            return;
-        };
-
-        if let Some(agent_location) = self.project.read(cx).agent_location() {
-            let buffer_entity_id = agent_location.buffer.entity_id();
-            let view_id = ViewId {
-                creator: CollaboratorId::Agent,
-                id: buffer_entity_id.as_u64(),
-            };
-            follower_state.active_view_id = Some(view_id);
-
-            let item = match follower_state.items_by_leader_view_id.entry(view_id) {
-                hash_map::Entry::Occupied(entry) => Some(entry.into_mut()),
-                hash_map::Entry::Vacant(entry) => {
-                    let existing_view =
-                        follower_state
-                            .center_pane
-                            .read(cx)
-                            .items()
-                            .find_map(|item| {
-                                let item = item.to_followable_item_handle(cx)?;
-                                if item.buffer_kind(cx) == ItemBufferKind::Singleton
-                                    && item.project_item_model_ids(cx).as_slice()
-                                        == [buffer_entity_id]
-                                {
-                                    Some(item)
-                                } else {
-                                    None
-                                }
-                            });
-                    let view = existing_view.or_else(|| {
-                        agent_location.buffer.upgrade().and_then(|buffer| {
-                            cx.update_default_global(|registry: &mut ProjectItemRegistry, cx| {
-                                registry.build_item(buffer, self.project.clone(), None, window, cx)
-                            })?
-                            .to_followable_item_handle(cx)
-                        })
-                    });
-
-                    view.map(|view| {
-                        entry.insert(FollowerView {
-                            view,
-                            location: None,
-                        })
-                    })
-                }
-            };
-
-            if let Some(item) = item {
-                item.view
-                    .set_leader_id(Some(CollaboratorId::Agent), window, cx);
-                item.view
-                    .update_agent_location(agent_location.position, window, cx);
-            }
-        } else {
-            follower_state.active_view_id = None;
-        }
-
-        self.leader_updated(CollaboratorId::Agent, window, cx);
-    }
-
     pub fn update_active_view_for_followers(&mut self, window: &mut Window, cx: &mut App) {
         let mut is_project_item = true;
         let mut update = proto::UpdateActiveView::default();
@@ -6867,7 +6671,7 @@ impl Workspace {
                     .and_then(|pane| self.leader_for_pane(&pane));
                 let leader_peer_id = match leader_id {
                     Some(CollaboratorId::PeerId(peer_id)) => Some(peer_id),
-                    Some(CollaboratorId::Agent) | None => None,
+                    None => None,
                 };
 
                 if let Some(item) = item.to_followable_item_handle(cx) {
@@ -6971,7 +6775,6 @@ impl Workspace {
         let leader_id = leader_id.into();
         let (panel_id, item) = match leader_id {
             CollaboratorId::PeerId(peer_id) => self.active_item_for_peer(peer_id, window, cx)?,
-            CollaboratorId::Agent => (None, self.active_item_for_agent()?),
         };
 
         let state = self.follower_states.get(&leader_id)?;
@@ -7005,18 +6808,6 @@ impl Workspace {
         });
 
         Some(item)
-    }
-
-    fn active_item_for_agent(&self) -> Option<Box<dyn ItemHandle>> {
-        let state = self.follower_states.get(&CollaboratorId::Agent)?;
-        let active_view_id = state.active_view_id?;
-        Some(
-            state
-                .items_by_leader_view_id
-                .get(&active_view_id)?
-                .view
-                .boxed_clone(),
-        )
     }
 
     fn active_item_for_peer(
@@ -7722,7 +7513,6 @@ impl Workspace {
             .on_action(cx.listener(Self::move_item_to_pane_at_index))
             .on_action(cx.listener(Self::move_focused_panel_to_next_position))
             .on_action(cx.listener(Self::reopen_last_picker))
-            .on_action(cx.listener(Self::toggle_edit_predictions_all_files))
             .on_action(cx.listener(Self::toggle_theme_mode))
             .on_action(cx.listener(|workspace, _: &Unfollow, window, cx| {
                 let pane = workspace.active_pane().clone();
@@ -8663,19 +8453,6 @@ impl Workspace {
         });
     }
 
-    fn toggle_edit_predictions_all_files(
-        &mut self,
-        _: &ToggleEditPrediction,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let fs = self.project().read(cx).fs().clone();
-        let show_edit_predictions = all_language_settings(None, cx).show_edit_predictions(None, cx);
-        update_settings_file(fs, cx, move |file, _| {
-            file.project.all_languages.defaults.show_edit_predictions = Some(!show_edit_predictions)
-        });
-    }
-
     fn toggle_theme_mode(&mut self, _: &ToggleMode, _window: &mut Window, cx: &mut Context<Self>) {
         let current_mode = ThemeSettings::get_global(cx).theme.mode();
         let next_mode = match current_mode {
@@ -8857,7 +8634,6 @@ fn leader_border_for_pane(
                 .color_for_participant(leader.participant_index.0)
                 .cursor
         }
-        CollaboratorId::Agent => cx.theme().players().agent().cursor,
     };
     leader_color.fade_out(0.3);
     Some(
@@ -8989,7 +8765,6 @@ fn open_items(
 enum ActivateInDirectionTarget {
     Pane(Entity<Pane>),
     Dock(Entity<Dock>),
-    Sidebar(FocusHandle),
 }
 
 /// A focusable major window region used by region navigation
@@ -9771,14 +9546,11 @@ impl ViewId {
     }
 
     pub(crate) fn to_proto(self) -> Option<proto::ViewId> {
-        if let CollaboratorId::PeerId(peer_id) = self.creator {
-            Some(proto::ViewId {
-                creator: Some(peer_id),
-                id: self.id,
-            })
-        } else {
-            None
-        }
+        let CollaboratorId::PeerId(peer_id) = self.creator;
+        Some(proto::ViewId {
+            creator: Some(peer_id),
+            id: self.id,
+        })
     }
 }
 
@@ -9914,12 +9686,7 @@ pub async fn apply_restored_multiworkspace_state(
     fs: Arc<dyn fs::Fs>,
     cx: &mut AsyncApp,
 ) {
-    let MultiWorkspaceState {
-        sidebar_open,
-        project_groups,
-        sidebar_state,
-        ..
-    } = state;
+    let MultiWorkspaceState { project_groups, .. } = state;
 
     if !project_groups.is_empty() {
         // Resolve linked worktree paths to their main repo paths so
@@ -9955,25 +9722,6 @@ pub async fn apply_restored_multiworkspace_state(
         window_handle
             .update(cx, |multi_workspace, _window, cx| {
                 multi_workspace.restore_project_groups(resolved_groups, cx);
-            })
-            .ok();
-    }
-
-    if *sidebar_open {
-        window_handle
-            .update(cx, |multi_workspace, _, cx| {
-                multi_workspace.restore_open_sidebar(cx);
-            })
-            .ok();
-    }
-
-    if let Some(sidebar_state) = sidebar_state {
-        window_handle
-            .update(cx, |multi_workspace, window, cx| {
-                if let Some(sidebar) = multi_workspace.sidebar() {
-                    sidebar.restore_serialized_state(sidebar_state, window, cx);
-                }
-                multi_workspace.serialize(cx);
             })
             .ok();
     }
@@ -10680,7 +10428,7 @@ pub fn open_workspace_by_id(
 pub fn open_paths(
     abs_paths: &[PathBuf],
     app_state: Arc<AppState>,
-    mut open_options: OpenOptions,
+    open_options: OpenOptions,
     cx: &mut App,
 ) -> Task<anyhow::Result<OpenResult>> {
     let abs_paths = abs_paths.to_vec();
@@ -10729,47 +10477,6 @@ pub fn open_paths(
             }
         }
 
-        // Fallback for directories: when no flag is specified and no existing
-        // workspace matched, check the user's setting to decide whether to add
-        // the directory as a new workspace in the active window's MultiWorkspace
-        // or open a new window.
-        // Skip when requesting_window is already set: the caller (e.g.
-        // open_workspace_for_paths reusing an empty window) already chose the
-        // target window, so we must not open the sidebar as a side-effect.
-        if open_options.should_reuse_existing_window()
-            && existing.is_none()
-            && open_options.requesting_window.is_none()
-        {
-            let use_existing_window = open_options.add_dirs_to_sidebar;
-
-            if use_existing_window {
-                let target_window = cx.update(|cx| {
-                    let windows = workspace_windows_for_location(
-                        &SerializedWorkspaceLocation::Local,
-                        cx,
-                    );
-                    let window = cx
-                        .active_window()
-                        .and_then(|window| window.downcast::<MultiWorkspace>())
-                        .filter(|window| windows.contains(window))
-                        .or_else(|| windows.into_iter().next());
-                    window.filter(|window| {
-                        window
-                            .read(cx)
-                            .is_ok_and(|mw| mw.multi_workspace_enabled(cx))
-                    })
-                });
-
-                if let Some(window) = target_window {
-                    open_options.requesting_window = Some(window);
-                    window
-                        .update(cx, |multi_workspace, _, cx| {
-                            multi_workspace.open_sidebar(cx);
-                        })
-                        .log_err();
-                }
-            }
-        }
 
         let open_in_dev_container = open_options.open_in_dev_container;
 
@@ -12294,7 +12001,7 @@ mod tests {
 
         multi_workspace_handle
             .update(cx, |mw, _window, cx| {
-                mw.open_sidebar(cx);
+                mw.retain_active_workspace(cx);
             })
             .unwrap();
 
@@ -12380,7 +12087,7 @@ mod tests {
         cx.run_until_parked();
 
         multi_workspace_handle
-            .update(cx, |mw, _window, cx| mw.open_sidebar(cx))
+            .update(cx, |mw, _window, cx| mw.retain_active_workspace(cx))
             .unwrap();
 
         let workspace_a = multi_workspace_handle
@@ -17942,7 +17649,7 @@ mod tests {
 
         multi_workspace_handle
             .update(cx, |mw, _window, cx| {
-                mw.open_sidebar(cx);
+                mw.retain_active_workspace(cx);
             })
             .unwrap();
 

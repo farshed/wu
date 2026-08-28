@@ -169,7 +169,6 @@ impl Default for MarkdownStyle {
 
 #[derive(Clone, Copy)]
 pub enum MarkdownFont {
-    Agent,
     Editor,
     Preview,
 }
@@ -196,10 +195,6 @@ impl MarkdownStyle {
 
         let buffer_font_weight = theme_settings.buffer_font.weight;
         let (buffer_font_size, ui_font_size) = match font {
-            MarkdownFont::Agent => (
-                theme_settings.agent_buffer_font_size(cx),
-                theme_settings.agent_ui_font_size(cx),
-            ),
             MarkdownFont::Editor => (
                 theme_settings.buffer_font_size(cx),
                 theme_settings.ui_font_size(cx),
@@ -212,12 +207,10 @@ impl MarkdownStyle {
 
         let body_font_family = match font {
             MarkdownFont::Preview => theme_settings.markdown_preview_font_family().clone(),
-            MarkdownFont::Agent => theme_settings.agent_ui_font_family().clone(),
             MarkdownFont::Editor => theme_settings.ui_font.family.clone(),
         };
         let code_font_family = match font {
             MarkdownFont::Preview => theme_settings.markdown_preview_code_font_family().clone(),
-            MarkdownFont::Agent => theme_settings.agent_buffer_font_family().clone(),
             MarkdownFont::Editor => theme_settings.buffer_font.family.clone(),
         };
 
@@ -307,35 +300,8 @@ impl MarkdownStyle {
                 }),
                 ..Default::default()
             },
-            soft_break_as_hard_break: matches!(font, MarkdownFont::Agent),
-            heading_level_styles: matches!(font, MarkdownFont::Agent).then_some(
-                HeadingLevelStyles {
-                    h1: Some(TextStyleRefinement {
-                        font_size: Some(rems(1.15).into()),
-                        ..Default::default()
-                    }),
-                    h2: Some(TextStyleRefinement {
-                        font_size: Some(rems(1.1).into()),
-                        ..Default::default()
-                    }),
-                    h3: Some(TextStyleRefinement {
-                        font_size: Some(rems(1.05).into()),
-                        ..Default::default()
-                    }),
-                    h4: Some(TextStyleRefinement {
-                        font_size: Some(rems(1.).into()),
-                        ..Default::default()
-                    }),
-                    h5: Some(TextStyleRefinement {
-                        font_size: Some(rems(0.95).into()),
-                        ..Default::default()
-                    }),
-                    h6: Some(TextStyleRefinement {
-                        font_size: Some(rems(0.875).into()),
-                        ..Default::default()
-                    }),
-                },
-            ),
+            soft_break_as_hard_break: false,
+            heading_level_styles: None,
             ..Default::default()
         };
 
@@ -410,15 +376,6 @@ impl MarkdownStyle {
     pub fn with_buffer_font(mut self, cx: &App) -> Self {
         let theme_settings = ThemeSettings::get_global(cx);
         self.base_text_style.font_family = theme_settings.buffer_font.family.clone();
-        self.base_text_style.font_fallbacks = theme_settings.buffer_font.fallbacks.clone();
-        self.base_text_style.font_features = theme_settings.buffer_font.features.clone();
-        self.base_text_style.font_weight = theme_settings.buffer_font.weight;
-        self
-    }
-
-    pub fn with_agent_buffer_font(mut self, cx: &App) -> Self {
-        let theme_settings = ThemeSettings::get_global(cx);
-        self.base_text_style.font_family = theme_settings.agent_buffer_font_family().clone();
         self.base_text_style.font_fallbacks = theme_settings.buffer_font.fallbacks.clone();
         self.base_text_style.font_features = theme_settings.buffer_font.features.clone();
         self.base_text_style.font_weight = theme_settings.buffer_font.weight;

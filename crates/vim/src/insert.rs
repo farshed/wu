@@ -61,7 +61,7 @@ impl Vim {
                     .take()
                     .filter(|_| no_insert_transaction);
                 self.update_editor(cx, |_, editor, cx| {
-                    editor.dismiss_menus_and_popups(false, window, cx);
+                    editor.dismiss_menus_and_popups(window, cx);
                     if let Some(append_state) = restore_append_selection {
                         let snapshot = editor.display_snapshot(cx);
                         let current = editor
@@ -83,7 +83,7 @@ impl Vim {
             }
 
             self.update_editor(cx, |_, editor, cx| {
-                editor.dismiss_menus_and_popups(false, window, cx);
+                editor.dismiss_menus_and_popups(window, cx);
 
                 editor.change_selections(Default::default(), window, cx, |s| {
                     s.move_cursors_with(&mut |map, mut cursor, _| {

@@ -14,15 +14,12 @@ path = "src/git_ui.rs"
 
 [features]
 test-support = ["multi_buffer/test-support", "remote_connection/test-support"]
-call = ["dep:call"]
 
 [dependencies]
-agent_settings.workspace = true
 anyhow.workspace = true
 askpass.workspace = true
 async-channel.workspace = true
 buffer_diff.workspace = true
-call = { workspace = true, optional = true }
 client.workspace = true
 collections.workspace = true
 component.workspace = true
@@ -37,7 +34,6 @@ git.workspace = true
 gpui.workspace = true
 itertools.workspace = true
 language.workspace = true
-language_model.workspace = true
 log.workspace = true
 markdown.workspace = true
 menu.workspace = true
@@ -46,7 +42,6 @@ notifications.workspace = true
 panel.workspace = true
 picker.workspace = true
 project.workspace = true
-prompt_store.workspace = true
 rand.workspace = true
 release_channel.workspace = true
 remote_connection.workspace = true

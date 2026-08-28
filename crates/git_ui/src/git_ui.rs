@@ -58,7 +58,6 @@ pub mod text_diff_view;
 pub mod unstaged_diff;
 
 pub use blame_ui::GitBlameStatus;
-pub use conflict_view::MergeConflictIndicator;
 
 pub fn init(cx: &mut App) {
     editor::set_blame_renderer(blame_ui::GitBlameRenderer, cx);

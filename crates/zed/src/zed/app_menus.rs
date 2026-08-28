@@ -1,8 +1,7 @@
-use collab_ui::collab_panel;
 use gpui::{App, Menu, MenuItem, OsAction};
 use release_channel::ReleaseChannel;
 use terminal_view::terminal_panel;
-use zed_actions::{Quit, assistant, debug_panel, dev, git_panel, project_panel};
+use zed_actions::{Quit, debug_panel, dev, git_panel, project_panel};
 
 pub fn app_menus(cx: &mut App) -> Vec<Menu> {
     let mut view_items = vec![
@@ -40,10 +39,8 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
         MenuItem::separator(),
         MenuItem::action("Project Panel", project_panel::ToggleFocus),
         MenuItem::action("Outline Panel", outline_panel::ToggleFocus),
-        MenuItem::action("Collab Panel", collab_panel::ToggleFocus),
         MenuItem::action("Terminal Panel", terminal_panel::Toggle),
         MenuItem::action("Debugger Panel", debug_panel::ToggleFocus),
-        MenuItem::action("Agent Panel", assistant::ToggleFocus),
         MenuItem::action("Git Panel", git_panel::ToggleFocus),
         MenuItem::separator(),
         MenuItem::action("Diagnostics", diagnostics::Deploy),

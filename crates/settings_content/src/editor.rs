@@ -374,11 +374,6 @@ pub struct ToolbarContent {
     ///
     /// Default: true
     pub selections_menu: Option<bool>,
-    /// Whether to display Agent review buttons in the editor toolbar.
-    /// Only applicable while reviewing a file edited by the Agent.
-    ///
-    /// Default: true
-    pub agent_review: Option<bool>,
     /// Whether to display code action buttons in the editor toolbar.
     ///
     /// Default: false
