@@ -25,7 +25,6 @@
   - [Terminal](./terminal.md)
   - [Tasks](./tasks.md)
   - [Debugger](./debugger.md)
-  - [REPL](./repl.md)
 - [Git](./git.md)
 - [Modelines](./modelines.md)
 
@@ -38,7 +37,6 @@
 # Privacy & Security
 
 - [Worktree Trust](./worktree-trust.md)
-- [Telemetry](./telemetry.md)
 - [SOC2](./soc2.md)
 
 # Platform Support

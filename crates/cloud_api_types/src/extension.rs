@@ -42,6 +42,7 @@ pub enum ExtensionProvides {
     Grammars,
     LanguageServers,
     DebugAdapters,
+    /// Deprecated
     ContextServers,
     /// Deprecated
     AgentServers,
@@ -57,6 +58,7 @@ impl ExtensionProvides {
         matches!(
             self,
             ExtensionProvides::AgentServers
+                | ExtensionProvides::ContextServers
                 | ExtensionProvides::SlashCommands
                 | ExtensionProvides::IndexedDocsProviders
         )

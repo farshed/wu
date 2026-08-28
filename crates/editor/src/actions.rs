@@ -990,4 +990,3 @@ impl Default for FindAllReferences {
         }
     }
 }
-

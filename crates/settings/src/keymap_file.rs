@@ -1306,47 +1306,6 @@ pub enum KeybindUpdateOperation<'a> {
     },
 }
 
-impl KeybindUpdateOperation<'_> {
-    pub fn generate_telemetry(
-        &self,
-    ) -> (
-        // The keybind that is created
-        String,
-        // The keybinding that was removed
-        String,
-        // The source of the keybinding
-        String,
-    ) {
-        let (new_binding, removed_binding, source) = match &self {
-            KeybindUpdateOperation::Replace {
-                source,
-                target,
-                target_keybind_source,
-            } => (Some(source), Some(target), Some(*target_keybind_source)),
-            KeybindUpdateOperation::Add { source, .. } => (Some(source), None, None),
-            KeybindUpdateOperation::Remove {
-                target,
-                target_keybind_source,
-            } => (None, Some(target), Some(*target_keybind_source)),
-        };
-
-        let new_binding = new_binding
-            .map(KeybindUpdateTarget::telemetry_string)
-            .unwrap_or("null".to_owned());
-        let removed_binding = removed_binding
-            .map(KeybindUpdateTarget::telemetry_string)
-            .unwrap_or("null".to_owned());
-
-        let source = source
-            .as_ref()
-            .map(KeybindSource::name)
-            .map(ToOwned::to_owned)
-            .unwrap_or("null".to_owned());
-
-        (new_binding, removed_binding, source)
-    }
-}
-
 impl<'a> KeybindUpdateOperation<'a> {
     pub fn add(source: KeybindUpdateTarget<'a>) -> Self {
         Self::Add { source, from: None }
@@ -1389,16 +1348,6 @@ impl<'a> KeybindUpdateTarget<'a> {
         }
         keystrokes.pop();
         keystrokes
-    }
-
-    fn telemetry_string(&self) -> String {
-        format!(
-            "action_name: {}, context: {}, action_arguments: {}, keystrokes: {}",
-            self.action_name,
-            self.context.unwrap_or("global"),
-            self.action_arguments.unwrap_or("none"),
-            self.keystrokes_unparsed()
-        )
     }
 }
 

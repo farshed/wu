@@ -32,12 +32,7 @@ bench = ["bench-support"]
 inspector = ["gpui_macros/inspector"]
 leak-detection = ["backtrace"]
 wayland = []
-x11 = [
-    "scap?/x11",
-]
-screen-capture = [
-    "scap",
-]
+x11 = []
 windows-manifest = ["dep:embed-resource"]
 profiler = ["dep:hdrhistogram"]
 stacker = ["dep:stacksafe"]
@@ -121,11 +116,6 @@ font-kit = { git = "https://github.com/zed-industries/font-kit", rev = "94b0f281
 log.workspace = true
 objc2 = { workspace = true, optional = true }
 objc2-metal = { version = "0.3", optional = true }
-
-[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
-scap = { workspace = true, optional = true }
-
-
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = ["Win32_Foundation", "Win32_System_Power"] }

@@ -55,7 +55,6 @@ pub struct EditorSettings {
     pub go_to_definition_fallback: GoToDefinitionFallback,
     pub go_to_definition_scroll_strategy: GoToDefinitionScrollStrategy,
     pub lsp_results_location: OpenResultsIn,
-    pub jupyter: Jupyter,
     pub snippet_sort_order: SnippetSortOrder,
     pub diagnostics_max_severity: Option<DiagnosticSeverity>,
     pub inline_code_actions: bool,
@@ -79,14 +78,6 @@ pub struct FileDiffSettings {
     /// Default: true
     pub show_full_file: bool,
 }
-#[derive(Debug, Clone)]
-pub struct Jupyter {
-    /// Whether the Jupyter feature is enabled.
-    ///
-    /// Default: true
-    pub enabled: bool,
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct StickyScroll {
     pub enabled: bool,
@@ -198,11 +189,7 @@ pub struct SearchSettings {
     pub search_on_type: bool,
 }
 
-impl EditorSettings {
-    pub fn jupyter_enabled(cx: &App) -> bool {
-        EditorSettings::get_global(cx).jupyter.enabled
-    }
-}
+impl EditorSettings {}
 
 impl Settings for EditorSettings {
     fn from_settings(content: &settings::SettingsContent) -> Self {
@@ -304,9 +291,6 @@ impl Settings for EditorSettings {
             go_to_definition_fallback: editor.go_to_definition_fallback.unwrap(),
             go_to_definition_scroll_strategy: editor.go_to_definition_scroll_strategy.unwrap(),
             lsp_results_location: editor.lsp_results_location.unwrap(),
-            jupyter: Jupyter {
-                enabled: editor.jupyter.unwrap().enabled.unwrap(),
-            },
             snippet_sort_order: editor.snippet_sort_order.unwrap(),
             diagnostics_max_severity: editor.diagnostics_max_severity.map(Into::into),
             inline_code_actions: editor.inline_code_actions.unwrap(),

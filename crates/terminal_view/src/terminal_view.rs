@@ -1378,7 +1378,6 @@ impl Render for TerminalView {
                     .child(TerminalElement::new(
                         terminal_handle,
                         terminal_view_handle,
-                        self.workspace.clone(),
                         self.focus_handle.clone(),
                         focused,
                         self.should_show_cursor(focused, cx),
@@ -1546,10 +1545,6 @@ impl Item for TerminalView {
         }
         let terminal = self.terminal().read(cx);
         terminal.title(detail == 0).into()
-    }
-
-    fn telemetry_event_text(&self) -> Option<&'static str> {
-        None
     }
 
     fn handle_drop(

@@ -207,14 +207,6 @@ impl UnstagedDiff {
         window: &mut Window,
         cx: &mut Context<Workspace>,
     ) {
-        telemetry::event!(
-            "Git Unstaged Diff Opened",
-            source = if entry.is_some() {
-                "Git Panel"
-            } else {
-                "Action"
-            }
-        );
         let intended_repo = workspace.project().read(cx).active_repository(cx);
         let existing = workspace.items_of_type::<Self>(cx).next();
         let unstaged_diff = if let Some(existing) = existing {
@@ -423,10 +415,6 @@ impl Item for UnstagedDiff {
 
     fn tab_content_text(&self, _detail: usize, _cx: &App) -> SharedString {
         "Unstaged Changes".into()
-    }
-
-    fn telemetry_event_text(&self) -> Option<&'static str> {
-        Some("Git Unstaged Diff Opened")
     }
 
     fn as_searchable(&self, _: &Entity<Self>, cx: &App) -> Option<Box<dyn SearchableItemHandle>> {

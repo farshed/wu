@@ -339,12 +339,11 @@ Here's what RustRover offers that Zed doesn't have:
 - **HTTP Client** — Use tools like `curl`, `httpie`, or Postman
 - **Coverage visualization** — Use `cargo tarpaulin` or `cargo llvm-cov` externally
 
-## A Note on Licensing and Telemetry
+## A Note on Licensing
 
-On licensing and telemetry:
+On licensing:
 
 - **Zed is open source** (primarily GPL-licensed, with Apache-licensed components)
-- **Telemetry is optional** and can be disabled during onboarding or in settings
 
 ## Collaboration in Zed vs. RustRover
 

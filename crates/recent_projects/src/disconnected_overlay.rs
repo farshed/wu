@@ -87,9 +87,8 @@ impl DisconnectedOverlay {
         self.finished = true;
         cx.emit(DismissEvent);
 
-        if let Host::RemoteServerProject(remote_connection_options, _) = &self.host {
-            self.reconnect_to_remote_project(remote_connection_options.clone(), window, cx);
-        }
+        let Host::RemoteServerProject(remote_connection_options, _) = &self.host;
+        self.reconnect_to_remote_project(remote_connection_options.clone(), window, cx);
     }
 
     fn reconnect_to_remote_project(

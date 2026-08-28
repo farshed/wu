@@ -159,13 +159,6 @@
       "ctrl-c": "markdown::Copy",
     },
   },
-  {
-    "context": "Editor && jupyter",
-    "bindings": {
-      "ctrl-shift-enter": "repl::Run",
-      "ctrl-alt-enter": "repl::RunInPlace",
-    },
-  },
 
   {
     "context": "BufferSearchBar",
@@ -1147,45 +1140,6 @@
       "pagedown": "settings_editor::FocusNextRootNavEntry",
       "home": "settings_editor::FocusFirstNavEntry",
       "end": "settings_editor::FocusLastNavEntry",
-    },
-  },
-  {
-    "context": "NotebookEditor",
-    "bindings": {
-      "shift-enter": "notebook::RunAndAdvance",
-      "ctrl-enter": "notebook::Run",
-      "ctrl-shift-enter": "notebook::RunAll",
-      "alt-up": "notebook::MoveCellUp",
-      "alt-down": "notebook::MoveCellDown",
-      "ctrl-m": "notebook::AddCodeBlock",
-      "ctrl-shift-m": "notebook::AddMarkdownBlock",
-      "ctrl-shift-r": "notebook::RestartKernel",
-      "ctrl-c": "notebook::InterruptKernel",
-    },
-  },
-  {
-    "context": "NotebookEditor && notebook_mode == command",
-    "bindings": {
-      "enter": "notebook::EnterEditMode",
-      "d d": "notebook::DeleteCell",
-      "backspace": "notebook::DeleteCell",
-      "down": "menu::SelectNext",
-      "up": "menu::SelectPrevious",
-    },
-  },
-  {
-    "context": "NotebookEditor > Editor",
-    "bindings": {
-      "enter": "editor::Newline",
-      "shift-enter": "notebook::RunAndAdvance",
-      "ctrl-enter": "notebook::Run",
-      "ctrl-shift-enter": "notebook::RunAll",
-      "alt-up": "notebook::MoveCellUp",
-      "alt-down": "notebook::MoveCellDown",
-      "ctrl-m": "notebook::AddCodeBlock",
-      "ctrl-shift-m": "notebook::AddMarkdownBlock",
-      "ctrl-shift-r": "notebook::RestartKernel",
-      "escape": "notebook::EnterCommandMode",
     },
   },
   {

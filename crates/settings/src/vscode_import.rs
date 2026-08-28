@@ -190,7 +190,6 @@ impl VsCodeSettings {
             hide_mouse: None,
             image_viewer: None,
             markdown_preview: None,
-            journal: None,
             line_indicator_format: None,
             log: None,
             node: self.node_binary_settings(),
@@ -206,13 +205,11 @@ impl VsCodeSettings {
                 _ => None,
             }),
             remote: RemoteSettingsContent::default(),
-            repl: None,
             server_url: None,
             session: None,
             status_bar: self.status_bar_settings_content(),
             tab_bar: self.tab_bar_settings_content(),
             tabs: self.item_settings_content(),
-            telemetry: self.telemetry_settings_content(),
             terminal: self.terminal_settings_content(),
             theme: Box::new(self.theme_settings_content()),
             title_bar: None,
@@ -221,7 +218,6 @@ impl VsCodeSettings {
             workspace: self.workspace_settings_content(),
             which_key: None,
             modeline_lines: None,
-            feature_flags: None,
             instrumentation: None,
         }
     }
@@ -266,7 +262,6 @@ impl VsCodeSettings {
             hover_popover_hiding_delay: self.read_u64("editor.hover.hidingDelay").map(Into::into),
             inline_code_actions: None,
             code_lens: None,
-            jupyter: None,
             lsp_document_colors: None,
             lsp_document_links: self.read_bool("editor.links"),
             lsp_highlight_debounce: None,
@@ -803,21 +798,6 @@ impl VsCodeSettings {
         }
 
         skip_default(project_panel_settings)
-    }
-
-    fn telemetry_settings_content(&self) -> Option<TelemetrySettingsContent> {
-        self.read_enum("telemetry.telemetryLevel", |level| {
-            let (metrics, diagnostics) = match level {
-                "all" => (true, true),
-                "error" | "crash" => (false, true),
-                "off" => (false, false),
-                _ => return None,
-            };
-            Some(TelemetrySettingsContent {
-                metrics: Some(metrics),
-                diagnostics: Some(diagnostics),
-            })
-        })
     }
 
     fn terminal_settings_content(&self) -> Option<TerminalSettingsContent> {

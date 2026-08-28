@@ -29,7 +29,6 @@ pub struct ExtensionHostProxy {
     language_proxy: RwLock<Option<Arc<dyn ExtensionLanguageProxy>>>,
     language_server_proxy: RwLock<Option<Arc<dyn ExtensionLanguageServerProxy>>>,
     snippet_proxy: RwLock<Option<Arc<dyn ExtensionSnippetProxy>>>,
-    context_server_proxy: RwLock<Option<Arc<dyn ExtensionContextServerProxy>>>,
     debug_adapter_provider_proxy: RwLock<Option<Arc<dyn ExtensionDebugAdapterProviderProxy>>>,
     language_model_provider_proxy: RwLock<Option<Arc<dyn ExtensionLanguageModelProviderProxy>>>,
 }
@@ -54,7 +53,6 @@ impl ExtensionHostProxy {
             language_proxy: RwLock::default(),
             language_server_proxy: RwLock::default(),
             snippet_proxy: RwLock::default(),
-            context_server_proxy: RwLock::default(),
             debug_adapter_provider_proxy: RwLock::default(),
             language_model_provider_proxy: RwLock::default(),
         }
@@ -78,10 +76,6 @@ impl ExtensionHostProxy {
 
     pub fn register_snippet_proxy(&self, proxy: impl ExtensionSnippetProxy) {
         self.snippet_proxy.write().replace(Arc::new(proxy));
-    }
-
-    pub fn register_context_server_proxy(&self, proxy: impl ExtensionContextServerProxy) {
-        self.context_server_proxy.write().replace(Arc::new(proxy));
     }
 
     pub fn register_debug_adapter_proxy(&self, proxy: impl ExtensionDebugAdapterProviderProxy) {
@@ -357,40 +351,6 @@ impl ExtensionSnippetProxy for ExtensionHostProxy {
         };
 
         proxy.register_snippet(path, snippet_contents)
-    }
-}
-
-pub trait ExtensionContextServerProxy: Send + Sync + 'static {
-    fn register_context_server(
-        &self,
-        extension: Arc<dyn Extension>,
-        server_id: Arc<str>,
-        cx: &mut App,
-    );
-
-    fn unregister_context_server(&self, server_id: Arc<str>, cx: &mut App);
-}
-
-impl ExtensionContextServerProxy for ExtensionHostProxy {
-    fn register_context_server(
-        &self,
-        extension: Arc<dyn Extension>,
-        server_id: Arc<str>,
-        cx: &mut App,
-    ) {
-        let Some(proxy) = self.context_server_proxy.read().clone() else {
-            return;
-        };
-
-        proxy.register_context_server(extension, server_id, cx)
-    }
-
-    fn unregister_context_server(&self, server_id: Arc<str>, cx: &mut App) {
-        let Some(proxy) = self.context_server_proxy.read().clone() else {
-            return;
-        };
-
-        proxy.unregister_context_server(server_id, cx)
     }
 }
 

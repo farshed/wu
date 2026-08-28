@@ -7,8 +7,8 @@ use anyhow::{Context as _, Result, anyhow};
 use editor::{Addon, Editor, EditorEvent, RestoreOnlyDiffHunkDelegate, SplittableEditor};
 use git::status::FileStatus;
 use gpui::{
-    App, AppContext as _, Entity, EventEmitter, FocusHandle, Focusable, Render,
-    SharedString, Subscription, Task, WeakEntity,
+    App, AppContext as _, Entity, EventEmitter, FocusHandle, Focusable, Render, SharedString,
+    Subscription, Task, WeakEntity,
 };
 use language::{BufferId, Capability};
 use project::{
@@ -74,7 +74,6 @@ impl BranchDiff {
         window: &mut Window,
         cx: &mut Context<Workspace>,
     ) {
-        telemetry::event!("Git Branch Diff Opened");
         let project = workspace.project().clone();
         let Some(intended_repo) = project.read(cx).active_repository(cx) else {
             let workspace = cx.entity().downgrade();
@@ -431,10 +430,6 @@ impl Item for BranchDiff {
         }
     }
 
-    fn telemetry_event_text(&self) -> Option<&'static str> {
-        Some("Branch Diff Opened")
-    }
-
     fn as_searchable(&self, _: &Entity<Self>, cx: &App) -> Option<Box<dyn SearchableItemHandle>> {
         Some(Box::new(self.diff.read(cx).editor().clone()))
     }
@@ -582,9 +577,7 @@ impl Item for BranchDiff {
 
 impl Render for BranchDiff {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .child(self.diff.clone())
+        div().size_full().child(self.diff.clone())
     }
 }
 
@@ -806,11 +799,11 @@ impl Render for BranchDiffToolbar {
 
 #[cfg(test)]
 mod tests {
-    use gpui::Action;
     use anyhow::anyhow;
     use collections::HashMap;
     use editor::test::editor_test_context::assert_state_with_diff;
     use git::status::{FileStatus, TrackedStatus, UnmergedStatus, UnmergedStatusCode};
+    use gpui::Action;
     use gpui::TestAppContext;
     use project::FakeFs;
     use serde_json::json;

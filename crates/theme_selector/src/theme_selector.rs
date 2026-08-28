@@ -402,8 +402,6 @@ impl PickerDelegate for ThemeSelectorDelegate {
         let theme_appearance = self.new_theme.appearance;
         let system_appearance = SystemAppearance::global(cx).0;
 
-        telemetry::event!("Settings Changed", setting = "theme", value = theme_name);
-
         update_settings_file(self.fs.clone(), cx, move |settings, _| {
             theme_settings::set_theme(settings, theme_name, theme_appearance, system_appearance);
         });

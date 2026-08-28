@@ -5,8 +5,8 @@ use editor::{
     display_map::{BlockContext, BlockPlacement, BlockProperties, BlockStyle, CustomBlockId},
 };
 use gpui::{
-    App, Context, Entity, InteractiveElement as _, ParentElement as _,
-    Subscription, Task, WeakEntity,
+    App, Context, Entity, InteractiveElement as _, ParentElement as _, Subscription, Task,
+    WeakEntity,
 };
 use language::{Anchor, Buffer, BufferId};
 use project::{ConflictRegion, ConflictSet, ConflictSetUpdate};

@@ -16,7 +16,6 @@ use dap::adapters::DebugAdapterName;
 use dap::{DapRegistry, StartDebuggingRequestArguments};
 use dap::{client::SessionId, debugger_settings::DebuggerSettings};
 use editor::Editor;
-use feature_flags::{FeatureFlag, FeatureFlagAppExt as _, PresenceFlag, register_feature_flag};
 use gpui::{
     Action, Anchor, App, AsyncWindowContext, ClipboardItem, Context, DismissEvent, Entity,
     EntityId, EventEmitter, FocusHandle, Focusable, MouseButton, MouseDownEvent, Point,
@@ -47,14 +46,6 @@ use workspace::{
     dock::{DockPosition, Panel, PanelEvent},
 };
 use zed_actions::debug_panel::ToggleFocus;
-
-pub struct DebuggerHistoryFeatureFlag;
-
-impl FeatureFlag for DebuggerHistoryFeatureFlag {
-    const NAME: &'static str = "debugger-history";
-    type Value = PresenceFlag;
-}
-register_feature_flag!(DebuggerHistoryFeatureFlag);
 
 const DEBUG_PANEL_KEY: &str = "DebugPanel";
 
@@ -954,25 +945,21 @@ impl DebugPanel {
                                             }),
                                         )
                                     })
-                                    .when(
-                                        cx.has_flag::<DebuggerHistoryFeatureFlag>(),
-                                        |this| {
-                                            this.child(Divider::vertical()).child(
-                                                SplitButton::new(
-                                                    self.render_history_button(
-                                                        &running_state,
-                                                        thread_status,
-                                                        window,
-                                                    ),
-                                                    self.render_history_toggle_button(
-                                                        thread_status,
-                                                        &running_state,
-                                                    )
-                                                    .into_any_element(),
-                                                )
-                                                .style(ui::SplitButtonStyle::Outlined),
+                                    .child(Divider::vertical())
+                                    .child(
+                                        SplitButton::new(
+                                            self.render_history_button(
+                                                &running_state,
+                                                thread_status,
+                                                window,
+                                            ),
+                                            self.render_history_toggle_button(
+                                                thread_status,
+                                                &running_state,
                                             )
-                                        },
+                                            .into_any_element(),
+                                        )
+                                        .style(ui::SplitButtonStyle::Outlined),
                                     )
                                 },
                             ),

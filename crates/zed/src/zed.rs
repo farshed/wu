@@ -8,7 +8,6 @@ mod open_listener;
 mod open_url_modal;
 mod quick_action_bar;
 pub mod remote_debug;
-pub mod telemetry_log;
 #[cfg(all(target_os = "macos", feature = "visual-tests"))]
 pub mod visual_tests;
 #[cfg(target_os = "windows")]
@@ -23,7 +22,6 @@ use collections::VecDeque;
 use debugger_ui::debugger_panel::DebugPanel;
 use editor::{Editor, MultiBuffer};
 use extension_host::ExtensionStore;
-use feature_flags::{FeatureFlagAppExt as _, PanicFeatureFlag};
 use fs::Fs;
 use futures::{StreamExt, channel::mpsc, select_biased};
 use git_ui::branch_diff::BranchDiffToolbar;
@@ -140,10 +138,6 @@ actions!(
         ToggleFullScreen,
         /// Zooms the window.
         Zoom,
-        /// Triggers a test panic for debugging.
-        TestPanic,
-        /// Triggers a hard crash for debugging.
-        TestCrash,
     ]
 );
 
@@ -193,26 +187,6 @@ pub fn init(cx: &mut App) {
     cx.on_action(quit);
 
     cx.on_action(|_: &RestoreBanner, cx| title_bar::restore_banner(cx));
-
-    cx.observe_flag::<PanicFeatureFlag, _>({
-        let mut added = false;
-        move |flag, cx| {
-            if added || !*flag {
-                return;
-            }
-            added = true;
-            cx.on_action(|_: &TestPanic, _| panic!("Ran the TestPanic action"))
-                .on_action(|_: &TestCrash, _| {
-                    unsafe extern "C" {
-                        fn puts(s: *const i8);
-                    }
-                    unsafe {
-                        puts(0xabad1d3a as *const i8);
-                    }
-                });
-        }
-    })
-    .detach();
 
     // When Zed logs to stdout rather than the log file, avoid registering
     // handlers for both `OpenLog` and `RevealLogInFileManager`, as the log file
@@ -459,23 +433,6 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
             })
             .detach();
         }
-
-        cx.spawn_in(window, async move |_this, cx| {
-            const TELEMETRY_INTERVAL: std::time::Duration = std::time::Duration::from_mins(5);
-            loop {
-                cx.background_executor().timer(TELEMETRY_INTERVAL).await;
-                if cx
-                    .update(|window, cx| {
-                        input_latency_ui::report_input_latency_telemetry(window, cx);
-                        input_latency_ui::report_frame_duration_telemetry(window, cx);
-                    })
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
-        .detach();
 
         let multi_workspace_handle = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
@@ -748,36 +705,6 @@ fn register_actions(
         .register_action(|_, _: &GetMerch, _, cx| cx.open_url(MERCH_URL))
         .register_action(
             |workspace: &mut Workspace,
-             _: &input_latency_ui::DumpInputLatencyHistogram,
-             window: &mut Window,
-             cx: &mut Context<Workspace>| {
-                let project = workspace.project().clone();
-                let report_data =
-                    input_latency_ui::snapshot_input_latency_report(window, None, cx);
-                cx.spawn_in(window, async move |workspace, cx| {
-                    let report = cx
-                        .background_spawn(async move {
-                            input_latency_ui::format_input_latency_report(&report_data)
-                        })
-                        .await;
-                    let buffer = project
-                        .update(cx, |project, cx| project.create_buffer(None, true, cx))
-                        .await?;
-                    buffer.update(cx, |buffer, cx| {
-                        buffer.set_text(report, cx);
-                    });
-                    workspace.update_in(cx, |workspace, window, cx| {
-                        let editor = cx
-                            .new(|cx| Editor::for_buffer(buffer, Some(project), window, cx));
-                        workspace
-                            .add_item_to_active_pane(Box::new(editor), None, true, window, cx);
-                    })
-                })
-                .detach_and_log_err(cx);
-            },
-        )
-        .register_action(
-            |workspace: &mut Workspace,
              _: &DumpAccessibilityTree,
              window: &mut Window,
              cx: &mut Context<Workspace>| {
@@ -886,7 +813,6 @@ fn register_actions(
             }
         })
         .register_action(|workspace, action: &workspace::Open, window, cx| {
-            telemetry::event!("Project Opened");
             workspace::prompt_for_open_path_and_open(
                 workspace,
                 workspace.app_state().clone(),
@@ -937,7 +863,6 @@ fn register_actions(
                     DefaultOpenBehavior::NewWindow
                 )
             });
-            telemetry::event!("Project Opened");
             let paths = workspace.prompt_for_open_path(
                 PathPromptOptions {
                     files: true,
@@ -1297,9 +1222,6 @@ fn initialize_pane(
             toolbar.add_item(lsp_log_item, window, cx);
             let dap_log_item = cx.new(|_| debugger_tools::DapLogToolbarItemView::new());
             toolbar.add_item(dap_log_item, window, cx);
-            let telemetry_log_item =
-                cx.new(|cx| telemetry_log::TelemetryLogToolbarItemView::new(window, cx));
-            toolbar.add_item(telemetry_log_item, window, cx);
             let syntax_tree_item = cx.new(|_| language_tools::SyntaxTreeToolbarItemView::new());
             toolbar.add_item(syntax_tree_item, window, cx);
             let migration_banner =
@@ -5547,7 +5469,6 @@ mod tests {
                 "diagnostics",
                 "editor",
                 "encoding_selector",
-                "feedback",
                 "file_finder",
                 "git",
                 "git_graph",
@@ -5558,7 +5479,6 @@ mod tests {
                 "highlights_tree_view",
                 "icon_theme_selector",
                 "image_viewer",
-                "journal",
                 "keymap_editor",
                 "keystroke_input",
                 "language_selector",
@@ -5568,7 +5488,6 @@ mod tests {
                 "markdown",
                 "menu",
                 "new_process_modal",
-                "notebook",
                 "onboarding",
                 "outline",
                 "outline_panel",
@@ -5581,7 +5500,6 @@ mod tests {
                 "projects",
                 "recent_projects",
                 "remote_debug",
-                "repl",
                 "search",
                 "settings_editor",
                 "settings_profile_selector",
@@ -5794,8 +5712,6 @@ mod tests {
             outline_panel::init(cx);
             terminal_view::init(cx);
             image_viewer::init(cx);
-            repl::init(app_state.fs.clone(), cx);
-            repl::notebook::init(cx);
             tasks_ui::init(cx);
             project::debugger::breakpoint_store::BreakpointStore::init(
                 &app_state.client.clone().into(),

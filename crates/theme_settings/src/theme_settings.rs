@@ -28,14 +28,13 @@ pub use crate::schema::{
 };
 use crate::settings::adjust_buffer_font_size;
 pub use crate::settings::{
-    BufferLineHeight, FontFamilyName,
-    GitCommitBufferFontSize, IconThemeName, IconThemeSelection, MarkdownPreviewFontSize,
-    ThemeAppearanceMode, ThemeName, ThemeSelection, ThemeSettings, adjust_git_commit_buffer_font_size,
-    adjust_markdown_preview_font_size, adjust_ui_font_size, adjusted_font_size, appearance_to_mode,
-    buffer_line_height_from_settings, clamp_font_size, default_theme,
-    observe_buffer_font_size_adjustment,
-    reset_buffer_font_size, reset_git_commit_buffer_font_size, reset_markdown_preview_font_size,
-    reset_ui_font_size, set_icon_theme, set_mode, set_theme, setup_ui_font,
+    BufferLineHeight, FontFamilyName, GitCommitBufferFontSize, IconThemeName, IconThemeSelection,
+    MarkdownPreviewFontSize, ThemeAppearanceMode, ThemeName, ThemeSelection, ThemeSettings,
+    adjust_git_commit_buffer_font_size, adjust_markdown_preview_font_size, adjust_ui_font_size,
+    adjusted_font_size, appearance_to_mode, buffer_line_height_from_settings, clamp_font_size,
+    default_theme, observe_buffer_font_size_adjustment, reset_buffer_font_size,
+    reset_git_commit_buffer_font_size, reset_markdown_preview_font_size, reset_ui_font_size,
+    set_icon_theme, set_mode, set_theme, setup_ui_font,
 };
 pub use theme::UiDensity;
 

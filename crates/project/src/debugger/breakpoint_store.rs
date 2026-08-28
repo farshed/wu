@@ -202,7 +202,6 @@ impl BreakpointStore {
         self.downstream_client = Some((downstream_client, project_id));
     }
 
-
     async fn handle_breakpoints_for_file(
         this: Entity<Self>,
         message: TypedEnvelope<proto::BreakpointsForFile>,
@@ -308,7 +307,6 @@ impl BreakpointStore {
         });
         Ok(proto::Ack {})
     }
-
 
     pub(crate) fn update_session_breakpoint(
         &mut self,

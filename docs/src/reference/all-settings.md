@@ -3059,59 +3059,6 @@ All possible config values for `toggle_on_modifiers_press` are:
 
 Unspecified values have a `false` value, hints won't be toggled if all the modifiers are `false` or not all the modifiers are pressed.
 
-## Journal
-
-- Description: Configuration for the journal.
-- Setting: `journal`
-- Default:
-
-```json [settings]
-{
-  "journal": {
-    "path": "~",
-    "hour_format": "hour12"
-  }
-}
-```
-
-### Path
-
-- Description: The path of the directory where journal entries are stored. If an invalid path is specified, the journal will fall back to using `~` (the home directory).
-- Setting: `path`
-- Default: `~`
-
-**Options**
-
-`string` values
-
-### Hour Format
-
-- Description: The format to use for displaying hours in the journal.
-- Setting: `hour_format`
-- Default: `hour12`
-
-**Options**
-
-1. 12-hour format:
-
-```json [settings]
-{
-  "journal": {
-    "hour_format": "hour12"
-  }
-}
-```
-
-2. 24-hour format:
-
-```json [settings]
-{
-  "journal": {
-    "hour_format": "hour24"
-  }
-}
-```
-
 ## JSX Tag Auto Close
 
 - Description: Whether to automatically close JSX tags
@@ -4329,43 +4276,6 @@ List of `integer` column numbers
 - `enabled`: Whether tasks are enabled
 - `prefer_lsp`: Whether to prefer LSP-provided tasks over Zed language extension ones
 
-## Telemetry
-
-- Description: Control what info is collected by Zed.
-- Setting: `telemetry`
-- Default:
-
-```json [settings]
-{
-  "telemetry": {
-    "diagnostics": true,
-    "metrics": true
-  }
-}
-```
-
-**Options**
-
-### Diagnostics
-
-- Description: Setting for sending debug-related data, such as crash reports.
-- Setting: `diagnostics`
-- Default: `true`
-
-**Options**
-
-`boolean` values
-
-### Metrics
-
-- Description: Setting for sending anonymized usage data, such as what languages you're using Zed with.
-- Setting: `metrics`
-- Default: `true`
-
-**Options**
-
-`boolean` values
-
 ## Terminal
 
 - Description: Configuration for the terminal.
@@ -5040,25 +4950,6 @@ Example command to set the title: `echo -e "\e]2;New Title\007";`
 - Description: Maximum time to search for a path hyperlink. When set to 0, path hyperlinks are disabled.
 - Setting: `path_hyperlink_timeout_ms`
 - Default: `1`
-
-## REPL
-
-- Description: Repl settings.
-- Setting: `repl`
-- Default:
-
-```json [settings]
-{
-  "repl": {
-    // Maximum number of columns to keep in REPL's scrollback buffer.
-    // Clamped with [20, 512] range.
-    "max_columns": 128,
-    // Maximum number of lines to keep in REPL's scrollback buffer.
-    // Clamped with [4, 256] range.
-    "max_lines": 32
-  }
-}
-```
 
 ## Theme
 

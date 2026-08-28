@@ -14,11 +14,9 @@ use async_trait::async_trait;
 use client::{AnyProtoClient, TypedEnvelope, proto};
 use collections::{BTreeMap, HashMap, HashSet};
 use extension::{
-    BuildTaskTemplate, CodeLabel, Command, Completion, ContextServerConfiguration,
-    DebugAdapterBinary, DebugRequest, DebugScenario, DebugTaskDefinition, Extension,
-    ExtensionHostProxy, KeyValueStoreDelegate, LibManifestEntry, ProjectDelegate, SlashCommand,
-    SlashCommandArgumentCompletion, SlashCommandOutput, StartDebuggingRequestArgumentsRequest,
-    Symbol, WorktreeDelegate,
+    BuildTaskTemplate, CodeLabel, Command, Completion, DebugAdapterBinary, DebugRequest,
+    DebugScenario, DebugTaskDefinition, Extension, ExtensionHostProxy, KeyValueStoreDelegate,
+    LibManifestEntry, StartDebuggingRequestArgumentsRequest, Symbol, WorktreeDelegate,
 };
 use fs::{FakeFs, Fs, RealFs, RemoveOptions};
 use futures::{AsyncReadExt, FutureExt, StreamExt, io::BufReader};
@@ -394,8 +392,6 @@ async fn test_extension_store(cx: &mut TestAppContext) {
                         .into_iter()
                         .collect(),
                         language_servers: BTreeMap::default(),
-                        context_servers: BTreeMap::default(),
-                        slash_commands: BTreeMap::default(),
                         snippets: None,
                         capabilities: Vec::new(),
                         debug_adapters: Default::default(),
@@ -425,8 +421,6 @@ async fn test_extension_store(cx: &mut TestAppContext) {
                         languages: Default::default(),
                         grammars: BTreeMap::default(),
                         language_servers: BTreeMap::default(),
-                        context_servers: BTreeMap::default(),
-                        slash_commands: BTreeMap::default(),
                         snippets: None,
                         capabilities: Vec::new(),
                         debug_adapters: Default::default(),
@@ -525,7 +519,6 @@ async fn test_extension_store(cx: &mut TestAppContext) {
             fs.clone(),
             http_client.clone(),
             http_client.clone(),
-            None,
             node_runtime.clone(),
             cx,
         )
@@ -611,8 +604,6 @@ async fn test_extension_store(cx: &mut TestAppContext) {
                 languages: Default::default(),
                 grammars: BTreeMap::default(),
                 language_servers: BTreeMap::default(),
-                context_servers: BTreeMap::default(),
-                slash_commands: BTreeMap::default(),
                 snippets: None,
                 capabilities: Vec::new(),
                 debug_adapters: Default::default(),
@@ -675,7 +666,6 @@ async fn test_extension_store(cx: &mut TestAppContext) {
             fs.clone(),
             http_client.clone(),
             http_client.clone(),
-            None,
             node_runtime.clone(),
             cx,
         )
@@ -936,7 +926,6 @@ async fn test_extension_store_with_test_extension(cx: &mut TestAppContext) {
             fs.clone(),
             extension_client.clone(),
             builder_client,
-            None,
             node_runtime,
             cx,
         )
@@ -4026,7 +4015,6 @@ fn create_extension_store_with(
             fs,
             http_client.clone(),
             http_client,
-            None,
             node_runtime,
             cx,
         )
@@ -4088,8 +4076,6 @@ impl Extension for FakeExtension {
             languages: Vec::new(),
             grammars: BTreeMap::default(),
             language_servers: BTreeMap::default(),
-            context_servers: BTreeMap::default(),
-            slash_commands: BTreeMap::default(),
             snippets: None,
             capabilities: Vec::new(),
             debug_adapters: BTreeMap::default(),
@@ -4175,39 +4161,6 @@ impl Extension for FakeExtension {
         _language_server_id: LanguageServerName,
         _symbols: Vec<Symbol>,
     ) -> anyhow::Result<Vec<Option<CodeLabel>>> {
-        anyhow::bail!("not supported by FakeExtension")
-    }
-
-    async fn complete_slash_command_argument(
-        &self,
-        _command: SlashCommand,
-        _arguments: Vec<String>,
-    ) -> anyhow::Result<Vec<SlashCommandArgumentCompletion>> {
-        anyhow::bail!("not supported by FakeExtension")
-    }
-
-    async fn run_slash_command(
-        &self,
-        _command: SlashCommand,
-        _arguments: Vec<String>,
-        _worktree: Option<Arc<dyn WorktreeDelegate>>,
-    ) -> anyhow::Result<SlashCommandOutput> {
-        anyhow::bail!("not supported by FakeExtension")
-    }
-
-    async fn context_server_command(
-        &self,
-        _context_server_id: Arc<str>,
-        _project: Arc<dyn ProjectDelegate>,
-    ) -> anyhow::Result<Command> {
-        anyhow::bail!("not supported by FakeExtension")
-    }
-
-    async fn context_server_configuration(
-        &self,
-        _context_server_id: Arc<str>,
-        _project: Arc<dyn ProjectDelegate>,
-    ) -> anyhow::Result<Option<ContextServerConfiguration>> {
         anyhow::bail!("not supported by FakeExtension")
     }
 

@@ -180,7 +180,6 @@ pub struct CrashServer {
     initialization_params: Mutex<Option<InitCrashHandler>>,
     panic_info: Mutex<Option<CrashPanic>>,
     active_gpu: Mutex<Option<system_specs::GpuSpecs>>,
-    user_info: Mutex<Option<UserInfo>>,
     abort_message_location: Mutex<Option<AbortMessageLocation>>,
     shutdown: Arc<AtomicBool>,
     has_connection: Arc<AtomicBool>,
@@ -199,7 +198,6 @@ pub struct CrashInfo {
     pub abort_message: Option<String>,
     pub gpus: Vec<system_specs::GpuInfo>,
     pub active_gpu: Option<system_specs::GpuSpecs>,
-    pub user_info: Option<UserInfo>,
 }
 
 /// Where to find the C runtime's abort diagnostic in the crashed process's
@@ -228,12 +226,6 @@ pub struct CrashPanic {
     pub span: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct UserInfo {
-    pub metrics_id: Option<String>,
-    pub is_staff: Option<bool>,
-}
-
 fn send_crash_server_message(crash_client: &Arc<Client>, message: CrashServerMessage) {
     let data = match serde_json::to_vec(&message) {
         Ok(data) => data,
@@ -252,10 +244,6 @@ pub fn set_gpu_info(crash_client: &Arc<Client>, specs: GpuSpecs) {
     send_crash_server_message(crash_client, CrashServerMessage::GPUInfo(specs));
 }
 
-pub fn set_user_info(crash_client: &Arc<Client>, info: UserInfo) {
-    send_crash_server_message(crash_client, CrashServerMessage::UserInfo(info));
-}
-
 /// Requests an orderly exit from the crash-handler sidecar.
 pub fn shutdown_crash_handler(crash_client: &Arc<Client>) {
     send_crash_server_message(crash_client, CrashServerMessage::Shutdown);
@@ -266,7 +254,6 @@ enum CrashServerMessage {
     Init(InitCrashHandler),
     Panic(CrashPanic),
     GPUInfo(GpuSpecs),
-    UserInfo(UserInfo),
     AbortMessageLocation(AbortMessageLocation),
     Shutdown,
 }
@@ -439,7 +426,6 @@ impl minidumper::ServerHandler for CrashServer {
             abort_message,
             active_gpu: self.active_gpu.lock().clone(),
             gpus,
-            user_info: self.user_info.lock().clone(),
         };
 
         let crash_data_path = self
@@ -464,9 +450,6 @@ impl minidumper::ServerHandler for CrashServer {
             }
             CrashServerMessage::GPUInfo(gpu_specs) => {
                 self.active_gpu.lock().replace(gpu_specs);
-            }
-            CrashServerMessage::UserInfo(user_info) => {
-                self.user_info.lock().replace(user_info);
             }
             CrashServerMessage::AbortMessageLocation(location) => {
                 self.abort_message_location.lock().replace(location);
@@ -673,7 +656,6 @@ pub fn crash_server(socket: &Path, logs_dir: PathBuf) {
             Box::new(CrashServer {
                 initialization_params: Mutex::default(),
                 panic_info: Mutex::default(),
-                user_info: Mutex::default(),
                 abort_message_location: Mutex::default(),
                 shutdown: shutdown.clone(),
                 has_connection,

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use client::TelemetrySettings;
 use fs::Fs;
 use gpui::{Action, App, IntoElement};
 use project::project_settings::ProjectSettings;
@@ -8,8 +7,8 @@ use settings::{BaseKeymap, Settings, update_settings_file};
 use theme::{Appearance, SystemAppearance, ThemeRegistry};
 use theme_settings::{ThemeAppearanceMode, ThemeName, ThemeSelection, ThemeSettings};
 use ui::{
-    Divider, StatefulInteractiveElement, SwitchField, TintColor, ToggleButtonGroup,
-    ToggleButtonGroupSize, ToggleButtonSimple, ToggleButtonWithIcon, Tooltip, prelude::*,
+    StatefulInteractiveElement, SwitchField, TintColor, ToggleButtonGroup, ToggleButtonGroupSize,
+    ToggleButtonSimple, ToggleButtonWithIcon, Tooltip, prelude::*,
 };
 use vim_mode_setting::VimModeSetting;
 
@@ -67,12 +66,6 @@ fn render_theme_section(tab_index: &mut isize, cx: &mut App) -> impl IntoElement
                             MODE_NAMES[mode as usize].clone(),
                             move |_, _, cx| {
                                 write_mode_change(mode, cx);
-
-                                telemetry::event!(
-                                    "Welcome Theme mode Changed",
-                                    from = theme_mode,
-                                    to = mode
-                                );
                             },
                         )
                     }),
@@ -155,15 +148,9 @@ fn render_theme_section(tab_index: &mut isize, cx: &mut App) -> impl IntoElement
                         })
                         .on_click({
                             let theme_name = theme.name.clone();
-                            let current_theme_name = current_theme_name.clone();
 
                             move |_, _, cx| {
                                 write_theme_change(theme_name.clone(), theme_mode, cx);
-                                telemetry::event!(
-                                    "Welcome Theme Changed",
-                                    from = current_theme_name,
-                                    to = theme_name
-                                );
                             }
                         })
                         .map(|this| {
@@ -233,94 +220,6 @@ fn render_theme_section(tab_index: &mut isize, cx: &mut App) -> impl IntoElement
     }
 }
 
-fn render_telemetry_section(tab_index: &mut isize, cx: &App) -> impl IntoElement {
-    let fs = <dyn Fs>::global(cx);
-
-    v_flex()
-        .gap_4()
-        .child(
-            SwitchField::new(
-                "onboarding-telemetry-metrics",
-                None::<&str>,
-                Some("Help improve Zed by sending anonymous usage data".into()),
-                if TelemetrySettings::get_global(cx).metrics {
-                    ui::ToggleState::Selected
-                } else {
-                    ui::ToggleState::Unselected
-                },
-                {
-                    let fs = fs.clone();
-                    move |selection, _, cx| {
-                        let enabled = match selection {
-                            ToggleState::Selected => true,
-                            ToggleState::Unselected => false,
-                            ToggleState::Indeterminate => {
-                                return;
-                            }
-                        };
-
-                        update_settings_file(fs.clone(), cx, move |setting, _| {
-                            setting.telemetry.get_or_insert_default().metrics = Some(enabled);
-                        });
-
-                        // This telemetry event shouldn't fire when it's off. If it does we'll be alerted
-                        // and can fix it in a timely manner to respect a user's choice.
-                        telemetry::event!(
-                            "Welcome Page Telemetry Metrics Toggled",
-                            options = if enabled { "on" } else { "off" }
-                        );
-                    }
-                },
-            )
-            .tab_index({
-                *tab_index += 1;
-                *tab_index
-            }),
-        )
-        .child(
-            SwitchField::new(
-                "onboarding-telemetry-crash-reports",
-                None::<&str>,
-                Some(
-                    "Help fix Zed by sending crash reports so we can fix critical issues fast"
-                        .into(),
-                ),
-                if TelemetrySettings::get_global(cx).diagnostics {
-                    ui::ToggleState::Selected
-                } else {
-                    ui::ToggleState::Unselected
-                },
-                {
-                    let fs = fs.clone();
-                    move |selection, _, cx| {
-                        let enabled = match selection {
-                            ToggleState::Selected => true,
-                            ToggleState::Unselected => false,
-                            ToggleState::Indeterminate => {
-                                return;
-                            }
-                        };
-
-                        update_settings_file(fs.clone(), cx, move |setting, _| {
-                            setting.telemetry.get_or_insert_default().diagnostics = Some(enabled);
-                        });
-
-                        // This telemetry event shouldn't fire when it's off. If it does we'll be alerted
-                        // and can fix it in a timely manner to respect a user's choice.
-                        telemetry::event!(
-                            "Welcome Page Telemetry Diagnostics Toggled",
-                            options = if enabled { "on" } else { "off" }
-                        );
-                    }
-                },
-            )
-            .tab_index({
-                *tab_index += 1;
-                *tab_index
-            }),
-        )
-}
-
 fn render_base_keymap_section(tab_index: &mut isize, cx: &mut App) -> impl IntoElement {
     let base_keymap = match BaseKeymap::get_global(cx) {
         BaseKeymap::Zed => Some(0),
@@ -381,8 +280,6 @@ fn render_base_keymap_section(tab_index: &mut isize, cx: &mut App) -> impl IntoE
         update_settings_file(fs, cx, move |setting, _| {
             setting.base_keymap = Some(keymap_base.into());
         });
-
-        telemetry::event!("Welcome Keymap Changed", keymap = keymap_base);
     }
 }
 
@@ -410,11 +307,6 @@ fn render_vim_mode_switch(tab_index: &mut isize, cx: &mut App) -> impl IntoEleme
                 update_settings_file(fs.clone(), cx, move |setting, _| {
                     setting.vim_mode = Some(vim_mode);
                 });
-
-                telemetry::event!(
-                    "Welcome Vim Mode Toggled",
-                    options = if vim_mode { "on" } else { "off" },
-                );
             }
         },
     )
@@ -451,11 +343,6 @@ fn render_worktree_auto_trust_switch(tab_index: &mut isize, cx: &mut App) -> imp
                 update_settings_file(fs.clone(), cx, move |setting, _| {
                     setting.session.get_or_insert_default().trust_all_worktrees = Some(trust);
                 });
-
-                telemetry::event!(
-                    "Welcome Page Worktree Auto Trust Toggled",
-                    options = if trust { "on" } else { "off" }
-                );
             }
         },
     )
@@ -486,7 +373,6 @@ fn render_setting_import_button(
                 .color(Color::Success)
         })
         .on_click(move |_, window, cx| {
-            telemetry::event!("Welcome Import Settings", import_source = label,);
             window.dispatch_action(action.boxed_clone(), cx);
         })
 }
@@ -539,6 +425,4 @@ pub(crate) fn render_basics_page(cx: &mut App) -> impl IntoElement {
         .child(render_import_settings_section(&mut tab_index, cx))
         .child(render_vim_mode_switch(&mut tab_index, cx))
         .child(render_worktree_auto_trust_switch(&mut tab_index, cx))
-        .child(Divider::horizontal().color(ui::DividerColor::BorderVariant))
-        .child(render_telemetry_section(&mut tab_index, cx))
 }

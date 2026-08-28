@@ -29,8 +29,8 @@ use git::Oid;
 use git::commit::ParsedCommitMessage;
 use git::repository::{
     Branch, CommitData, CommitDetails, CommitOptions, CommitSummary, FetchOptions,
-    GitCommitTemplate, InitialGraphCommitData, LogOrder, LogSource, PushOptions,
-    Remote, RemoteCommandOutput, ResetMode, Upstream, UpstreamTracking, UpstreamTrackingStatus,
+    GitCommitTemplate, InitialGraphCommitData, LogOrder, LogSource, PushOptions, Remote,
+    RemoteCommandOutput, ResetMode, Upstream, UpstreamTracking, UpstreamTrackingStatus,
 };
 use git::stash::GitStash;
 use git::status::{DiffStat, StageStatus};
@@ -43,11 +43,10 @@ use git::{
     TrashUntrackedFiles, UnstageAll, ViewFile, parse_git_remote_url,
 };
 use gpui::{
-    AbsoluteLength, Action, Anchor, AnyElement, AsyncWindowContext, ClickEvent,
-    ClipboardItem, DismissEvent, Empty, Entity, EventEmitter, FocusHandle, Focusable, KeyContext,
-    MouseButton, MouseDownEvent, Pixels, Point, PromptLevel, ScrollStrategy, Subscription, Task,
-    TaskExt, TextStyle, UniformListScrollHandle, WeakEntity, actions, anchored, deferred,
-    uniform_list,
+    AbsoluteLength, Action, Anchor, AnyElement, AsyncWindowContext, ClickEvent, ClipboardItem,
+    DismissEvent, Empty, Entity, EventEmitter, FocusHandle, Focusable, KeyContext, MouseButton,
+    MouseDownEvent, Pixels, Point, PromptLevel, ScrollStrategy, Subscription, Task, TaskExt,
+    TextStyle, UniformListScrollHandle, WeakEntity, actions, anchored, deferred, uniform_list,
 };
 use itertools::Itertools;
 use language::{Buffer, BufferEvent, File};
@@ -86,9 +85,9 @@ use ui::{
     prelude::*,
 };
 use util::paths::PathStyle;
-use util::{ResultExt, TryFutureExt, markdown::MarkdownInlineCode, maybe};
 #[cfg(test)]
 use util::rel_path::RelPath;
+use util::{ResultExt, TryFutureExt, markdown::MarkdownInlineCode, maybe};
 use workspace::SERIALIZATION_THROTTLE_TIME;
 use workspace::{
     Item, ModalView, Workspace,
@@ -3004,14 +3003,7 @@ impl GitPanel {
     }
 
     fn on_commit(&mut self, _: &Commit, window: &mut Window, cx: &mut Context<Self>) {
-        let is_amend = self.amend_pending;
-        if self.commit(&self.commit_editor.focus_handle(cx), window, cx) {
-            if is_amend {
-                telemetry::event!("Git Amended", source = "Git Panel");
-            } else {
-                telemetry::event!("Git Committed", source = "Git Panel");
-            }
-        }
+        self.commit(&self.commit_editor.focus_handle(cx), window, cx);
     }
 
     /// Commits staged changes with the current commit message.
@@ -3035,9 +3027,7 @@ impl GitPanel {
     }
 
     fn on_amend(&mut self, _: &Amend, window: &mut Window, cx: &mut Context<Self>) {
-        if self.amend(&self.commit_editor.focus_handle(cx), window, cx) {
-            telemetry::event!("Git Amended", source = "Git Panel");
-        }
+        self.amend(&self.commit_editor.focus_handle(cx), window, cx);
     }
 
     /// Enters the amend state on first invocation, loading the last commit
@@ -3254,7 +3244,6 @@ impl GitPanel {
         let Some(repo) = self.active_repository.clone() else {
             return;
         };
-        telemetry::event!("Git Uncommitted");
 
         let confirmation = self.check_for_pushed_commits(window, cx);
         let prior_head = self.load_commit_details("HEAD".to_string(), cx);
@@ -3426,7 +3415,6 @@ impl GitPanel {
             return;
         }
 
-        telemetry::event!("Git Fetched");
         let askpass = self.askpass_delegate("git fetch", window, cx);
         let this = cx.weak_entity();
 
@@ -3579,7 +3567,6 @@ impl GitPanel {
             return;
         }
 
-        telemetry::event!("Git Pulled");
         let remote = self.get_remote(false, false, window, cx);
         cx.spawn_in(window, async move |this, cx| {
             let _clear_pending_remote_operation = cx.on_drop(&this, |this, cx| {
@@ -3648,8 +3635,6 @@ impl GitPanel {
         if !self.start_remote_operation(RemoteOperationKind::Push, cx) {
             return;
         }
-
-        telemetry::event!("Git Pushed");
 
         let options = if force_push {
             Some(PushOptions::Force)
@@ -5140,9 +5125,10 @@ impl GitPanel {
         let menu_open = self.commit_menu_handle.is_deployed();
 
         PopoverMenu::new(id.into())
-            .trigger(
-                crate::render_split_button_chevron_trigger("commit-split-button-right", menu_open),
-            )
+            .trigger(crate::render_split_button_chevron_trigger(
+                "commit-split-button-right",
+                menu_open,
+            ))
             .with_handle(self.commit_menu_handle.clone())
             .menu({
                 let git_panel = cx.entity();
@@ -5662,7 +5648,6 @@ impl GitPanel {
                     .on_click({
                         let git_panel = cx.weak_entity();
                         move |_, window, cx| {
-                            telemetry::event!("Git Committed", source = "Git Panel");
                             git_panel
                                 .update(cx, |git_panel, cx| {
                                     let options = git_panel.commit_options();
@@ -6612,11 +6597,9 @@ impl GitPanel {
                 KeyBinding::for_action_in(&workspace::Open::default(), &focus_handle, cx),
             )
             .on_open_project(|_, window, cx| {
-                telemetry::event!("Git Panel Add Project Clicked");
                 window.dispatch_action(workspace::Open::default().boxed_clone(), cx);
             })
             .on_clone_repo(|_, window, cx| {
-                telemetry::event!("Git Panel Clone Repo Clicked");
                 window.dispatch_action(git::Clone.boxed_clone(), cx);
             })
             .into_any_element()
@@ -7810,7 +7793,6 @@ impl Render for GitPanel {
         let project = self.project.read(cx);
         let has_entries = !self.entries.is_empty();
         let has_write_access = self.has_write_access(cx);
-
 
         v_flex()
             .id("git_panel")

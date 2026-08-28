@@ -1157,7 +1157,6 @@ impl GitStore {
         }
     }
 
-
     pub fn active_repository(&self) -> Option<Entity<Repository>> {
         self.active_repo_id
             .as_ref()

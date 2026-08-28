@@ -256,7 +256,6 @@ impl TaskStore {
         }
     }
 
-
     pub(super) fn update_user_tasks(
         &self,
         location: TaskSettingsLocation<'_>,

@@ -107,10 +107,6 @@ pub struct ExtensionManifest {
     #[serde(default)]
     pub language_servers: BTreeMap<LanguageServerName, LanguageServerManifestEntry>,
     #[serde(default)]
-    pub context_servers: BTreeMap<Arc<str>, ContextServerManifestEntry>,
-    #[serde(default)]
-    pub slash_commands: BTreeMap<Arc<str>, SlashCommandManifestEntry>,
-    #[serde(default)]
     pub snippets: Option<ExtensionSnippets>,
     #[serde(default)]
     pub capabilities: Vec<ExtensionCapability>,
@@ -144,10 +140,6 @@ impl ExtensionManifest {
 
         if !self.language_servers.is_empty() {
             provides.insert(ExtensionProvides::LanguageServers);
-        }
-
-        if !self.context_servers.is_empty() {
-            provides.insert(ExtensionProvides::ContextServers);
         }
 
         if self.snippets.is_some() {
@@ -229,65 +221,6 @@ pub struct LibManifestEntry {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
-pub struct AgentServerManifestEntry {
-    /// Display name for the agent (shown in menus).
-    pub name: String,
-    /// Environment variables to set when launching the agent server.
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-    /// Optional icon path (relative to extension root, e.g., "ai.svg").
-    /// Should be a small SVG icon for display in menus.
-    #[serde(default)]
-    pub icon: Option<String>,
-    /// Per-target configuration for archive-based installation.
-    /// The key format is "{os}-{arch}" where:
-    /// - os: "darwin" (macOS), "linux", "windows"
-    /// - arch: "aarch64" (arm64), "x86_64"
-    ///
-    /// Example:
-    /// ```toml
-    /// [agent_servers.myagent.targets.darwin-aarch64]
-    /// archive = "https://example.com/myagent-darwin-arm64.zip"
-    /// cmd = "./myagent"
-    /// args = ["--serve"]
-    /// sha256 = "abc123..."  # optional
-    /// ```
-    ///
-    /// For Node.js-based agents, you can use "node" as the cmd to automatically
-    /// use Zed's managed Node.js runtime instead of relying on the user's PATH:
-    /// ```toml
-    /// [agent_servers.nodeagent.targets.darwin-aarch64]
-    /// archive = "https://example.com/nodeagent.zip"
-    /// cmd = "node"
-    /// args = ["index.js", "--port", "3000"]
-    /// ```
-    ///
-    /// Note: All commands are executed with the archive extraction directory as the
-    /// working directory, so relative paths in args (like "index.js") will resolve
-    /// relative to the extracted archive contents.
-    pub targets: HashMap<String, TargetConfig>,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
-pub struct TargetConfig {
-    /// URL to download the archive from (e.g., "https://github.com/owner/repo/releases/download/v1.0.0/myagent-darwin-arm64.zip")
-    pub archive: String,
-    /// Command to run (e.g., "./myagent" or "./myagent.exe")
-    pub cmd: String,
-    /// Command-line arguments to pass to the agent server.
-    #[serde(default)]
-    pub args: Vec<String>,
-    /// Optional SHA-256 hash of the archive for verification.
-    /// If not provided and the URL is a GitHub release, we'll attempt to fetch it from GitHub.
-    #[serde(default)]
-    pub sha256: Option<String>,
-    /// Environment variables to set when launching the agent server.
-    /// These target-specific env vars will override any env vars set at the agent level.
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
 pub enum ExtensionLibraryKind {
     Rust,
 }
@@ -331,15 +264,6 @@ impl LanguageServerManifestEntry {
         };
         self.languages.iter().cloned().chain(language)
     }
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
-pub struct ContextServerManifestEntry {}
-
-#[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
-pub struct SlashCommandManifestEntry {
-    pub description: String,
-    pub requires_argument: bool,
 }
 
 #[derive(Clone, Default, PartialEq, Eq, Debug, Deserialize, Serialize)]
@@ -423,8 +347,6 @@ fn manifest_from_old_manifest(
             .map(|grammar_name| (grammar_name, Default::default()))
             .collect(),
         language_servers: Default::default(),
-        context_servers: BTreeMap::default(),
-        slash_commands: BTreeMap::default(),
         snippets: None,
         capabilities: Vec::new(),
         debug_adapters: Default::default(),
@@ -457,8 +379,6 @@ mod tests {
             languages: vec![],
             grammars: BTreeMap::default(),
             language_servers: BTreeMap::default(),
-            context_servers: BTreeMap::default(),
-            slash_commands: BTreeMap::default(),
             snippets: None,
             capabilities: vec![],
             debug_adapters: Default::default(),

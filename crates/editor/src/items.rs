@@ -1,7 +1,7 @@
 use crate::{
     ActiveDebugLine, Anchor, Autoscroll, BufferSerialization, Capability, Editor, EditorEvent,
     EditorSettings, FormatTarget, MultiBuffer, MultiBufferSnapshot, NavigationData,
-    ReportEditorEvent, SelectionEffects, ToPoint as _,
+    SelectionEffects, ToPoint as _,
     display_map::HighlightKey,
     editor_settings::SeedQuerySetting,
     persistence::{EditorDb, SerializedEditor},
@@ -53,9 +53,7 @@ use workspace::{
     },
 };
 use workspace::{
-    Pane, TabBarSettings, WorkspaceSettings,
-    item::ProjectItemKind,
-    searchable::SearchOptions,
+    Pane, TabBarSettings, WorkspaceSettings, item::ProjectItemKind, searchable::SearchOptions,
 };
 use zed_actions::preview::{
     markdown::OpenPreview as OpenMarkdownPreview, svg::OpenPreview as OpenSvgPreview,
@@ -142,10 +140,6 @@ impl Item for Editor {
             let title = multi_buffer.title(cx);
             (!title.is_empty()).then(|| title.to_string().into())
         }
-    }
-
-    fn telemetry_event_text(&self) -> Option<&'static str> {
-        None
     }
 
     fn tab_content_text(&self, detail: usize, cx: &App) -> SharedString {
@@ -322,10 +316,6 @@ impl Item for Editor {
         self.nav_history = Some(history);
     }
 
-    fn on_removed(&self, cx: &mut Context<Self>) {
-        self.report_editor_event(ReportEditorEvent::Closed, None, cx);
-    }
-
     fn deactivated(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         let selection = self.selections.newest_anchor();
         self.push_to_nav_history(selection.head(), None, true, false, cx);
@@ -392,13 +382,6 @@ impl Item for Editor {
         if self.read_only(cx) {
             return Task::ready(Ok(()));
         }
-        // Add meta data tracking # of auto saves
-        if options.autosave {
-            self.report_editor_event(ReportEditorEvent::Saved { auto_saved: true }, None, cx);
-        } else {
-            self.report_editor_event(ReportEditorEvent::Saved { auto_saved: false }, None, cx);
-        }
-
         let buffers = self.buffer().clone().read(cx).all_buffers();
         let buffers = buffers
             .into_iter()
@@ -469,13 +452,6 @@ impl Item for Editor {
             .read(cx)
             .as_singleton()
             .expect("cannot call save_as on an excerpt list");
-
-        let file_extension = path.path.extension().map(|a| a.to_string());
-        self.report_editor_event(
-            ReportEditorEvent::Saved { auto_saved: false },
-            file_extension,
-            cx,
-        );
 
         project.update(cx, |project, cx| project.save_buffer_as(buffer, path, cx))
     }

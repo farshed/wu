@@ -5,8 +5,7 @@ use gpui::{
     GlobalElementId, HighlightStyle, Hitbox, Hsla, InputHandler, InteractiveElement, Interactivity,
     IntoElement, LayoutId, Length, ModifiersChangedEvent, MouseButton, MouseMoveEvent, Pixels,
     Point as GpuiPoint, StatefulInteractiveElement, StrikethroughStyle, Styled, TextRun, TextStyle,
-    UTF16Selection, UnderlineStyle, WeakEntity, WhiteSpace, Window, div, fill, point, px, relative,
-    size,
+    UTF16Selection, UnderlineStyle, WhiteSpace, Window, div, fill, point, px, relative, size,
 };
 use itertools::Itertools;
 use language::CursorShape as EditorCursorShape;
@@ -22,7 +21,6 @@ use theme_settings::ThemeSettings;
 use ui::utils::ensure_minimum_contrast;
 use ui::{ParentElement, Tooltip};
 use util::ResultExt;
-use workspace::Workspace;
 
 use std::mem;
 use std::{fmt::Debug, rc::Rc};
@@ -393,7 +391,6 @@ fn merge_background_regions(regions: Vec<BackgroundRegion>) -> Vec<BackgroundReg
 pub struct TerminalElement {
     terminal: Entity<Terminal>,
     terminal_view: Entity<TerminalView>,
-    workspace: WeakEntity<Workspace>,
     focus: FocusHandle,
     focused: bool,
     cursor_visible: bool,
@@ -414,7 +411,6 @@ impl TerminalElement {
     pub fn new(
         terminal: Entity<Terminal>,
         terminal_view: Entity<TerminalView>,
-        workspace: WeakEntity<Workspace>,
         focus: FocusHandle,
         focused: bool,
         cursor_visible: bool,
@@ -424,7 +420,6 @@ impl TerminalElement {
         TerminalElement {
             terminal,
             terminal_view,
-            workspace,
             focused,
             focus: focus.clone(),
             cursor_visible,
@@ -1630,7 +1625,6 @@ impl Element for TerminalElement {
             let terminal_input_handler = TerminalInputHandler {
                 terminal_view: self.terminal_view.clone(),
                 cursor_bounds: layout.ime_cursor_bounds.map(|bounds| bounds + origin),
-                workspace: self.workspace.clone(),
             };
 
             self.register_mouse_listeners(
@@ -1792,7 +1786,6 @@ impl IntoElement for TerminalElement {
 
 struct TerminalInputHandler {
     terminal_view: Entity<TerminalView>,
-    workspace: WeakEntity<Workspace>,
     cursor_bounds: Option<Bounds<Pixels>>,
 }
 
@@ -1842,14 +1835,7 @@ impl InputHandler for TerminalInputHandler {
             view.commit_text(text, view_cx);
         });
 
-        self.workspace
-            .update(cx, |this, cx| {
-                window.invalidate_character_coordinates();
-                let project = this.project().read(cx);
-                let telemetry = project.client().telemetry().clone();
-                telemetry.log_edit_event("terminal", project.is_via_remote_server());
-            })
-            .ok();
+        window.invalidate_character_coordinates();
     }
 
     fn replace_and_mark_text_in_range(

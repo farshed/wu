@@ -187,12 +187,6 @@ impl PickerDelegate for IconThemeSelectorDelegate {
             .icon_theme
             .name(SystemAppearance::global(cx).0);
 
-        telemetry::event!(
-            "Settings Changed",
-            setting = "icon_theme",
-            value = theme_name
-        );
-
         let appearance = Appearance::from(window.appearance());
 
         update_settings_file(self.fs.clone(), cx, move |settings, _| {

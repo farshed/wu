@@ -22,7 +22,6 @@ tracy = ["ztracing/tracy"]
 track-project-leak = ["gpui/leak-detection"]
 test-support = [
     "gpui/test-support",
-    "gpui_platform/screen-capture",
     "dep:image",
     "workspace/test-support",
     "project/test-support",
@@ -30,12 +29,10 @@ test-support = [
     "terminal_view/test-support",
     "image_viewer/test-support",
     "recent_projects/test-support",
-    "repl/test-support",
     "title_bar/test-support",
 ]
 visual-tests = [
     "gpui/test-support",
-    "gpui_platform/screen-capture",
     "gpui_platform/test-support",
     "dep:image",
     "dep:tempfile",
@@ -91,8 +88,6 @@ env_logger.workspace = true
 extension.workspace = true
 extension_host.workspace = true
 extensions_ui.workspace = true
-feature_flags.workspace = true
-feedback.workspace = true
 file_finder.workspace = true
 fs.workspace = true
 futures.workspace = true
@@ -103,7 +98,6 @@ git_ui_core.workspace = true
 go_to_line.workspace = true
 gpui = { workspace = true, features = ["profiler", "stacker"] }
 gpui_platform = { workspace = true, features = [
-    "screen-capture",
     "font-kit",
     "wayland",
     "x11",
@@ -120,10 +114,8 @@ tempfile = { workspace = true, optional = true }
 
 http_client.workspace = true
 image_viewer.workspace = true
-input_latency_ui.workspace = true
 inspector_ui.workspace = true
 install_cli.workspace = true
-journal.workspace = true
 json_schema_store.workspace = true
 keymap_editor.workspace = true
 language.workspace = true
@@ -157,7 +149,6 @@ proto.workspace = true
 recent_projects.workspace = true
 release_channel.workspace = true
 remote.workspace = true
-repl.workspace = true
 reqwest.workspace = true
 reqwest_client.workspace = true
 rope.workspace = true
@@ -176,8 +167,6 @@ svg_preview.workspace = true
 sysinfo.workspace = true
 tab_switcher.workspace = true
 tasks_ui.workspace = true
-telemetry.workspace = true
-telemetry_events.workspace = true
 terminal_view.workspace = true
 theme.workspace = true
 theme_extension.workspace = true
@@ -243,7 +232,6 @@ title_bar = { workspace = true, features = ["test-support"] }
 workspace = { workspace = true, features = ["test-support"] }
 image.workspace = true
 search = { workspace = true, features = ["test-support"] }
-repl = { workspace = true, features = ["test-support"] }
 
 
 [package.metadata.bundle-dev]

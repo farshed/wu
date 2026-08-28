@@ -1160,10 +1160,6 @@ impl Item for ProjectSearchView {
             .unwrap_or_else(|| "Project Search".into())
     }
 
-    fn telemetry_event_text(&self) -> Option<&'static str> {
-        Some("Project Search Opened")
-    }
-
     fn for_each_project_item(
         &self,
         cx: &App,

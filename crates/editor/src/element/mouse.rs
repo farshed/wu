@@ -16,9 +16,8 @@ use util::{RangeExt, debug_panic, post_inc};
 
 use super::{EditorElement, EditorLayout, LineNumberLayout, PositionMap, SplitSide};
 use crate::{
-    ColumnarMode, DisplayDiffHunk, DisplayPoint, DisplayRow, Editor,
-    EditorSettings, EditorSnapshot, GutterHoverButton, JumpData,
-    SelectPhase, Selection, SelectionDragState,
+    ColumnarMode, DisplayDiffHunk, DisplayPoint, DisplayRow, Editor, EditorSettings,
+    EditorSnapshot, GutterHoverButton, JumpData, SelectPhase, Selection, SelectionDragState,
     display_map::ToDisplayPoint, editor_settings::DoubleClickInMultibuffer,
     hover_popover::hover_at, mouse_context_menu, scroll::ScrollPixelOffset,
 };
@@ -104,9 +103,7 @@ impl EditorElement {
             }
         }
 
-        let gutter_hover_button = if gutter_hovered
-            && split_side != Some(SplitSide::Left)
-        {
+        let gutter_hover_button = if gutter_hovered && split_side != Some(SplitSide::Left) {
             let buffer_anchor = position_map
                 .snapshot
                 .display_point_to_anchor(valid_point, Bias::Left);

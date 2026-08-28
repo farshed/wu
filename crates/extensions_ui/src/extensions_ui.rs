@@ -125,9 +125,6 @@ pub fn init(cx: &mut App) {
                         ExtensionCategoryFilter::LanguageServers => {
                             ExtensionProvides::LanguageServers
                         }
-                        ExtensionCategoryFilter::ContextServers => {
-                            ExtensionProvides::ContextServers
-                        }
                         ExtensionCategoryFilter::Snippets => ExtensionProvides::Snippets,
                         ExtensionCategoryFilter::DebugAdapters => ExtensionProvides::DebugAdapters,
                     });
@@ -1029,16 +1026,7 @@ impl ExtensionsPage {
     ) -> impl IntoElement {
         let docs_url_button = Button::new("open_docs", "View Documentation")
             .end_icon(Icon::new(IconName::ArrowUpRight).size(IconSize::Small))
-            .on_click({
-                move |_event, _window, cx| {
-                    telemetry::event!(
-                        "Documentation Viewed",
-                        source = "Feature Upsell",
-                        url = docs_url,
-                    );
-                    cx.open_url(&docs_url)
-                }
-            });
+            .on_click(move |_event, _window, cx| cx.open_url(&docs_url));
 
         div()
             .pt_4()
@@ -1070,10 +1058,6 @@ impl ExtensionsPage {
                                                 )
                                                 .on_click(cx.listener(
                                                     move |this, selection, _, cx| {
-                                                        telemetry::event!(
-                                                            "Vim Mode Toggled",
-                                                            source = "Feature Upsell"
-                                                        );
                                                         this.update_settings(
                                                             selection,
                                                             cx,
@@ -1484,6 +1468,7 @@ impl Render for ExtensionsPage {
                         ExtensionProvides::iter()
                             .filter(|provides| match provides {
                                 ExtensionProvides::AgentServers
+                                | ExtensionProvides::ContextServers
                                 | ExtensionProvides::Grammars // grammars do not add anything of value to users currently
                                 | ExtensionProvides::IndexedDocsProviders
                                 | ExtensionProvides::SlashCommands => false,
@@ -1546,10 +1531,6 @@ impl Item for ExtensionsPage {
 
     fn tab_content_text(&self, _detail: usize, _cx: &App) -> SharedString {
         "Extensions".into()
-    }
-
-    fn telemetry_event_text(&self) -> Option<&'static str> {
-        Some("Extensions Page Opened")
     }
 
     fn show_toolbar(&self) -> bool {

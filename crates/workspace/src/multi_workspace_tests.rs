@@ -32,7 +32,9 @@ fn setup_multi_workspace<'a>(
 
     // Retaining the active workspace establishes its project group and keeps
     // it around when the workspaces below are activated.
-    multi_workspace.update(cx, |multi_workspace, cx| multi_workspace.retain_active_workspace(cx));
+    multi_workspace.update(cx, |multi_workspace, cx| {
+        multi_workspace.retain_active_workspace(cx)
+    });
 
     for project in iterator {
         multi_workspace.update_in(cx, |multi_workspace, window, cx| {

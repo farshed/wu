@@ -1,7 +1,7 @@
 # Zed crate map
 
 This document maps every Cargo crate below `crates/` to its responsibility and
-its place in Zed's dependency hierarchy. It covers 187 manifests: 186 workspace
+its place in Zed's dependency hierarchy. It covers 173 manifests: 172 workspace
 packages plus the excluded `gpui_web/examples/hello_web` example. It does not
 cover the separate crates below `extensions/` or `tooling/`.
 
@@ -109,8 +109,6 @@ features depend on some of them, but they depend on little Zed-specific code.
 | [`zlog_settings`](../../crates/zlog_settings/)                    | Connects runtime log-filter settings to `zlog`.                                                                                              |
 | [`ztracing`](../../crates/ztracing/)                              | Lightweight tracing spans and backend initialization, bridging instrumentation to Zed logging and optional profilers.                        |
 | [`ztracing_macro`](../../crates/ztracing_macro/)                  | `instrument` procedural macro used by `ztracing`.                                                                                            |
-| [`feature_flags`](../../crates/feature_flags/)                    | Registers feature flags, loads local/remote values, and exposes GPUI observation APIs.                                                       |
-| [`feature_flags_macros`](../../crates/feature_flags_macros/)      | Derive support for enum-backed feature flags.                                                                                                |
 | [`release_channel`](../../crates/release_channel/)                | Zed version, commit, app identifier, URL, and stable/preview/nightly/development channel types.                                              |
 | [`windows_resources`](../../crates/windows_resources/)            | Build helper for compiling Windows manifests, icons, and version resources.                                                                  |
 
@@ -132,7 +130,6 @@ shared renderer crates where appropriate.
 | [`gpui_web`](../../crates/gpui_web/)           | Browser platform implementation using a document canvas, DOM input/IME integration, and WebGPU or WebGL rendering through `gpui_wgpu`.                       |
 | [`gpui_wgpu`](../../crates/gpui_wgpu/)         | Shared WGPU/WebGL renderer, atlases, shaders, and text system used by Linux and web backends.                                                                |
 | [`gpui_tokio`](../../crates/gpui_tokio/)       | Integrates a Tokio runtime and task spawning with GPUI's executors.                                                                                          |
-| [`media`](../../crates/media/)                 | Low-level macOS CoreMedia and CoreVideo bindings used by media-capable GPUI code.                                                                            |
 
 ## UI primitives and application chrome
 
@@ -155,8 +152,7 @@ shared renderer crates where appropriate.
 | [`notifications`](../../crates/notifications/)                 | Workspace notifications, status toasts, and cloud notification state.                                                                      |
 | [`activity_indicator`](../../crates/activity_indicator/)       | Status-bar activity model/UI for background project, language-server, extension, and update work.                                          |
 | [`command_palette_hooks`](../../crates/command_palette_hooks/) | Low-dependency registry for filtering or intercepting command-palette actions without making feature crates depend on the full palette UI. |
-| [`command_palette`](../../crates/command_palette/)             | Searchable action picker, fuzzy matching, persistence, telemetry, action dispatch, and registered interception hooks.                      |
-| [`input_latency_ui`](../../crates/input_latency_ui/)           | Captures, formats, and reports input-to-frame latency diagnostics and telemetry.                                                           |
+| [`command_palette`](../../crates/command_palette/)             | Searchable action picker, fuzzy matching, persistence, action dispatch, and registered interception hooks.                      |
 | [`inspector_ui`](../../crates/inspector_ui/)                   | Developer inspector for GPUI elements, styles, and editor context.                                                                         |
 | [`miniprofiler_ui`](../../crates/miniprofiler_ui/)             | Developer window for viewing runtime profiler data received through RPC.                                                                   |
 
@@ -172,13 +168,9 @@ shared renderer crates where appropriate.
 | [`reqwest_client`](../../crates/reqwest_client/)                     | Production `http_client` implementation backed by Reqwest and its runtime.                                                                   |
 | [`http_client_tls`](../../crates/http_client_tls/)                   | Shared rustls root-certificate and TLS configuration for HTTP and realtime clients.                                                          |
 | [`net`](../../crates/net/)                                           | Runtime-neutral asynchronous TCP listeners, sockets, streams, and network utility types.                                                     |
-| [`proxy_handshake`](../../crates/proxy_handshake/)                   | Sans-I/O HTTP CONNECT, SOCKS4/4a, and SOCKS5 client handshakes, with Futures and Tokio drivers.                                              |
 | [`node_runtime`](../../crates/node_runtime/)                         | Locates/downloads Node, chooses versions, and runs npm commands for language servers, Prettier, and extensions.                              |
-| [`credentials_provider`](../../crates/credentials_provider/)         | Platform-neutral asynchronous interface for reading, writing, and deleting credentials.                                                      |
-| [`zed_credentials_provider`](../../crates/zed_credentials_provider/) | Global Zed credential-provider implementation and initialization, using release-aware service names and platform storage.                    |
-| [`oauth_callback_server`](../../crates/oauth_callback_server/)       | Loopback OAuth callback listener and shared browser success/error response page.                                                             |
 | [`askpass`](../../crates/askpass/)                                   | Secure askpass sessions and encrypted password transport for Git and other subprocess authentication prompts.                                |
-| [`system_specs`](../../crates/system_specs/)                         | Collects OS, CPU, memory, and GPU information for diagnostics, crash reports, and telemetry.                                                 |
+| [`system_specs`](../../crates/system_specs/)                         | Collects OS, CPU, memory, and GPU information for diagnostics and crash reports.                                                 |
 | [`etw_tracing`](../../crates/etw_tracing/)                           | Windows Event Tracing for Windows recording control and workspace actions.                                                                   |
 
 ## Text, language, and language-server stack
@@ -233,7 +225,6 @@ and `multi_buffer` projects excerpts from one or more buffers for `editor`.
 | [`markdown`](../../crates/markdown/)                         | Parses and renders markdown, code blocks, links, selections, HTML, and Mermaid blocks as GPUI elements.                                                              |
 | [`markdown_preview`](../../crates/markdown_preview/)         | Live workspace preview synchronized with markdown editor buffers and persisted preview settings.                                                                     |
 | [`diagnostics`](../../crates/diagnostics/)                   | Project diagnostics view, buffer diagnostic navigation/rendering, toolbar controls, filtering, and editor integration.                                               |
-| [`html_to_markdown`](../../crates/html_to_markdown/)         | Converts parsed HTML structure into normalized Markdown, used when ingesting rich model/tool content.                                                                |
 | [`mermaid_render`](../../crates/mermaid_render/)             | Renders Mermaid source to raster-safe, Zed-themed SVG with diagram accent colors.                                                                                    |
 | [`keymap_editor`](../../crates/keymap_editor/)               | Settings UI for searching, adding, editing, and resolving key bindings with action completion.                                                                       |
 | [`vim`](../../crates/vim/)                                   | Vim and Helix modal editing state, motions, operators, text objects, registers, commands, and editor action overrides.                                               |
@@ -255,7 +246,7 @@ and `multi_buffer` projects excerpts from one or more buffers for `editor`.
 | [`theme`](../../crates/theme/)                                         | Core UI/icon theme models, schemas, registries, color spaces, appearance, font/scale data, and active-theme global state.                |
 | [`theme_settings`](../../crates/theme_settings/)                       | Connects themes to settings, loads bundled/user themes and icon themes, and applies refinements.                                         |
 | [`theme_extension`](../../crates/theme_extension/)                     | Loads and registers themes and icon themes contributed by installed extensions.                                                          |
-| [`theme_selector`](../../crates/theme_selector/)                       | Theme and icon-theme pickers with live preview and telemetry.                                                                            |
+| [`theme_selector`](../../crates/theme_selector/)                       | Theme and icon-theme pickers with live preview.                                                                            |
 | [`file_icons`](../../crates/file_icons/)                               | Resolves file/folder icon names and folder indicators through active icon-theme settings.                                                |
 
 ## Worktrees, projects, workspaces, and session UI
@@ -274,7 +265,6 @@ panes and items.
 | [`project_panel`](../../crates/project_panel/)         | Project Panel tree UI for files, folders, worktrees, selection, drag/drop, file operations, and undo.                                                              |
 | [`recent_projects`](../../crates/recent_projects/)     | Recent local/remote projects, SSH/WSL/dev-container connection entries, disconnected overlays, and recent-project sidebar UI.                                      |
 | [`remote_connection`](../../crates/remote_connection/) | Modal and prompt UI for creating and editing SSH or WSL connection options.                                                                                        |
-| [`journal`](../../crates/journal/)                     | Creates and opens date-based journal entries according to journal settings.                                                                                        |
 | [`onboarding`](../../crates/onboarding/)               | First-run flow for keymap/theme selection, editor basics, and importing VS Code or Cursor settings.                                                                |
 | [`dev_container`](../../crates/dev_container/)         | Parses devcontainer manifests/features, talks to Docker or Podman, and opens projects inside development containers.                                               |
 
@@ -287,7 +277,7 @@ panes and items.
 | [`git_ui_core`](../../crates/git_ui_core/)                     | Shared Git UI services and components: askpass, file diffs, branch/worktree pickers, notifications, and worktree creation.                             |
 | [`git_ui`](../../crates/git_ui/)                               | Full Git Panel and workflows for staging, commits, branches, blame, graph, conflicts, stashes, repository selection, and multi-file diffs.             |
 
-## Tasks, terminals, debugger, and REPL
+## Tasks, terminals, and debugger
 
 | Crate                                                              | Responsibility and hierarchy                                                                                                   |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -295,12 +285,11 @@ panes and items.
 | [`tasks_ui`](../../crates/tasks_ui/)                               | Task picker, task configuration helpers, and workspace actions for spawning/rerunning tasks.                                   |
 | [`terminal`](../../crates/terminal/)                               | Headless terminal model around Alacritty and PTYs, terminal settings, ANSI parsing, search, and task metadata.                 |
 | [`terminal_view`](../../crates/terminal_view/)                     | Interactive terminal workspace item, renderer, panel, scrollbars, persistence, blocks, links, and terminal actions.            |
-| [`dap`](../../crates/dap/)                                         | Debug Adapter Protocol client, transport, adapter registry/types, settings, inline values, protocol conversion, and telemetry. |
+| [`dap`](../../crates/dap/)                                         | Debug Adapter Protocol client, transport, adapter registry/types, settings, inline values, and protocol conversion. |
 | [`dap_adapters`](../../crates/dap_adapters/)                       | Built-in CodeLLDB, GDB, Go, JavaScript, and Python debug-adapter discovery and launch configuration.                           |
 | [`debug_adapter_extension`](../../crates/debug_adapter_extension/) | Adapts extension-provided debug adapters and locator commands into the core DAP registry.                                      |
 | [`debugger_tools`](../../crates/debugger_tools/)                   | Developer commands and views for inspecting debug-adapter launch arguments and protocol logs.                                  |
 | [`debugger_ui`](../../crates/debugger_ui/)                         | Debug Panel, sessions, process/attach modals, stack frames, variables, breakpoints, console, and debugger persistence.         |
-| [`repl`](../../crates/repl/)                                       | Jupyter kernel/session management, notebook outputs, inline REPL blocks, editor integration, and REPL UI/settings.             |
 
 ## Extensions
 
@@ -319,27 +308,24 @@ extensions.
 
 `remote` and `remote_server` connect the desktop UI to a headless editor
 process over SSH. `rpc` and `proto` define the wire protocol they share, and
-`client` supplies the message-handler registry and telemetry upload.
+`client` supplies the message-handler registry and OS helpers.
 
 | Crate                                                | Responsibility and hierarchy                                                                                                                         |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`proto`](../../crates/proto/)                       | Generated protobuf messages, typed envelopes, error conversion, and shared wire protocol between Zed clients and servers.                            |
 | [`rpc`](../../crates/rpc/)                           | Peer-to-peer RPC connections, authentication, request/response routing, notifications, message streams, and reconnecting proto clients over `proto`. |
-| [`client`](../../crates/client/)                     | Telemetry upload, proto message-handler registry, and URL helpers shared by the app and SSH remoting.                                                   |
+| [`client`](../../crates/client/)                     | Proto message-handler registry, OS name/version helpers, and URL helpers shared by the app and SSH remoting.                                             |
 | [`cloud_api_types`](../../crates/cloud_api_types/)   | Serializable HTTP API types for the extension index.                                                                                                       |
 | [`remote`](../../crates/remote/)                     | Desktop-side remote-editing protocol, identity, transport, proxy process, and remote client state.                                                   |
 
-## Updates, diagnostics, telemetry, and top-level actions
+## Updates, diagnostics, and top-level actions
 
 | Crate                                                | Responsibility and hierarchy                                                                                                  |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | [`auto_update`](../../crates/auto_update/)           | Checks release channels, downloads update assets, records update state, and invokes the platform update helper.               |
 | [`auto_update_ui`](../../crates/auto_update_ui/)     | Update notifications, release-note presentation, restart/install actions, and update-related prompt migration UI.             |
 | [`install_cli`](../../crates/install_cli/)           | Workspace actions for installing the `zed` CLI and registering Zed URL/file handlers.                                         |
-| [`crashes`](../../crates/crashes/)                   | Installs crash/panic handlers, gathers crash and GPU/user context, writes reports, and coordinates crash-server shutdown.     |
-| [`feedback`](../../crates/feedback/)                 | In-app feedback/report form and submission, including system and extension diagnostics.                                       |
-| [`telemetry_events`](../../crates/telemetry_events/) | Serializable event payloads shared by the application, client, evaluations, and telemetry uploader.                           |
-| [`telemetry`](../../crates/telemetry/)               | Application telemetry initialization and event dispatch facade over `telemetry_events`.                                       |
+| [`crashes`](../../crates/crashes/)                   | Installs crash/panic handlers, gathers crash and GPU context, writes local minidumps and reports, and coordinates crash-server shutdown. |
 | [`zed_actions`](../../crates/zed_actions/)           | Central declarations for cross-feature GPUI actions so crates can dispatch them without depending on feature implementations. |
 
 ## Maintaining this map

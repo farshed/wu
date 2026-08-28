@@ -42,8 +42,8 @@ use util::{
     rel_path::RelPath,
 };
 use workspace::{
-    MAX_RECENT_SELECTIONS, ModalView, OpenOptions, OpenVisible,
-    SplitDirection, Workspace, item::PreviewTabsSettings, notifications::NotifyResultExt, pane,
+    MAX_RECENT_SELECTIONS, ModalView, OpenOptions, OpenVisible, SplitDirection, Workspace,
+    item::PreviewTabsSettings, notifications::NotifyResultExt, pane,
 };
 use zed_actions::search::ToggleIncludeIgnored;
 

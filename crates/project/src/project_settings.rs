@@ -890,7 +890,6 @@ impl SettingsObserver {
         }
     }
 
-
     async fn handle_update_worktree_settings(
         this: Entity<Self>,
         envelope: TypedEnvelope<proto::UpdateWorktreeSettings>,

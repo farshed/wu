@@ -114,9 +114,6 @@ pub struct AssetQuery<'a> {
     asset: &'a str,
     os: &'a str,
     arch: &'a str,
-    metrics_id: Option<&'a str>,
-    system_id: Option<&'a str>,
-    is_staff: Option<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -678,16 +675,6 @@ impl AutoUpdater {
     ) -> Result<ReleaseAsset> {
         let client = this.read_with(cx, |this, _| this.client.clone());
 
-        let (system_id, metrics_id, is_staff) = if client.telemetry().metrics_enabled() {
-            (
-                client.telemetry().system_id(),
-                client.telemetry().metrics_id(),
-                client.telemetry().is_staff(),
-            )
-        } else {
-            (None, None, None)
-        };
-
         let version = if let Some(mut version) = version {
             version.pre = semver::Prerelease::EMPTY;
             version.build = semver::BuildMetadata::EMPTY;
@@ -698,17 +685,8 @@ impl AutoUpdater {
         let http_client = client.http_client();
 
         let path = format!("/releases/{}/{}/asset", release_channel.dev_name(), version,);
-        let url = http_client.build_zed_cloud_url_with_query(
-            &path,
-            AssetQuery {
-                os,
-                arch,
-                asset,
-                metrics_id: metrics_id.as_deref(),
-                system_id: system_id.as_deref(),
-                is_staff,
-            },
-        )?;
+        let url =
+            http_client.build_zed_cloud_url_with_query(&path, AssetQuery { os, arch, asset })?;
 
         let mut response = http_client
             .get(url.as_str(), Default::default(), true)
@@ -1348,7 +1326,6 @@ pub async fn finalize_auto_update_on_quit() {
 #[cfg(test)]
 mod tests {
     use client::Client;
-    use clock::FakeSystemClock;
     use futures::channel::oneshot;
     use gpui::TestAppContext;
     use http_client::{FakeHttpClient, Response};
@@ -1401,7 +1378,6 @@ mod tests {
             let current_version = semver::Version::new(0, 100, 0);
             release_channel::init_test(current_version, ReleaseChannel::Stable, cx);
 
-            let clock = Arc::new(FakeSystemClock::new());
             let release_available = Arc::clone(&release_available);
             let dmg_rx = Arc::new(parking_lot::Mutex::new(Some(dmg_rx)));
             let fake_client_http = FakeHttpClient::create(move |req| {
@@ -1427,7 +1403,7 @@ mod tests {
                 Ok(Response::builder().status(404).body("".into()).unwrap())
                 }
             });
-            let client = Client::new(clock, fake_client_http, cx);
+            let client = Client::new(fake_client_http);
             crate::init(client, cx);
         });
 

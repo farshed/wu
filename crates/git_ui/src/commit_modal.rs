@@ -270,12 +270,10 @@ impl CommitModal {
 
         PopoverMenu::new(id.into())
             .with_handle(self.commit_menu_handle.clone())
-            .trigger(
-                crate::render_split_button_chevron_trigger(
-                    "modal-commit-split-button-right",
-                    menu_open,
-                ),
-            )
+            .trigger(crate::render_split_button_chevron_trigger(
+                "modal-commit-split-button-right",
+                menu_open,
+            ))
             .menu({
                 let git_panel_entity = self.git_panel.clone();
                 move |window, cx| {
@@ -344,30 +342,23 @@ impl CommitModal {
     }
 
     pub fn render_footer(&self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (
-            can_commit,
-            tooltip,
-            commit_label,
-            co_authors,
-            active_repo,
-            commit_options,
-            workspace,
-        ) = self.git_panel.update(cx, |git_panel, cx| {
-            let (can_commit, tooltip) = git_panel.configure_commit_button(cx);
-            let title = git_panel.commit_button_title();
-            let co_authors = git_panel.render_co_authors(cx);
-            let active_repo = git_panel.active_repository.clone();
-            let commit_options = git_panel.commit_options();
-            (
-                can_commit,
-                tooltip,
-                title,
-                co_authors,
-                active_repo,
-                commit_options,
-                git_panel.workspace.clone(),
-            )
-        });
+        let (can_commit, tooltip, commit_label, co_authors, active_repo, commit_options, workspace) =
+            self.git_panel.update(cx, |git_panel, cx| {
+                let (can_commit, tooltip) = git_panel.configure_commit_button(cx);
+                let title = git_panel.commit_button_title();
+                let co_authors = git_panel.render_co_authors(cx);
+                let active_repo = git_panel.active_repository.clone();
+                let commit_options = git_panel.commit_options();
+                (
+                    can_commit,
+                    tooltip,
+                    title,
+                    co_authors,
+                    active_repo,
+                    commit_options,
+                    git_panel.workspace.clone(),
+                )
+            });
 
         let branch = active_repo
             .as_ref()
@@ -445,7 +436,6 @@ impl CommitModal {
                             .disabled(!can_commit)
                             .child(Label::new(commit_label).size(LabelSize::Small).mr_0p5())
                             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                telemetry::event!("Git Committed", source = "Git Modal");
                                 this.git_panel.update(cx, |git_panel, cx| {
                                     let options = git_panel.commit_options();
                                     git_panel.commit_changes(options, window, cx)
@@ -500,16 +490,10 @@ impl CommitModal {
     }
 
     fn on_commit(&mut self, _: &git::Commit, window: &mut Window, cx: &mut Context<Self>) {
-        let is_amend = self.git_panel.read(cx).amend_pending();
         let did_execute = self.git_panel.update(cx, |git_panel, cx| {
             git_panel.commit(&self.commit_editor.focus_handle(cx), window, cx)
         });
         if did_execute {
-            if is_amend {
-                telemetry::event!("Git Amended", source = "Git Modal");
-            } else {
-                telemetry::event!("Git Committed", source = "Git Modal");
-            }
             cx.emit(DismissEvent);
         }
     }
@@ -529,7 +513,6 @@ impl CommitModal {
         if self.git_panel.update(cx, |git_panel, cx| {
             git_panel.amend(&self.commit_editor.focus_handle(cx), window, cx)
         }) {
-            telemetry::event!("Git Amended", source = "Git Modal");
             cx.emit(DismissEvent);
         }
     }

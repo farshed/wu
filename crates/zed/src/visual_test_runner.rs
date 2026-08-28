@@ -806,9 +806,8 @@ fn init_app_state(cx: &mut App) -> Arc<AppState> {
     let languages = Arc::new(language::LanguageRegistry::test(
         cx.background_executor().clone(),
     ));
-    let clock = Arc::new(clock::FakeSystemClock::new());
     let http_client = http_client::FakeHttpClient::with_404_response();
-    let client = client::Client::new(clock, http_client, cx);
+    let client = client::Client::new(http_client);
     let session = cx.new(|cx| session::AppSession::new(Session::test(), cx));
     let user_store = cx.new(|cx| client::UserStore::new(client.clone(), cx));
     let workspace_store = cx.new(|cx| workspace::WorkspaceStore::new(cx));

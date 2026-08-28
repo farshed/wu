@@ -174,7 +174,6 @@ impl DapStore {
         Self::new(mode, breakpoint_store, worktree_store, fs, cx)
     }
 
-
     fn new(
         mode: DapStoreMode,
         breakpoint_store: Entity<BreakpointStore>,
@@ -773,7 +772,6 @@ impl DapStore {
     ) {
         self.downstream_client = Some((downstream_client, project_id));
     }
-
 
     async fn handle_run_debug_locator(
         this: Entity<Self>,

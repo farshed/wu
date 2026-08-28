@@ -1243,7 +1243,6 @@ impl WorktreeStore {
         }
     }
 
-
     pub async fn handle_create_project_entry(
         this: Entity<Self>,
         envelope: TypedEnvelope<proto::CreateProjectEntry>,

@@ -63,29 +63,12 @@ pub(crate) fn settings_data(cx: &App) -> Vec<SettingsPage> {
         terminal_page(),
         version_control_page(),
         network_page(),
-        developer_page(cx),
+        developer_page(),
     ]
 }
 
-fn developer_page(cx: &App) -> SettingsPage {
-    use feature_flags::FeatureFlagAppExt as _;
-
+fn developer_page() -> SettingsPage {
     let mut items: Vec<SettingsPageItem> = Vec::new();
-
-    // Feature flag overrides are a staff-only affordance, so only surface the section when the overrides are enabled.
-    if cx.feature_flag_overrides_enabled() {
-        items.push(SettingsPageItem::SectionHeader("Feature Flags"));
-        items.push(SettingsPageItem::SubPageLink(SubPageLink {
-            title: "Feature Flags".into(),
-            r#type: Default::default(),
-            description: None,
-            search_aliases: &[],
-            json_path: Some("feature_flags"),
-            in_json: true,
-            files: USER,
-            render: crate::pages::render_feature_flags_page,
-        }));
-    }
 
     items.push(SettingsPageItem::SectionHeader("Instrumentation"));
     items.push(SettingsPageItem::SettingItem(SettingItem {
@@ -370,51 +353,6 @@ fn general_page(cx: &App) -> SettingsPage {
         ]
     }
 
-    fn privacy_section() -> [SettingsPageItem; 3] {
-        [
-            SettingsPageItem::SectionHeader("Privacy"),
-            SettingsPageItem::SettingItem(SettingItem {
-                title: "Telemetry Diagnostics",
-                description: "Send debug information like crash reports.",
-                field: Box::new(SettingField {
-                    json_path: Some("telemetry.diagnostics"),
-                    pick: |settings_content| {
-                        settings_content
-                            .telemetry
-                            .as_ref()
-                            .and_then(|telemetry| telemetry.diagnostics.as_ref())
-                    },
-                    write: |settings_content, value, _| {
-                        settings_content
-                            .telemetry
-                            .get_or_insert_default()
-                            .diagnostics = value;
-                    },
-                }),
-                metadata: None,
-                files: USER,
-            }),
-            SettingsPageItem::SettingItem(SettingItem {
-                title: "Telemetry Metrics",
-                description: "Send anonymized usage data like what languages you're using Zed with.",
-                field: Box::new(SettingField {
-                    json_path: Some("telemetry.metrics"),
-                    pick: |settings_content| {
-                        settings_content
-                            .telemetry
-                            .as_ref()
-                            .and_then(|telemetry| telemetry.metrics.as_ref())
-                    },
-                    write: |settings_content, value, _| {
-                        settings_content.telemetry.get_or_insert_default().metrics = value;
-                    },
-                }),
-                metadata: None,
-                files: USER,
-            }),
-        ]
-    }
-
     fn auto_update_section() -> [SettingsPageItem; 2] {
         [
             SettingsPageItem::SectionHeader("Auto Update"),
@@ -442,7 +380,6 @@ fn general_page(cx: &App) -> SettingsPage {
             security_section(),
             workspace_restoration_section(),
             scoped_settings_section(),
-            privacy_section(),
             auto_update_section(),
         )
         .into(),

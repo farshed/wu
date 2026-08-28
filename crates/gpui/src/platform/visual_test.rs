@@ -5,7 +5,6 @@
 //! - Deterministic task scheduling via TestDispatcher
 //! - Controllable time via `advance_clock`
 
-use crate::ScreenCaptureSource;
 use crate::{
     AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, ForegroundExecutor, Keymap,
     Menu, MenuItem, OwnedMenu, PathPromptOptions, Platform, PlatformDisplay,
@@ -107,16 +106,6 @@ impl Platform for VisualTestPlatform {
 
     fn window_stack(&self) -> Option<Vec<AnyWindowHandle>> {
         self.platform.window_stack()
-    }
-
-    fn is_screen_capture_supported(&self) -> bool {
-        self.platform.is_screen_capture_supported()
-    }
-
-    fn screen_capture_sources(
-        &self,
-    ) -> oneshot::Receiver<Result<Vec<Rc<dyn ScreenCaptureSource>>>> {
-        self.platform.screen_capture_sources()
     }
 
     fn open_window(

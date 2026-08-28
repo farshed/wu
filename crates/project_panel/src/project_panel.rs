@@ -56,7 +56,7 @@ use std::{
     ops::Range,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 use theme_settings::ThemeSettings;
 use ui::{
@@ -162,7 +162,6 @@ pub struct ProjectPanel {
     hover_expand_task: Option<Task<()>>,
     previous_drag_position: Option<Point<Pixels>>,
     sticky_items_count: usize,
-    last_reported_update: Instant,
     update_visible_entries_task: UpdateVisibleEntriesTask,
     undo_manager: UndoManager,
     state: State,
@@ -879,7 +878,6 @@ impl ProjectPanel {
                 hover_expand_task: None,
                 previous_drag_position: None,
                 sticky_items_count: 0,
-                last_reported_update: Instant::now(),
                 state: State {
                     max_width_item_index: None,
                     edit_state: None,
@@ -891,11 +889,7 @@ impl ProjectPanel {
                     unfolded_dir_ids: Default::default(),
                 },
                 update_visible_entries_task: Default::default(),
-                undo_manager: UndoManager::new(
-                    workspace.weak_handle(),
-                    weak_project_panel,
-                    &cx,
-                ),
+                undo_manager: UndoManager::new(workspace.weak_handle(), weak_project_panel, &cx),
             };
             this.update_visible_entries(None, false, false, window, cx);
 
@@ -4349,7 +4343,6 @@ impl ProjectPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let now = Instant::now();
         let settings = ProjectPanelSettings::get_global(cx);
         let auto_collapse_dirs = settings.auto_fold_dirs;
         let hide_gitignore = settings.hide_gitignore;
@@ -4629,19 +4622,6 @@ impl ProjectPanel {
                         worktree_id,
                         entry_id,
                     });
-                }
-                let elapsed = now.elapsed();
-                if this.last_reported_update.elapsed() > Duration::from_secs(3600) {
-                    telemetry::event!(
-                        "Project Panel Updated",
-                        elapsed_ms = elapsed.as_millis() as u64,
-                        worktree_entries = this
-                            .state
-                            .visible_entries
-                            .iter()
-                            .map(|worktree| worktree.entries.len())
-                            .sum::<usize>(),
-                    )
                 }
                 if this.update_visible_entries_task.focus_filename_editor {
                     this.update_visible_entries_task.focus_filename_editor = false;
@@ -7700,7 +7680,6 @@ impl Render for ProjectPanel {
                         KeyBinding::for_action_in(&workspace::Open::default(), &focus_handle, cx),
                     )
                     .on_open_project(move |_, window, cx| {
-                        telemetry::event!("Project Panel Add Project Clicked");
                         workspace
                             .update(cx, |_, cx| {
                                 window
@@ -7709,7 +7688,6 @@ impl Render for ProjectPanel {
                             .log_err();
                     })
                     .on_clone_repo(move |_, window, cx| {
-                        telemetry::event!("Project Panel Clone Repo Clicked");
                         workspace_clone
                             .update(cx, |_, cx| {
                                 window.dispatch_action(git::Clone.boxed_clone(), cx);

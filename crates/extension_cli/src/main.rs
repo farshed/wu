@@ -375,16 +375,6 @@ enum ExtensionFeatureError {
     ThemesMixedWithOtherFeatures,
     #[error("extension must not provide other features along with icon themes")]
     IconThemesMixedWithOtherFeatures,
-    #[error(
-        "Slash commands have been deprecated and \
-        the slash command API will be removed in a future release. {}",
-        if *.sole_feature {
-            "Slash command extensions will no longer be accepted at this time."
-        } else {
-            "Please remove any slash-command related code from your extension."
-        }
-    )]
-    SlashCommandsDeprecated { sole_feature: bool },
 }
 
 fn validate_extension_features(
@@ -402,12 +392,6 @@ fn validate_extension_features(
 
     if provides.contains(&ExtensionProvides::IconThemes) && !provides_single_feature {
         return Err(ExtensionFeatureError::IconThemesMixedWithOtherFeatures);
-    }
-
-    if provides.contains(&ExtensionProvides::SlashCommands) {
-        return Err(ExtensionFeatureError::SlashCommandsDeprecated {
-            sole_feature: provides_single_feature,
-        });
     }
 
     Ok(())
@@ -706,8 +690,6 @@ mod tests {
             languages: Vec::new(),
             grammars: BTreeMap::default(),
             language_servers: BTreeMap::default(),
-            context_servers: BTreeMap::default(),
-            slash_commands: BTreeMap::default(),
             snippets: None,
             capabilities: Vec::new(),
             debug_adapters: BTreeMap::default(),
@@ -907,29 +889,6 @@ mod tests {
         assert_eq!(
             validate_extension_features(&provides),
             Err(ExtensionFeatureError::IconThemesMixedWithOtherFeatures),
-        );
-    }
-
-    #[test]
-    fn test_validate_slash_commands_only() {
-        let provides = BTreeSet::from([ExtensionProvides::SlashCommands]);
-        assert_eq!(
-            validate_extension_features(&provides),
-            Err(ExtensionFeatureError::SlashCommandsDeprecated { sole_feature: true }),
-        );
-    }
-
-    #[test]
-    fn test_validate_slash_commands_with_other_features() {
-        let provides = BTreeSet::from([
-            ExtensionProvides::SlashCommands,
-            ExtensionProvides::Languages,
-        ]);
-        assert_eq!(
-            validate_extension_features(&provides),
-            Err(ExtensionFeatureError::SlashCommandsDeprecated {
-                sole_feature: false
-            }),
         );
     }
 

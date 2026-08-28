@@ -53,7 +53,6 @@ smallvec.workspace = true
 strum.workspace = true
 sysinfo.workspace = true
 task.workspace = true
-telemetry.workspace = true
 terminal.workspace = true
 theme.workspace = true
 theme_settings.workspace = true

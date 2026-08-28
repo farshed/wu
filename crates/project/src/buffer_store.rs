@@ -1147,7 +1147,6 @@ impl BufferStore {
         self.downstream_client = Some((downstream_client, remote_id));
     }
 
-
     fn buffer_changed_file(&mut self, buffer: Entity<Buffer>, cx: &mut App) -> Option<()> {
         let file = File::from_dyn(buffer.read(cx).file())?;
 

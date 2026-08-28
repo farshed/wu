@@ -16,7 +16,6 @@ Extensions can provide:
 - [Themes](./themes.md)
 - [Icon Themes](./icon-themes.md)
 - [Snippets](./snippets.md)
-- [MCP Servers](./mcp-extensions.md)
 
 ## Developing an Extension Locally
 
@@ -70,7 +69,7 @@ my-extension/
 
 ## Rust and WebAssembly
 
-> Please note that most extensions will work properly without any Rust code present. In particular, only language server, context server and debugger extensions require the presence of custom Rust in order to function properly.
+> Please note that most extensions will work properly without any Rust code present. In particular, only language server and debugger extensions require the presence of custom Rust in order to function properly.
 
 Procedural parts of extensions are written in Rust and compiled to WebAssembly. To develop an extension that includes custom code, include a `Cargo.toml` like this:
 

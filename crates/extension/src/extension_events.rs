@@ -37,7 +37,6 @@ pub enum Event {
     ExtensionInstalled(Arc<ExtensionManifest>),
     ExtensionUninstalled(Arc<ExtensionManifest>),
     ExtensionsInstalledChanged,
-    ConfigureExtensionRequested(Arc<ExtensionManifest>),
 }
 
 impl EventEmitter<Event> for ExtensionEvents {}

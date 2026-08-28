@@ -60,10 +60,6 @@ Configure language servers and formatters in Settings ({#kb zed::OpenSettings}) 
 
 See [Configuring supported languages](../configuring-languages.md) in the Zed documentation for more information.
 
-<!--
-TBD: Deno TypeScript REPL instructions [docs/repl#typescript-deno](../repl.md#typescript-deno)
--->
-
 ## Configuration completion
 
 To get completions for `deno.json` or `package.json`, add the following to your settings file ([how to edit](../configuring-zed.md#settings-files)). For more details, see [JSON](./json.md).

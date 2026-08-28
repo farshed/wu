@@ -14,7 +14,6 @@ pub mod project_settings;
 pub mod search;
 pub mod task_inventory;
 pub mod task_store;
-pub mod telemetry_snapshot;
 pub mod terminals;
 pub mod toolchain_store;
 pub mod trusted_worktrees;
@@ -50,9 +49,7 @@ pub use worktree_store::WorktreePaths;
 
 use anyhow::{Context as _, Result, anyhow};
 use buffer_store::{BufferStore, BufferStoreEvent};
-use client::{
-    Client, ProjectId, TypedEnvelope, UserStore, proto,
-};
+use client::{Client, ProjectId, TypedEnvelope, UserStore, proto};
 use clock::ReplicaId;
 
 use dap::client::DebugAdapterClient;
@@ -68,10 +65,7 @@ use debugger::{
 
 pub use environment::ProjectEnvironment;
 
-use futures::{
-    StreamExt,
-    future::try_join_all,
-};
+use futures::{StreamExt, future::try_join_all};
 pub use image_store::{ImageItem, ImageStore};
 use image_store::{ImageItemEvent, ImageStoreEvent};
 
@@ -1077,7 +1071,6 @@ impl Project {
             cx.subscribe(&worktree_store, Self::on_worktree_store_event)
                 .detach();
 
-
             let environment = cx.new(|cx| {
                 ProjectEnvironment::new(env, worktree_store.downgrade(), None, false, cx)
             });
@@ -1269,7 +1262,6 @@ impl Project {
                 );
             }
 
-
             let buffer_store = cx.new(|cx| {
                 BufferStore::remote(
                     worktree_store.clone(),
@@ -1296,7 +1288,6 @@ impl Project {
                     cx,
                 )
             });
-
 
             let environment = cx.new(|cx| {
                 ProjectEnvironment::new(
@@ -1452,7 +1443,6 @@ impl Project {
             remote_proto.add_entity_message_handler(Self::handle_update_worktree);
             remote_proto.add_entity_message_handler(Self::handle_update_project);
             remote_proto.add_entity_message_handler(Self::handle_toast);
-            remote_proto.add_entity_message_handler(Self::handle_telemetry_event);
             remote_proto.add_entity_request_handler(Self::handle_language_server_prompt_request);
             remote_proto.add_entity_message_handler(Self::handle_hide_toast);
             remote_proto.add_entity_request_handler(Self::handle_update_buffer_from_remote_server);
@@ -1498,7 +1488,6 @@ impl Project {
             })
             .detach()
         }
-
     }
 
     #[cfg(feature = "test-support")]
@@ -1506,13 +1495,10 @@ impl Project {
         root_paths: impl IntoIterator<Item = &Path>,
         cx: &mut AsyncApp,
     ) -> Entity<Project> {
-        use clock::FakeSystemClock;
-
         let fs = Arc::new(RealFs::new(None, cx.background_executor().clone()));
         let languages = LanguageRegistry::test(cx.background_executor().clone());
-        let clock = Arc::new(FakeSystemClock::new());
         let http_client = http_client::FakeHttpClient::with_404_response();
-        let client = cx.update(|cx| client::Client::new(clock, http_client.clone(), cx));
+        let client = client::Client::new(http_client.clone());
         let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         let project = cx.update(|cx| {
             Project::local(
@@ -1567,12 +1553,9 @@ impl Project {
         init_worktree_trust: bool,
         cx: &mut gpui::TestAppContext,
     ) -> Entity<Project> {
-        use clock::FakeSystemClock;
-
         let languages = LanguageRegistry::test(cx.executor());
-        let clock = Arc::new(FakeSystemClock::new());
         let http_client = http_client::FakeHttpClient::with_404_response();
-        let client = cx.update(|cx| client::Client::new(clock, http_client.clone(), cx));
+        let client = client::Client::new(http_client.clone());
         let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         let project = cx.update(|cx| {
             Project::local(
@@ -2791,62 +2774,60 @@ impl Project {
                 language_server_id,
                 name,
                 message,
-            } => {
-                match message {
-                    proto::update_language_server::Variant::MetadataUpdated(update) => {
-                        self.lsp_store.update(cx, |lsp_store, _| {
-                            if let Some(capabilities) = update
-                                .capabilities
+            } => match message {
+                proto::update_language_server::Variant::MetadataUpdated(update) => {
+                    self.lsp_store.update(cx, |lsp_store, _| {
+                        if let Some(capabilities) = update
+                            .capabilities
+                            .as_ref()
+                            .and_then(|capabilities| serde_json::from_str(capabilities).ok())
+                        {
+                            lsp_store
+                                .lsp_server_capabilities
+                                .insert(*language_server_id, capabilities);
+                        }
+
+                        if let Some(language_server_status) = lsp_store
+                            .language_server_statuses
+                            .get_mut(language_server_id)
+                        {
+                            if let Some(binary) = &update.binary {
+                                language_server_status.binary = Some(LanguageServerBinary {
+                                    path: PathBuf::from(&binary.path),
+                                    arguments: binary
+                                        .arguments
+                                        .iter()
+                                        .map(OsString::from)
+                                        .collect(),
+                                    env: None,
+                                });
+                            }
+
+                            language_server_status.configuration = update
+                                .configuration
                                 .as_ref()
-                                .and_then(|capabilities| serde_json::from_str(capabilities).ok())
-                            {
-                                lsp_store
-                                    .lsp_server_capabilities
-                                    .insert(*language_server_id, capabilities);
-                            }
+                                .and_then(|config_str| serde_json::from_str(config_str).ok());
 
-                            if let Some(language_server_status) = lsp_store
-                                .language_server_statuses
-                                .get_mut(language_server_id)
-                            {
-                                if let Some(binary) = &update.binary {
-                                    language_server_status.binary = Some(LanguageServerBinary {
-                                        path: PathBuf::from(&binary.path),
-                                        arguments: binary
-                                            .arguments
-                                            .iter()
-                                            .map(OsString::from)
-                                            .collect(),
-                                        env: None,
-                                    });
-                                }
-
-                                language_server_status.configuration = update
-                                    .configuration
-                                    .as_ref()
-                                    .and_then(|config_str| serde_json::from_str(config_str).ok());
-
-                                language_server_status.workspace_folders = update
-                                    .workspace_folders
-                                    .iter()
-                                    .filter_map(|uri_str| lsp::Uri::from_str(uri_str).ok())
-                                    .collect();
-                            }
+                            language_server_status.workspace_folders = update
+                                .workspace_folders
+                                .iter()
+                                .filter_map(|uri_str| lsp::Uri::from_str(uri_str).ok())
+                                .collect();
+                        }
+                    });
+                }
+                proto::update_language_server::Variant::RegisteredForBuffer(update) => {
+                    if let Some(buffer_id) = BufferId::new(update.buffer_id).ok() {
+                        cx.emit(Event::LanguageServerBufferRegistered {
+                            buffer_id,
+                            server_id: *language_server_id,
+                            buffer_abs_path: PathBuf::from(&update.buffer_abs_path),
+                            name: name.clone(),
                         });
                     }
-                    proto::update_language_server::Variant::RegisteredForBuffer(update) => {
-                        if let Some(buffer_id) = BufferId::new(update.buffer_id).ok() {
-                            cx.emit(Event::LanguageServerBufferRegistered {
-                                buffer_id,
-                                server_id: *language_server_id,
-                                buffer_abs_path: PathBuf::from(&update.buffer_abs_path),
-                                name: name.clone(),
-                            });
-                        }
-                    }
-                    _ => (),
                 }
-            }
+                _ => (),
+            },
             LspStoreEvent::Notification(message) => cx.emit(Event::Toast {
                 notification_id: "lsp".into(),
                 message: message.clone(),
@@ -2970,9 +2951,6 @@ impl Project {
             WorktreeStoreEvent::WorktreeOrderChanged => cx.emit(Event::WorktreeOrderChanged),
             WorktreeStoreEvent::WorktreeUpdateSent(_) => {}
             WorktreeStoreEvent::WorktreeUpdatedEntries(worktree_id, changes) => {
-                self.client()
-                    .telemetry()
-                    .report_discovered_project_type_events(*worktree_id, changes);
                 cx.emit(Event::WorktreeUpdatedEntries(*worktree_id, changes.clone()))
             }
             WorktreeStoreEvent::WorktreeDeletedEntry(worktree_id, id) => {
@@ -4122,7 +4100,6 @@ impl Project {
         });
     }
 
-
     pub fn set_active_path(&mut self, entry: Option<ProjectPath>, cx: &mut Context<Self>) {
         let new_active_entry = entry.and_then(|project_path| {
             let worktree = self.worktree_for_id(project_path.worktree_id, cx)?;
@@ -4375,42 +4352,6 @@ impl Project {
             });
             Ok(())
         })
-    }
-
-    async fn handle_telemetry_event(
-        this: Entity<Self>,
-        envelope: TypedEnvelope<proto::TelemetryEvent>,
-        mut cx: AsyncApp,
-    ) -> Result<()> {
-        let payload = envelope.payload;
-        this.update(&mut cx, |this, cx| {
-            // The remote connection type, OS, version, and architecture are all
-            // already known from connection setup, so they don't need to be sent
-            // with each event.
-            let Some((connection_type, platform, os_version)) =
-                this.remote_client.as_ref().map(|client| {
-                    let client = client.read(cx);
-                    (
-                        client.connection_type(),
-                        client.remote_platform(),
-                        client.remote_os_version(),
-                    )
-                })
-            else {
-                return;
-            };
-            this.client()
-                .telemetry()
-                .report_remote_event(
-                    &payload.event_json,
-                    connection_type,
-                    platform.os.display_name().to_string(),
-                    os_version,
-                    platform.arch.as_str().to_string(),
-                )
-                .log_err();
-        });
-        Ok(())
     }
 
     async fn handle_language_server_prompt_request(

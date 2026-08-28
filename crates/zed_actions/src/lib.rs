@@ -73,8 +73,6 @@ actions!(
         OpenStatusPage,
         /// Opens the Zed merch store.
         GetMerch,
-        /// Opens the telemetry log.
-        OpenTelemetryLog,
         /// Opens the performance profiler.
         OpenPerformanceProfiler,
         /// Opens the onboarding view.
@@ -92,7 +90,6 @@ pub enum ExtensionCategoryFilter {
     Languages,
     Grammars,
     LanguageServers,
-    ContextServers,
     Snippets,
     DebugAdapters,
 }
@@ -406,22 +403,6 @@ pub mod project_panel {
         ]
     );
 }
-pub mod feedback {
-    use gpui::actions;
-
-    actions!(
-        feedback,
-        [
-            /// Opens email client to send feedback to Zed support.
-            EmailZed,
-            /// Opens the bug report form.
-            FileBugReport,
-            /// Opens the feature request form.
-            RequestFeature
-        ]
-    );
-}
-
 pub mod theme {
     use gpui::actions;
 
@@ -768,48 +749,6 @@ pub mod preview {
             ]
         );
     }
-}
-
-pub mod notebook {
-    use gpui::actions;
-
-    actions!(
-        notebook,
-        [
-            /// Opens a Jupyter notebook file.
-            OpenNotebook,
-            /// Runs all cells in the notebook.
-            RunAll,
-            /// Runs the current cell and stays on it.
-            Run,
-            /// Runs the current cell and advances to the next cell.
-            RunAndAdvance,
-            /// Clears all cell outputs.
-            ClearOutputs,
-            /// Moves the current cell up.
-            MoveCellUp,
-            /// Moves the current cell down.
-            MoveCellDown,
-            /// Adds a new markdown cell.
-            AddMarkdownBlock,
-            /// Adds a new code cell.
-            AddCodeBlock,
-            /// Deletes the current cell.
-            DeleteCell,
-            /// Restarts the kernel.
-            RestartKernel,
-            /// Interrupts the current execution.
-            InterruptKernel,
-            /// Move down in cells.
-            NotebookMoveDown,
-            /// Move up in cells.
-            NotebookMoveUp,
-            /// Enters the current cell's editor (edit mode).
-            EnterEditMode,
-            /// Exits the cell editor and returns to cell command mode.
-            EnterCommandMode,
-        ]
-    );
 }
 
 pub mod git_panel {

@@ -92,14 +92,14 @@ pub use element::{
     CursorLayout, EditorElement, HighlightedRange, HighlightedRangeLine, PointForPosition,
     file_status_label_color, render_breadcrumb_text,
 };
+pub(crate) use git::DisplayDiffHunk;
+use git::InlineBlamePopover;
 pub use git::blame::{BlameRenderer, GitBlame};
 pub use git::{
     DiffHunkDelegate, ResolvedDiffHunk, ResolvedDiffHunks, RestoreOnlyDiffHunkDelegate,
     RestoreOnlyUnstagedDiffHunkDelegate, UncommittedDiffHunkDelegate, render_diff_hunk_controls,
     set_blame_renderer,
 };
-use git::InlineBlamePopover;
-pub(crate) use git::DisplayDiffHunk;
 pub use hover_popover::hover_markdown_style;
 pub use inlays::Inlay;
 pub use items::MAX_TAB_TITLE_LEN;
@@ -126,7 +126,6 @@ use code_context_menus::{
 use code_lens::CodeLensState;
 use collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use convert_case::{Case, Casing};
-use dap::TelemetrySpawnLocation;
 use display_map::*;
 use document_colors::LspColorData;
 use document_links::LspDocumentLinks;
@@ -139,14 +138,14 @@ use futures::{
 use fuzzy::{StringMatch, StringMatchCandidate};
 use git::blame::GlobalBlameRenderer;
 use gpui::{
-    Action, AnyElement, App, AppContext, AsyncWindowContext, Background, Bounds, ClickEvent, ClipboardEntry, ClipboardItem, Context,
-    DispatchPhase, Entity, EntityId, EntityInputHandler, EventEmitter, FocusHandle,
-    FocusOutEvent, Focusable, FontId, FontStyle, FontWeight, Global, HighlightStyle, Hsla, IsZero,
-    KeyContext, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, PaintQuad, ParentElement,
-    Pixels, PressureStage, Render, ScrollHandle, SharedString, Size, Styled,
-    Subscription, Task, TextRun, TextStyle, TextStyleRefinement, UTF16Selection, UnderlineStyle,
-    UniformListScrollHandle, WeakEntity, WeakFocusHandle, Window, div, point, prelude::*,
-    px, relative, size,
+    Action, AnyElement, App, AppContext, AsyncWindowContext, Background, Bounds, ClickEvent,
+    ClipboardEntry, ClipboardItem, Context, DispatchPhase, Entity, EntityId, EntityInputHandler,
+    EventEmitter, FocusHandle, FocusOutEvent, Focusable, FontId, FontStyle, FontWeight, Global,
+    HighlightStyle, Hsla, IsZero, KeyContext, Modifiers, MouseButton, MouseDownEvent,
+    MouseMoveEvent, PaintQuad, ParentElement, Pixels, PressureStage, Render, ScrollHandle,
+    SharedString, Size, Styled, Subscription, Task, TextRun, TextStyle, TextStyleRefinement,
+    UTF16Selection, UnderlineStyle, UniformListScrollHandle, WeakEntity, WeakFocusHandle, Window,
+    div, point, prelude::*, px, relative, size,
 };
 use hover_links::{HoverLink, HoveredLinkState, find_file};
 use hover_popover::{HoverState, hide_hover};
@@ -156,10 +155,10 @@ use itertools::{Either, Itertools};
 use language::{
     AutoindentMode, BlockCommentConfig, BracketMatch, BracketPair, Buffer, BufferRow,
     BufferSnapshot, Capability, CharClassifier, CharKind, CharScopeContext, CodeLabel, CursorShape,
-    DiagnosticEntryRef, DiffOptions, HighlightedText, IndentKind,
-    IndentSize, Language, LanguageAwareStyling, LanguageName, LanguageRegistry, LanguageScope,
-    LocalFile, OffsetRangeExt, OutlineItem, Point, Selection, SelectionGoal, TextObject,
-    TransactionId, TreeSitterOptions, WordsQuery,
+    DiagnosticEntryRef, DiffOptions, HighlightedText, IndentKind, IndentSize, Language,
+    LanguageAwareStyling, LanguageName, LanguageRegistry, LanguageScope, LocalFile, OffsetRangeExt,
+    OutlineItem, Point, Selection, SelectionGoal, TextObject, TransactionId, TreeSitterOptions,
+    WordsQuery,
     language_settings::{
         self, AllLanguageSettings, LanguageSettings, LspInsertMode, RewrapBehavior,
         WordsCompletionMode,
@@ -182,9 +181,9 @@ use parking_lot::Mutex;
 use persistence::EditorDb;
 use project::{
     BreakpointWithPosition, CodeAction, Completion, CompletionDisplayOptions, CompletionIntent,
-    CompletionResponse, CompletionSource, DocumentHighlight, InlayHint,
-    InvalidationStrategy, Location, LocationLink, LspAction, PrepareRenameResponse, Project,
-    ProjectItem, ProjectPath, ProjectTransaction,
+    CompletionResponse, CompletionSource, DocumentHighlight, InlayHint, InvalidationStrategy,
+    Location, LocationLink, LspAction, PrepareRenameResponse, Project, ProjectItem, ProjectPath,
+    ProjectTransaction,
     bookmark_store::BookmarkStore,
     debugger::{
         breakpoint_store::{
@@ -234,15 +233,15 @@ use theme::{
 };
 use theme_settings::{ThemeSettings, observe_buffer_font_size_adjustment};
 use ui::{
-    ContextMenu, Disclosure, IconButtonShape, Indicator, KeyBinding, Tooltip,
-    prelude::*, scrollbars::ScrollbarAutoHide, tooltip_container, utils::WithRemSize,
+    ContextMenu, Disclosure, IconButtonShape, Indicator, KeyBinding, Tooltip, prelude::*,
+    scrollbars::ScrollbarAutoHide, tooltip_container, utils::WithRemSize,
 };
 use ui_input::ErasedEditor;
 use util::{RangeExt, ResultExt, TryFutureExt, maybe, post_inc};
 use workspace::{
-    Item as WorkspaceItem, ItemId, ItemNavHistory, NavigationEntry, OpenInTerminal,
-    OpenTerminal, Pane, RestoreOnStartupBehavior, SERIALIZATION_THROTTLE_TIME, SplitDirection,
-    TabBarSettings, Toast, Workspace, WorkspaceId, WorkspaceSettings,
+    Item as WorkspaceItem, ItemId, ItemNavHistory, NavigationEntry, OpenInTerminal, OpenTerminal,
+    Pane, RestoreOnStartupBehavior, SERIALIZATION_THROTTLE_TIME, SplitDirection, TabBarSettings,
+    Toast, Workspace, WorkspaceId, WorkspaceSettings,
     item::{ItemBufferKind, ItemHandle, PreviewTabsSettings, SaveOptions},
     notifications::{DetachAndPromptErr, NotificationId, NotifyResultExt, NotifyTaskExt},
     searchable::SearchEvent,
@@ -288,22 +287,6 @@ pub(crate) const MINIMAP_FONT_SIZE: AbsoluteLength = AbsoluteLength::Pixels(px(2
 pub enum Direction {
     Prev,
     Next,
-}
-
-enum ReportEditorEvent {
-    Saved { auto_saved: bool },
-    EditorOpened,
-    Closed,
-}
-
-impl ReportEditorEvent {
-    pub fn event_type(&self) -> &'static str {
-        match self {
-            Self::Saved { .. } => "Editor Saved",
-            Self::EditorOpened => "Editor Opened",
-            Self::Closed => "Editor Closed",
-        }
-    }
 }
 
 pub enum ActiveDebugLine {}
@@ -2582,7 +2565,6 @@ impl Editor {
             if let Some(buffer) = multi_buffer.read(cx).as_singleton() {
                 editor.register_buffer(buffer.read(cx).remote_id(), cx);
             }
-            editor.report_editor_event(ReportEditorEvent::EditorOpened, None, cx);
         }
 
         editor
@@ -2623,10 +2605,6 @@ impl Editor {
             EditorMode::Minimap { .. } => "minimap",
             EditorMode::Full { .. } => "full",
         };
-
-        if EditorSettings::jupyter_enabled(cx) {
-            key_context.add("jupyter");
-        }
 
         key_context.set("mode", mode);
         if self.pending_rename.is_some() {
@@ -4624,9 +4602,9 @@ impl Editor {
 
     pub fn context_menu_visible(&self) -> bool {
         self.context_menu
-                .borrow()
-                .as_ref()
-                .is_some_and(|menu| menu.visible())
+            .borrow()
+            .as_ref()
+            .is_some_and(|menu| menu.visible())
     }
 
     pub fn context_menu_origin(&self) -> Option<ContextMenuOrigin> {
@@ -9645,15 +9623,6 @@ impl Editor {
 
                 cx.emit(EditorEvent::BufferEdited);
                 cx.emit(SearchEvent::MatchesInvalidated);
-
-                let Some(project) = &self.project else { return };
-                let (telemetry, is_via_ssh) = {
-                    let project = project.read(cx);
-                    let telemetry = project.client().telemetry().clone();
-                    let is_via_ssh = project.is_via_remote_server();
-                    (telemetry, is_via_ssh)
-                };
-                telemetry.log_edit_event("editor", is_via_ssh);
             }
             multi_buffer::Event::BufferRangesUpdated {
                 buffer,
@@ -10280,55 +10249,6 @@ impl Editor {
                     ..snapshot.clip_offset_utf16(selection.end, Bias::Right)
             })
             .collect()
-    }
-
-    fn report_editor_event(
-        &self,
-        reported_event: ReportEditorEvent,
-        file_extension: Option<String>,
-        cx: &App,
-    ) {
-        if cfg!(any(test, feature = "test-support")) {
-            return;
-        }
-
-        let Some(project) = &self.project else { return };
-
-        // If None, we are in a file without an extension
-        let file = self
-            .buffer
-            .read(cx)
-            .as_singleton()
-            .and_then(|b| b.read(cx).file());
-        let file_extension = file_extension.or(file
-            .as_ref()
-            .and_then(|file| Path::new(file.file_name(cx)).extension())
-            .and_then(|e| e.to_str())
-            .map(|a| a.to_string()));
-
-        let vim_mode = vim_mode_setting::VimModeSetting::try_get(cx)
-            .map(|vim_mode| vim_mode.0)
-            .unwrap_or(false);
-
-        let project = project.read(cx);
-        let event_type = reported_event.event_type();
-
-        if let ReportEditorEvent::Saved { auto_saved } = reported_event {
-            telemetry::event!(
-                event_type,
-                type = if auto_saved {"autosave"} else {"manual"},
-                file_extension,
-                vim_mode,
-                is_via_ssh = project.is_via_remote_server(),
-            );
-        } else {
-            telemetry::event!(
-                event_type,
-                file_extension,
-                vim_mode,
-                is_via_ssh = project.is_via_remote_server(),
-            );
-        };
     }
 
     /// Copy the highlighted chunks to the clipboard as JSON. The format is an array of lines,

@@ -2,11 +2,11 @@ use anyhow::{Context as _, Result};
 use fs::Fs;
 
 use gpui::{
-    App, Context, Entity, EntityId, EventEmitter, ManagedView, Render, Subscription, Task,
-    TaskExt, WeakEntity, Window, WindowId,
+    App, Context, Entity, EntityId, EventEmitter, ManagedView, Render, Subscription, Task, TaskExt,
+    WeakEntity, Window, WindowId,
 };
-pub use project::ProjectGroupKey;
 use project::Project;
+pub use project::ProjectGroupKey;
 use remote::RemoteConnectionOptions;
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -849,10 +849,6 @@ impl MultiWorkspace {
         let key = workspace.read(cx).project_group_key(cx);
         let index = self.hold(workspace, window, cx);
         self.pin(index, key, cx);
-        telemetry::event!(
-            "Workspace Added",
-            workspace_count = self.held.iter().filter(|held| held.pinned).count()
-        );
         cx.notify();
     }
 

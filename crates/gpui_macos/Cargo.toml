@@ -17,7 +17,6 @@ bench-support = ["gpui/bench-support", "gpui_apple/bench-support"]
 test-support = ["gpui/test-support", "gpui_apple/test-support"]
 runtime_shaders = ["gpui_apple/runtime_shaders"]
 font-kit = ["dep:font-kit"]
-screen-capture = ["gpui/screen-capture"]
 
 [dependencies]
 gpui.workspace = true
@@ -48,7 +47,6 @@ itertools.workspace = true
 libc.workspace = true
 log.workspace = true
 mach2.workspace = true
-media.workspace = true
 metal.workspace = true
 objc.workspace = true
 objc2.workspace = true

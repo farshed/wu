@@ -5,11 +5,11 @@ use crate::{
     persistence::WorkspaceDb,
 };
 use git::Clone as GitClone;
+use gpui::WeakEntity;
 use gpui::{
     Action, App, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     ParentElement, Render, Styled, Task, TaskExt, Window, actions,
 };
-use gpui::WeakEntity;
 use menu::{SelectNext, SelectPrevious};
 
 use schemars::JsonSchema;
@@ -465,10 +465,6 @@ impl Item for WelcomePage {
 
     fn tab_content_text(&self, _detail: usize, _cx: &App) -> SharedString {
         "Welcome".into()
-    }
-
-    fn telemetry_event_text(&self) -> Option<&'static str> {
-        Some("New Welcome Page Opened")
     }
 
     fn show_toolbar(&self) -> bool {

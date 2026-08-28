@@ -228,8 +228,6 @@ pub struct SettingsContent {
     /// The settings for the markdown preview.
     pub markdown_preview: Option<MarkdownPreviewSettingsContent>,
 
-    pub repl: Option<ReplSettingsContent>,
-
     /// Whether or not to enable Helix mode.
     ///
     /// Default: false
@@ -241,8 +239,6 @@ pub struct SettingsContent {
     ///
     /// Default: on_typing_and_action
     pub hide_mouse: Option<HideMouseMode>,
-
-    pub journal: Option<JournalSettingsContent>,
 
     /// A map of log scopes to the desired log level.
     /// Useful for filtering out noisy logs or enabling more verbose logging.
@@ -279,8 +275,6 @@ pub struct SettingsContent {
 
     /// Configuration for session-related features
     pub session: Option<SessionSettingsContent>,
-    /// Control what info is collected by Zed.
-    pub telemetry: Option<TelemetrySettingsContent>,
 
     /// Configuration of the terminal in Zed.
     pub terminal: Option<TerminalSettingsContent>,
@@ -304,9 +298,6 @@ pub struct SettingsContent {
     ///
     /// Default: 5
     pub modeline_lines: Option<usize>,
-
-    /// Local overrides for feature flags, keyed by flag name.
-    pub feature_flags: Option<FeatureFlagsMap>,
 
     /// Settings for developer-oriented instrumentation tools (profilers,
     /// tracers, etc.) that can be toggled at runtime.
@@ -336,42 +327,6 @@ pub struct PerformanceProfilerSettingsContent {
     pub enabled: Option<bool>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, MergeFrom)]
-#[serde(transparent)]
-pub struct FeatureFlagsMap(pub HashMap<String, String>);
-
-// A manual `JsonSchema` impl keeps this type's schema registered under a
-// unique name. The derived impl on a `#[serde(transparent)]` newtype around
-// `HashMap<String, String>` would inline to the map's own schema name (`Map_of_string`),
-// which is shared with every other `HashMap<String, String>` setting field in
-// `SettingsContent`. A named placeholder lets `json_schema_store` find and
-// replace just this field's schema at runtime without clobbering the others.
-impl JsonSchema for FeatureFlagsMap {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "FeatureFlagsMap".into()
-    }
-
-    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
-            "type": "object",
-            "additionalProperties": { "type": "string" }
-        })
-    }
-}
-
-impl std::ops::Deref for FeatureFlagsMap {
-    type Target = HashMap<String, String>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for FeatureFlagsMap {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl SettingsContent {
     pub fn languages_mut(&mut self) -> &mut HashMap<String, LanguageSettingsContent> {
         &mut self.project.all_languages.languages.0
@@ -384,10 +339,10 @@ fallible_options::flattened_deserialize!(SettingsContent {
         call_hierarchy, file_finder, git_panel, tabs, tab_bar, status_bar, preview_tabs,
         auto_update, base_keymap, debugger, diagnostics,
         git,
-        global_lsp_settings, image_viewer, markdown_preview, repl, helix_mode, hide_mouse,
-        journal, log, line_indicator_format, outline_panel, project_panel,
-        node, proxy, reduce_motion, server_url, credentials_url, session, telemetry, terminal,
-        title_bar, vim_mode, which_key, vim, modeline_lines, feature_flags,
+        global_lsp_settings, image_viewer, markdown_preview, helix_mode, hide_mouse,
+        log, line_indicator_format, outline_panel, project_panel,
+        node, proxy, reduce_motion, server_url, credentials_url, session, terminal,
+        title_bar, vim_mode, which_key, vim, modeline_lines,
         instrumentation,
     },
     defaults: {},
@@ -534,29 +489,6 @@ impl strum::VariantNames for BaseKeymapContent {
         "Cursor",
         "None",
     ];
-}
-
-/// Control what info is collected by Zed.
-#[with_fallible_options]
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Debug, MergeFrom)]
-pub struct TelemetrySettingsContent {
-    /// Send debug info like crash reports.
-    ///
-    /// Default: true
-    pub diagnostics: Option<bool>,
-    /// Send anonymized usage data like what languages you're using Zed with.
-    ///
-    /// Default: true
-    pub metrics: Option<bool>,
-}
-
-impl Default for TelemetrySettingsContent {
-    fn default() -> Self {
-        Self {
-            diagnostics: Some(true),
-            metrics: Some(true),
-        }
-    }
 }
 
 #[with_fallible_options]
@@ -1045,28 +977,6 @@ pub struct CursorShapeSettings {
     pub insert: Option<VimInsertModeCursorShape>,
 }
 
-/// Settings specific to journaling
-#[with_fallible_options]
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, MergeFrom, PartialEq)]
-pub struct JournalSettingsContent {
-    /// The path of the directory where journal entries are stored.
-    ///
-    /// Default: `~`
-    pub path: Option<String>,
-    /// What format to display the hours in.
-    ///
-    /// Default: hour12
-    pub hour_format: Option<HourFormat>,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, MergeFrom, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum HourFormat {
-    #[default]
-    Hour12,
-    Hour24,
-}
-
 #[with_fallible_options]
 #[derive(Clone, Default, Serialize, Deserialize, JsonSchema, MergeFrom, Debug, PartialEq)]
 pub struct OutlinePanelSettingsContent {
@@ -1307,36 +1217,6 @@ pub struct SshPortForwardOption {
     pub local_port: u16,
     pub remote_host: Option<String>,
     pub remote_port: u16,
-}
-
-/// Settings for configuring REPL display and behavior.
-#[with_fallible_options]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema, MergeFrom)]
-pub struct ReplSettingsContent {
-    /// Maximum number of lines to keep in REPL's scrollback buffer.
-    /// Clamped with [4, 256] range.
-    ///
-    /// Default: 32
-    pub max_lines: Option<usize>,
-    /// Maximum number of columns to keep in REPL's scrollback buffer.
-    /// Clamped with [20, 512] range.
-    ///
-    /// Default: 128
-    pub max_columns: Option<usize>,
-    /// Whether to show small single-line outputs inline instead of in a block.
-    ///
-    /// Default: true
-    pub inline_output: Option<bool>,
-    /// Maximum number of characters for an output to be shown inline.
-    /// Only applies when `inline_output` is true.
-    ///
-    /// Default: 50
-    pub inline_output_max_length: Option<usize>,
-    /// Maximum number of lines of output to display before scrolling.
-    /// Set to 0 to disable output height limits.
-    ///
-    /// Default: 0
-    pub output_max_height_lines: Option<usize>,
 }
 
 /// Settings for configuring the which-key popup behaviour.

@@ -19,15 +19,6 @@ pub struct LspSettings {
     pub settings: Option<serde_json::Value>,
 }
 
-/// The settings for a particular context server.
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ContextServerSettings {
-    /// The settings for the context server binary.
-    pub command: Option<CommandSettings>,
-    /// The settings to pass to the context server.
-    pub settings: Option<serde_json::Value>,
-}
-
 /// The settings for a command.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CommandSettings {

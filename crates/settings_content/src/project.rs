@@ -1,7 +1,4 @@
-use std::{
-    path::Path,
-    sync::Arc,
-};
+use std::{path::Path, sync::Arc};
 
 use anyhow::Context;
 use collections::{BTreeMap, HashMap};
@@ -905,5 +902,4 @@ mod tests {
             vec![REST_OF_FILE_SCAN_EXCLUSIONS, "**/target"]
         );
     }
-
 }

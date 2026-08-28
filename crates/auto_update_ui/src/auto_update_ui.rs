@@ -11,7 +11,7 @@ use release_channel::{AppVersion, ReleaseChannel};
 use semver::Version;
 use serde::Deserialize;
 use smol::io::AsyncReadExt;
-use ui::{AnnouncementToast, ListBulletItem, SkillsIllustration, prelude::*};
+use ui::{AnnouncementToast, ListBulletItem, prelude::*};
 use util::{ResultExt as _, maybe};
 use workspace::{
     Workspace,
@@ -234,7 +234,6 @@ impl Notification for AnnouncementToastNotification {}
 impl Render for AnnouncementToastNotification {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         AnnouncementToast::new()
-            .illustration(SkillsIllustration::new())
             .heading(self.content.heading.clone())
             .description(self.content.description.clone())
             .bullet_items(
@@ -249,7 +248,6 @@ impl Render for AnnouncementToastNotification {
                 let url = self.content.primary_action_url.clone();
                 let callback = self.content.primary_action_callback.clone();
                 move |this, _, window, cx| {
-                    telemetry::event!("Skills Announcement Main Click");
                     if let Some(callback) = &callback {
                         callback(window, cx);
                     }
@@ -262,14 +260,12 @@ impl Render for AnnouncementToastNotification {
             .secondary_on_click(cx.listener({
                 let url = self.content.secondary_action_url.clone();
                 move |_, _, _window, cx| {
-                    telemetry::event!("Skills Announcement Secondary Click");
                     if let Some(url) = &url {
                         cx.open_url(url);
                     }
                 }
             }))
             .dismiss_on_click(cx.listener(|this, _, _window, cx| {
-                telemetry::event!("Skills Announcement Dismiss");
                 this.dismiss(cx);
             }))
     }

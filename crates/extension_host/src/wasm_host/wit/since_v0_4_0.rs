@@ -29,7 +29,6 @@ wasmtime::component::bindgen!({
         "zed:extension/nodejs": latest::zed::extension::nodejs,
         "zed:extension/platform": since_v0_6_0::zed::extension::platform,
         "zed:extension/process": latest::zed::extension::process,
-        "zed:extension/slash-command": latest::zed::extension::slash_command,
     },
 });
 

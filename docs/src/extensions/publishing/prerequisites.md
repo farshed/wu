@@ -63,18 +63,6 @@ Note that maintainers will raise non-compliance during the publishing process. S
 - Should your extension only provide snippets, make sure your extension ID reflects that (e.g., by suffixing it with `-snippets`).
 - Only scope your snippets to the global scope if appropriate. Scope language-specific snippets to the given languages.
 
-## MCP Server Extensions
-
-> MCP server extensions will be deprecated in favor of the MCP registry in the future; progress for this is tracked in [#59351](https://github.com/zed-industries/zed/issues/59351). Please make sure to also publish your server to the registry to ensure it can be used with future versions of Zed.
-
-- Only provide one MCP server and nothing else.
-- Make sure your extension ID indicates it is an MCP server (e.g., by prefixing it with `mcp-server-` or suffixing it with `-mcp-server`).
-- Do not bundle the MCP server with the extension. Download it or check for it in the user's environment through the [Zed Rust Extension API](https://docs.rs/zed_extension_api/latest/zed_extension_api/).
-
-## Agent Server and Slash Command Extensions
-
-Agent server and slash command extensions have been deprecated and submissions will no longer be accepted. If you intend on making an agent server available within Zed, publish it to the [ACP Registry](https://agentclientprotocol.com/registry) instead.
-
 ---
 
 Passing everything on this list? Let's [get your extension published!](./publishing-guide.md)

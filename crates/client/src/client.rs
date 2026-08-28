@@ -1,12 +1,11 @@
 #[cfg(any(test, feature = "test-support"))]
 pub mod test;
 
-pub mod telemetry;
+pub mod os_info;
 pub mod user;
 pub mod zed_urls;
 
 use anyhow::Result;
-use clock::SystemClock;
 use futures::{FutureExt, Stream, TryFutureExt as _, future::BoxFuture, stream::BoxStream};
 use gpui::{App, AsyncApp, Entity, Global, WeakEntity};
 use http_client::{HttpClientWithUrl, read_proxy_from_env};
@@ -14,7 +13,7 @@ use parking_lot::{Mutex, RwLock};
 use postage::watch;
 use rpc::proto::{AnyTypedEnvelope, EnvelopedMessage, PeerId, RequestMessage};
 use serde::Deserialize;
-use settings::{RegisterSetting, Settings, SettingsContent};
+use settings::{RegisterSetting, Settings};
 use std::{
     any::TypeId,
     future::Future,
@@ -24,12 +23,10 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
-use telemetry::Telemetry;
 use url::Url;
 use util::ResultExt;
 
 pub use rpc::*;
-pub use telemetry_events::Event;
 pub use user::*;
 
 static ZED_SERVER_URL: LazyLock<Option<String>> =
@@ -105,7 +102,6 @@ pub struct Client {
     id: AtomicU64,
     peer: Arc<Peer>,
     http: Arc<HttpClientWithUrl>,
-    telemetry: Arc<Telemetry>,
     state: RwLock<ClientState>,
     handler_set: Mutex<ProtoMessageHandlerSet>,
 }
@@ -229,32 +225,11 @@ impl<T: 'static> Drop for PendingEntitySubscription<T> {
     }
 }
 
-#[derive(Copy, Clone, Deserialize, Debug, RegisterSetting)]
-pub struct TelemetrySettings {
-    pub diagnostics: bool,
-    pub metrics: bool,
-}
-
-impl settings::Settings for TelemetrySettings {
-    fn from_settings(content: &SettingsContent) -> Self {
-        let telemetry = content.telemetry.as_ref().unwrap();
-        Self {
-            diagnostics: telemetry.diagnostics.unwrap(),
-            metrics: telemetry.metrics.unwrap(),
-        }
-    }
-}
-
 impl Client {
-    pub fn new(
-        clock: Arc<dyn SystemClock>,
-        http: Arc<HttpClientWithUrl>,
-        cx: &mut App,
-    ) -> Arc<Self> {
+    pub fn new(http: Arc<HttpClientWithUrl>) -> Arc<Self> {
         Arc::new(Self {
             id: AtomicU64::new(0),
             peer: Peer::new(0),
-            telemetry: Telemetry::new(clock, http.clone(), cx),
             http,
             state: Default::default(),
             handler_set: Default::default(),
@@ -262,13 +237,12 @@ impl Client {
     }
 
     pub fn production(cx: &mut App) -> Arc<Self> {
-        let clock = Arc::new(clock::RealSystemClock);
         let http = Arc::new(HttpClientWithUrl::new_url(
             cx.http_client(),
             &ClientSettings::get_global(cx).server_url,
             cx.http_client().proxy().cloned(),
         ));
-        Self::new(clock, http, cx)
+        Self::new(http)
     }
 
     pub fn id(&self) -> u64 {
@@ -651,9 +625,6 @@ impl Client {
                 .log_err();
         }
     }
-    pub fn telemetry(&self) -> &Arc<Telemetry> {
-        &self.telemetry
-    }
 }
 
 impl ProtoClient for Client {
@@ -726,7 +697,6 @@ mod tests {
     use super::*;
     use crate::test::FakeServer;
 
-    use clock::FakeSystemClock;
     use gpui::{AppContext as _, TestAppContext};
     use http_client::FakeHttpClient;
     use proto::TypedEnvelope;
@@ -734,7 +704,7 @@ mod tests {
 
     #[test]
     fn test_proxy_settings_trims_and_ignores_empty_proxy() {
-        let mut content = SettingsContent::default();
+        let mut content = settings::SettingsContent::default();
         content.proxy = Some("   ".to_owned());
         assert_eq!(ProxySettings::from_settings(&content).proxy, None);
 
@@ -748,13 +718,7 @@ mod tests {
     #[gpui::test]
     async fn test_subscribing_to_entity(cx: &mut TestAppContext) {
         init_test(cx);
-        let client = cx.update(|cx| {
-            Client::new(
-                Arc::new(FakeSystemClock::new()),
-                FakeHttpClient::with_404_response(),
-                cx,
-            )
-        });
+        let client = Client::new(FakeHttpClient::with_404_response());
         let server = FakeServer::for_client(&client, cx).await;
 
         let (done_tx1, done_rx1) = async_channel::unbounded();
@@ -807,13 +771,7 @@ mod tests {
     #[gpui::test]
     async fn test_subscribing_after_dropping_subscription(cx: &mut TestAppContext) {
         init_test(cx);
-        let client = cx.update(|cx| {
-            Client::new(
-                Arc::new(FakeSystemClock::new()),
-                FakeHttpClient::with_404_response(),
-                cx,
-            )
-        });
+        let client = Client::new(FakeHttpClient::with_404_response());
         let server = FakeServer::for_client(&client, cx).await;
 
         let entity = cx.new(|_| TestEntity::default());
@@ -841,13 +799,7 @@ mod tests {
     #[gpui::test]
     async fn test_dropping_subscription_in_handler(cx: &mut TestAppContext) {
         init_test(cx);
-        let client = cx.update(|cx| {
-            Client::new(
-                Arc::new(FakeSystemClock::new()),
-                FakeHttpClient::with_404_response(),
-                cx,
-            )
-        });
+        let client = Client::new(FakeHttpClient::with_404_response());
         let server = FakeServer::for_client(&client, cx).await;
 
         let entity = cx.new(|_| TestEntity::default());

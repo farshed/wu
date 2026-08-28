@@ -33,8 +33,8 @@ use self::inlay_hints::BufferInlayHints;
 use crate::{
     CodeAction, Completion, CompletionDisplayOptions, CompletionResponse, CompletionSource,
     CoreCompletion, Hover, InlayHint, InlayId, LocationLink, LspAction, LspPullDiagnostics,
-    ManifestProvidersStore, ProjectItem, ProjectPath, ProjectTransaction,
-    PulledDiagnostics, ResolveState, Symbol,
+    ManifestProvidersStore, ProjectItem, ProjectPath, ProjectTransaction, PulledDiagnostics,
+    ResolveState, Symbol,
     buffer_store::{BufferStore, BufferStoreEvent},
     environment::ProjectEnvironment,
     lsp_command::{self, *},
@@ -9235,7 +9235,6 @@ impl LspStore {
         }
     }
 
-
     pub fn disconnected_from_ssh_remote(&mut self) {
         if let LspStoreMode::Remote(RemoteLspStore {
             upstream_client, ..
@@ -9244,7 +9243,6 @@ impl LspStore {
             upstream_client.take();
         }
     }
-
 
     fn try_register_remote_adapter_locally(
         &self,

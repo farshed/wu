@@ -190,10 +190,7 @@ impl ExtensionCard {
         (SharedString::from(extension_id.clone()), operation as usize).into()
     }
 
-    fn uninstall_button<const ENABLE_HANDLERS: bool>(
-        extension_id: &Arc<str>,
-        is_dev: bool,
-    ) -> Button {
+    fn uninstall_button<const ENABLE_HANDLERS: bool>(extension_id: &Arc<str>) -> Button {
         Button::new(
             Self::button_id(extension_id, ExtensionOperation::Remove),
             "Uninstall",
@@ -202,44 +199,11 @@ impl ExtensionCard {
             button.on_click({
                 let extension_id = extension_id.clone();
                 move |_, _, cx| {
-                    if !is_dev {
-                        telemetry::event!("Extension Uninstalled", extension_id);
-                    }
                     ExtensionStore::global(cx).update(cx, |store, cx| {
                         store
                             .uninstall_extension(extension_id.clone(), cx)
                             .detach_and_log_err(cx);
                     });
-                }
-            })
-        })
-    }
-
-    fn configure_button<const ENABLE_HANDLERS: bool>(
-        extension_id: &Arc<str>,
-        manifest: Option<Arc<ExtensionManifest>>,
-    ) -> Button {
-        Button::new(
-            SharedString::from(format!("configure-{extension_id}")),
-            "Configure",
-        )
-        .when(ENABLE_HANDLERS, |button| {
-            button.on_click({
-                let extension_id = extension_id.clone();
-                move |_, _, cx| {
-                    let manifest = manifest.clone().or_else(|| {
-                        ExtensionStore::global(cx)
-                            .read(cx)
-                            .extension_manifest_for_id(&extension_id)
-                            .cloned()
-                    });
-                    if let Some(manifest) = manifest
-                        && let Some(events) = extension::ExtensionEvents::try_global(cx)
-                    {
-                        events.update(cx, |this, cx| {
-                            this.emit(extension::Event::ConfigureExtensionRequested(manifest), cx)
-                        });
-                    }
                 }
             })
         })
@@ -265,16 +229,10 @@ impl ExtensionCard {
                 }
             })
         });
-        let uninstall = Self::uninstall_button::<ENABLE_HANDLERS>(&extension.id, true)
+        let uninstall = Self::uninstall_button::<ENABLE_HANDLERS>(&extension.id)
             .color(Color::Accent)
             .disabled(status.disables_actions());
-        let configure = (!extension.context_servers.is_empty()).then(|| {
-            Self::configure_button::<ENABLE_HANDLERS>(&extension.id, Some(extension.clone()))
-                .color(Color::Accent)
-                .disabled(status.disables_actions())
-        });
-
-        [Some(rebuild), Some(uninstall), configure]
+        [Some(rebuild), Some(uninstall), None]
     }
 
     fn install_button<const ENABLE_HANDLERS: bool>(extension_id: &Arc<str>) -> Button {
@@ -292,7 +250,6 @@ impl ExtensionCard {
             button.on_click({
                 let extension_id = extension_id.clone();
                 move |_, _, cx| {
-                    telemetry::event!("Extension Installed");
                     ExtensionStore::global(cx).update(cx, |store, cx| {
                         store.install_latest_extension(extension_id.clone(), cx)
                     });
@@ -306,11 +263,6 @@ impl ExtensionCard {
         status: &ExtensionStatus,
         cx: &App,
     ) -> ExtensionCardActions {
-        let is_configurable = extension
-            .manifest
-            .provides
-            .contains(&ExtensionProvides::ContextServers);
-
         match status {
             ExtensionStatus::OverriddenByDevExtension
             | ExtensionStatus::NotInstalled
@@ -323,7 +275,7 @@ impl ExtensionCard {
                 ),
             ],
             ExtensionStatus::Upgrading | ExtensionStatus::Removing => {
-                let uninstall = Self::uninstall_button::<ENABLE_HANDLERS>(&extension.id, false)
+                let uninstall = Self::uninstall_button::<ENABLE_HANDLERS>(&extension.id)
                     .style(ButtonStyle::OutlinedGhost)
                     .disabled(status.disables_actions());
                 let upgrade = matches!(status, ExtensionStatus::Upgrading).then(|| {
@@ -333,15 +285,10 @@ impl ExtensionCard {
                     )
                     .disabled(status.disables_actions())
                 });
-                let configure = is_configurable.then(|| {
-                    Self::configure_button::<ENABLE_HANDLERS>(&extension.id, None)
-                        .disabled(status.disables_actions())
-                });
-
-                [upgrade, configure, Some(uninstall)]
+                [upgrade, None, Some(uninstall)]
             }
             ExtensionStatus::Installed(installed_version) => {
-                let uninstall = Self::uninstall_button::<ENABLE_HANDLERS>(&extension.id, false)
+                let uninstall = Self::uninstall_button::<ENABLE_HANDLERS>(&extension.id)
                     .style(ButtonStyle::OutlinedGhost);
                 let upgrade = (installed_version != &extension.manifest.version).then(|| {
                     let is_compatible = extension_host::is_version_compatible(
@@ -372,7 +319,6 @@ impl ExtensionCard {
                             let extension_id = extension.id.clone();
                             let version = extension.manifest.version.clone();
                             move |_, _, cx| {
-                                telemetry::event!("Extension Installed", extension_id, version);
                                 ExtensionStore::global(cx).update(cx, |store, cx| {
                                     store
                                         .upgrade_extension(
@@ -386,12 +332,7 @@ impl ExtensionCard {
                         })
                     })
                 });
-                let configure = is_configurable.then(|| {
-                    Self::configure_button::<ENABLE_HANDLERS>(&extension.id, None)
-                        .style(ButtonStyle::OutlinedGhost)
-                });
-
-                [upgrade, configure, Some(uninstall)]
+                [upgrade, None, Some(uninstall)]
             }
         }
     }
@@ -499,8 +440,6 @@ impl Component for ExtensionCard {
                 languages: Vec::new(),
                 grammars: Default::default(),
                 language_servers: Default::default(),
-                context_servers: Default::default(),
-                slash_commands: Default::default(),
                 snippets: None,
                 capabilities: Vec::new(),
                 debug_adapters: Default::default(),
@@ -538,7 +477,6 @@ impl Component for ExtensionCard {
                         [
                             ExtensionProvides::Languages,
                             ExtensionProvides::LanguageServers,
-                            ExtensionProvides::ContextServers,
                         ],
                     ),
                     ExtensionStatus::Installed("0.5.1".into()),

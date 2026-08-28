@@ -283,9 +283,6 @@ message Envelope {
     GetDefaultBranch get_default_branch = 359;
     GetDefaultBranchResponse get_default_branch_response = 360;
 
-    GetCrashFiles get_crash_files = 361;
-    GetCrashFilesResponse get_crash_files_response = 362;
-
     GitClone git_clone = 363;
     GitCloneResponse git_clone_response = 364;
 
@@ -385,7 +382,6 @@ message Envelope {
     ResolveDocumentLinkResponse resolve_document_link_response = 456;
     GitWorktreeCreatedAt git_worktree_created_at = 457;
     GitWorktreeCreatedAtResponse git_worktree_created_at_response = 458;
-    TelemetryEvent telemetry_event = 459;
     ResolveCodeAction resolve_code_action = 460;
     ResolveCodeActionResponse resolve_code_action_response = 461;
     TrashProjectEntry trash_project_entry = 466;
@@ -414,6 +410,7 @@ message Envelope {
   }
 
   reserved 87 to 88;
+  reserved 361 to 362, 459;
   reserved 9 to 31, 89, 91, 95 to 101, 113 to 144, 147 to 153, 156 to 157, 170 to 171, 174, 186 to 187, 207, 349, 373 to 377, 401, 411 to 412;
   reserved 90;
   reserved 102 to 103;

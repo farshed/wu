@@ -3,12 +3,11 @@ use crate::NoopTextSystem;
 #[cfg(any(test, feature = "test-support"))]
 use crate::PathPromptOptions;
 use crate::{
-    AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, DevicePixels,
-    DummyKeyboardMapper, ForegroundExecutor, Keymap, Platform, PlatformDisplay,
-    PlatformHeadlessRenderer, PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem,
-    PromptButton, ScreenCaptureFrame, ScreenCaptureSource, ScreenCaptureStream, SharedString,
-    SourceMetadata, SystemNotification, SystemNotificationResponse, Task, TestDisplay, TestWindow,
-    ThermalState, WindowAppearance, WindowParams, size,
+    AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, DummyKeyboardMapper,
+    ForegroundExecutor, Keymap, Platform, PlatformDisplay, PlatformHeadlessRenderer,
+    PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem, PromptButton, SharedString,
+    SystemNotification, SystemNotificationResponse, Task, TestDisplay, TestWindow, ThermalState,
+    WindowAppearance, WindowParams,
 };
 use anyhow::Result;
 #[cfg(any(test, feature = "test-support"))]
@@ -37,7 +36,6 @@ pub(crate) struct TestPlatform {
     current_find_pasteboard_item: Mutex<Option<ClipboardItem>>,
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) prompts: RefCell<TestPrompts>,
-    screen_capture_sources: RefCell<Vec<TestScreenCaptureSource>>,
     pub opened_url: RefCell<Option<String>>,
     pub(crate) system_notifications: RefCell<TestSystemNotifications>,
     pub text_system: Arc<dyn PlatformTextSystem>,
@@ -45,42 +43,6 @@ pub(crate) struct TestPlatform {
         RefCell<Option<oneshot::Sender<(Option<PathBuf>, Vec<std::ffi::OsString>)>>>,
     headless_renderer_factory: Option<Box<dyn Fn() -> Option<Box<dyn PlatformHeadlessRenderer>>>>,
     weak: Weak<Self>,
-}
-
-#[derive(Clone)]
-/// A fake screen capture source, used for testing.
-pub struct TestScreenCaptureSource {}
-
-/// A fake screen capture stream, used for testing.
-pub struct TestScreenCaptureStream {}
-
-impl ScreenCaptureSource for TestScreenCaptureSource {
-    fn metadata(&self) -> Result<SourceMetadata> {
-        Ok(SourceMetadata {
-            id: 0,
-            is_main: None,
-            label: None,
-            resolution: size(DevicePixels(1), DevicePixels(1)),
-        })
-    }
-
-    fn stream(
-        &self,
-        _foreground_executor: &ForegroundExecutor,
-        _frame_callback: Box<dyn Fn(ScreenCaptureFrame) + Send>,
-    ) -> oneshot::Receiver<Result<Box<dyn ScreenCaptureStream>>> {
-        let (mut tx, rx) = oneshot::channel();
-        let stream = TestScreenCaptureStream {};
-        tx.send(Ok(Box::new(stream) as Box<dyn ScreenCaptureStream>))
-            .ok();
-        rx
-    }
-}
-
-impl ScreenCaptureStream for TestScreenCaptureStream {
-    fn metadata(&self) -> Result<SourceMetadata> {
-        TestScreenCaptureSource {}.metadata()
-    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -144,7 +106,6 @@ impl TestPlatform {
             foreground_executor,
             #[cfg(any(test, feature = "test-support"))]
             prompts: Default::default(),
-            screen_capture_sources: Default::default(),
             active_cursor: Default::default(),
             active_display: Rc::new(TestDisplay::new()),
             active_window: Default::default(),
@@ -236,11 +197,6 @@ impl TestPlatform {
             prompt.msg.clone(),
             prompt.detail.clone().unwrap_or_default(),
         ))
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_screen_capture_sources(&self, sources: Vec<TestScreenCaptureSource>) {
-        *self.screen_capture_sources.borrow_mut() = sources;
     }
 
     /// Queues the prompt so a test can later inspect or answer it through
@@ -409,24 +365,6 @@ impl Platform for TestPlatform {
 
     fn primary_display(&self) -> Option<std::rc::Rc<dyn crate::PlatformDisplay>> {
         Some(self.active_display.clone())
-    }
-
-    fn is_screen_capture_supported(&self) -> bool {
-        true
-    }
-
-    fn screen_capture_sources(
-        &self,
-    ) -> oneshot::Receiver<Result<Vec<Rc<dyn ScreenCaptureSource>>>> {
-        let (mut tx, rx) = oneshot::channel();
-        tx.send(Ok(self
-            .screen_capture_sources
-            .borrow()
-            .iter()
-            .map(|source| Rc::new(source.clone()) as Rc<dyn ScreenCaptureSource>)
-            .collect()))
-            .ok();
-        rx
     }
 
     fn active_window(&self) -> Option<crate::AnyWindowHandle> {
@@ -652,14 +590,6 @@ impl Platform for TestPlatform {
 
     fn open_with_system(&self, _path: &Path) {
         unimplemented!()
-    }
-}
-
-impl TestScreenCaptureSource {
-    /// Create a fake screen capture source, for testing.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn new() -> Self {
-        Self {}
     }
 }
 

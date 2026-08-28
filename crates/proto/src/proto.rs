@@ -85,8 +85,6 @@ messages!(
     (GetDocumentSymbolsResponse, Background),
     (GetHover, Background),
     (GetHoverResponse, Background),
-    (GetCrashFiles, Background),
-    (GetCrashFilesResponse, Background),
     (GetFilePermalink, Foreground),
     (GetFilePermalinkResponse, Foreground),
     (GetPathMetadata, Background),
@@ -213,7 +211,6 @@ messages!(
     (SynchronizeBuffersResponse, Foreground),
     (TaskContext, Background),
     (TaskContextForLocation, Background),
-    (TelemetryEvent, Background),
     (Test, Foreground),
     (Toast, Background),
     (Unstage, Background),
@@ -448,7 +445,6 @@ request_messages!(
     (ActiveToolchain, ActiveToolchainResponse),
     (ResolveToolchain, ResolveToolchainResponse),
     (GetPathMetadata, GetPathMetadataResponse),
-    (GetCrashFiles, GetCrashFilesResponse),
     (CancelLanguageServerWork, Ack),
     (SyncExtensions, SyncExtensionsResponse),
     (InstallExtension, Ack),
@@ -656,7 +652,6 @@ entity_messages!(
     LspExtRunFlycheck,
     LspExtClearFlycheck,
     LanguageServerLog,
-    TelemetryEvent,
     Toast,
     HideToast,
     OpenServerSettings,
@@ -733,7 +728,6 @@ entity_messages!(
     DownloadFileByPath,
     GetRemoteProfilingData
 );
-
 
 impl From<Timestamp> for SystemTime {
     fn from(val: Timestamp) -> Self {

@@ -98,7 +98,6 @@ impl PlatformTitleBar {
     pub fn init(cx: &mut App) {
         SystemWindowTabs::init(cx);
     }
-
 }
 
 /// Renders the platform-appropriate left-side window controls (e.g. Ubuntu/GNOME close button).
@@ -253,14 +252,12 @@ impl Render for PlatformTitleBar {
             .map(|el| match decorations {
                 Decorations::Server => el,
                 Decorations::Client { tiling, .. } => el
-                    .when(
-                        !(tiling.top || tiling.right),
-                        |el| el.rounded_tr(theme::CLIENT_SIDE_DECORATION_ROUNDING),
-                    )
-                    .when(
-                        !(tiling.top || tiling.left),
-                        |el| el.rounded_tl(theme::CLIENT_SIDE_DECORATION_ROUNDING),
-                    )
+                    .when(!(tiling.top || tiling.right), |el| {
+                        el.rounded_tr(theme::CLIENT_SIDE_DECORATION_ROUNDING)
+                    })
+                    .when(!(tiling.top || tiling.left), |el| {
+                        el.rounded_tl(theme::CLIENT_SIDE_DECORATION_ROUNDING)
+                    })
                     // this border is to avoid a transparent gap in the rounded corners
                     .mt(px(-1.))
                     .mb(px(-1.))

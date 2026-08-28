@@ -382,5 +382,4 @@ For the complete list of terminal settings, see the [Terminal section in All Set
 ## What's Next
 
 - [Tasks](./tasks.md) — Run commands and scripts from Zed
-- [REPL](./repl.md) — Interactive code execution
 - [CLI Reference](./reference/cli.md) — Command-line interface for opening files in Zed

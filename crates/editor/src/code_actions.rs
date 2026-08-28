@@ -279,7 +279,6 @@ impl Editor {
                 let context = actions_menu.actions.context.into();
 
                 workspace.update(cx, |workspace, cx| {
-                    dap::send_telemetry(&scenario, TelemetrySpawnLocation::Gutter, cx);
                     workspace.start_debug_session(
                         scenario,
                         context,

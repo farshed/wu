@@ -330,10 +330,6 @@ impl Item for TextDiffView {
         Editor::to_item_events(event, f)
     }
 
-    fn telemetry_event_text(&self) -> Option<&'static str> {
-        Some("Selection Diff View Opened")
-    }
-
     fn deactivated(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.diff_editor
             .update(cx, |editor, cx| editor.deactivated(window, cx));
