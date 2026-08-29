@@ -58,24 +58,24 @@ linux() {
     db_suffix="stable"
     case "$channel" in
       stable)
-        appid="dev.zed.Zed"
+        appid="me.farshed.Edna"
         db_suffix="stable"
         ;;
       nightly)
-        appid="dev.zed.Zed-Nightly"
+        appid="me.farshed.Edna-Nightly"
         db_suffix="nightly"
         ;;
       preview)
-        appid="dev.zed.Zed-Preview"
+        appid="me.farshed.Edna-Preview"
         db_suffix="preview"
         ;;
       dev)
-        appid="dev.zed.Zed-Dev"
+        appid="me.farshed.Edna-Dev"
         db_suffix="dev"
         ;;
       *)
         echo "Unknown release channel: ${channel}. Using stable app ID."
-        appid="dev.zed.Zed"
+        appid="me.farshed.Edna"
         db_suffix="stable"
         ;;
     esac
@@ -84,7 +84,7 @@ linux() {
     rm -rf "$HOME/.local/zed$suffix.app"
 
     # Remove the binary symlink
-    rm -f "$HOME/.local/bin/zed"
+    rm -f "$HOME/.local/bin/edna"
 
     # Remove the .desktop file
     rm -f "$HOME/.local/share/applications/${appid}.desktop"
@@ -105,24 +105,24 @@ linux() {
 }
 
 macos() {
-    app="Zed.app"
+    app="Edna.app"
     db_suffix="stable"
-    app_id="dev.zed.Zed"
+    app_id="me.farshed.Edna"
     case "$channel" in
       nightly)
-        app="Zed Nightly.app"
+        app="Edna Nightly.app"
         db_suffix="nightly"
-        app_id="dev.zed.Zed-Nightly"
+        app_id="me.farshed.Edna-Nightly"
         ;;
       preview)
-        app="Zed Preview.app"
+        app="Edna Preview.app"
         db_suffix="preview"
-        app_id="dev.zed.Zed-Preview"
+        app_id="me.farshed.Edna-Preview"
         ;;
       dev)
-        app="Zed Dev.app"
+        app="Edna Dev.app"
         db_suffix="dev"
-        app_id="dev.zed.Zed-Dev"
+        app_id="me.farshed.Edna-Dev"
         ;;
     esac
 
@@ -132,7 +132,7 @@ macos() {
     fi
 
     # Remove the binary symlink
-    rm -f "$HOME/.local/bin/zed"
+    rm -f "$HOME/.local/bin/edna"
 
     # Remove the database directory for this channel
     rm -rf "$HOME/Library/Application Support/Zed/db/0-$db_suffix"

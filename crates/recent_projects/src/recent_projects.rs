@@ -351,7 +351,7 @@ pub fn init(cx: &mut App) {
                     let message = indoc::indoc! { r#"
                         Invalid path specified when trying to open a folder inside WSL.
 
-                        Please note that Zed currently does not support opening network share folders inside wsl.
+                        Please note that Edna currently does not support opening network share folders inside wsl.
                     "#};
 
                     let _ = cx.prompt(gpui::PromptLevel::Critical, "Invalid path", Some(&message), &["OK"]).await;

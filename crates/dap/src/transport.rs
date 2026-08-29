@@ -652,7 +652,7 @@ pub struct StdioTransport {
 }
 
 impl StdioTransport {
-    // #[allow(dead_code, reason = "This is used in non test builds of Zed")]
+    // #[allow(dead_code, reason = "This is used in non test builds of Edna")]
     async fn start(
         binary: &DebugAdapterBinary,
         log_handlers: LogHandlers,
@@ -660,7 +660,7 @@ impl StdioTransport {
     ) -> Result<Self> {
         let Some(binary_command) = &binary.command else {
             bail!(
-                "When using the `stdio` transport, the path to a debug adapter binary must be set by Zed."
+                "When using the `stdio` transport, the path to a debug adapter binary must be set by Edna."
             );
         };
         let mut command = util::command::new_std_command(&binary_command);

@@ -1,10 +1,10 @@
 name: zed
-title: Zed
+title: Edna
 base: core24
 version: "$RELEASE_VERSION"
 summary: The editor for what's next
 description: |
-  Zed is a modern open-source code editor, built from the ground up in Rust with
+  Edna is a modern open-source code editor, built from the ground up in Rust with
   a GPU-accelerated renderer. We help you build software faster than ever before.
 grade: stable
 confinement: classic
@@ -26,10 +26,10 @@ parts:
 
     stage-packages:
       - libasound2t64
-      # snapcraft has a lint that this is unused, but without it Zed exits with
+      # snapcraft has a lint that this is unused, but without it Edna exits with
       # "Missing Vulkan entry points: LibraryLoadFailure" in wgpu.
       - libvulkan1
-      # snapcraft has a lint that this is unused, but without it Zed exits with
+      # snapcraft has a lint that this is unused, but without it Edna exits with
       # "NoWaylandLib" when run with Wayland.
       - libwayland-client0
       - libxcb1
@@ -53,7 +53,7 @@ parts:
 
 apps:
   zed:
-    command: usr/bin/zed
-    common-id: dev.zed.Zed
+    command: usr/bin/edna
+    common-id: me.farshed.Edna
     environment:
       ZED_BUNDLE_TYPE: snap

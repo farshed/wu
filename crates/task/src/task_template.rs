@@ -786,7 +786,7 @@ mod tests {
             );
             assert!(
                 matches!(resolved_task_attempt, None),
-                "If any of the Zed task variables is not substituted, the task should not be resolved, but got some resolution without the variable {removed_variable:?} (index {i})"
+                "If any of the Edna task variables is not substituted, the task should not be resolved, but got some resolution without the variable {removed_variable:?} (index {i})"
             );
         }
     }

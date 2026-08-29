@@ -97,7 +97,7 @@ fn button(id: &'static str, label: &'static str) -> Stateful<Div> {
 
 fn run_example() {
     application().run(|cx: &mut App| {
-        cx.set_app_identity("dev.zed.gpui.system-notifications", "GPUI Notifications");
+        cx.set_app_identity("me.farshed.gpui.system-notifications", "GPUI Notifications");
 
         let view = cx.new(|_| SystemNotificationExample {
             revision: 0,

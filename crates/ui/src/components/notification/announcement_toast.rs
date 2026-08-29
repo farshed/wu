@@ -174,7 +174,7 @@ impl Component for AnnouncementToast {
                         .heading("Introducing Parallel Agents")
                         .description("Run multiple agent threads simultaneously across projects.")
                         .bullet_item(ListBulletItem::new(
-                            "Mix and match Zed's agent with any ACP-compatible agent",
+                            "Mix and match Edna's agent with any ACP-compatible agent",
                         ))
                         .bullet_item(ListBulletItem::new(
                             "Optional worktree isolation keeps agents from conflicting",

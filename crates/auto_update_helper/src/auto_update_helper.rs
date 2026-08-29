@@ -8,7 +8,7 @@ mod updater;
 #[cfg(target_os = "windows")]
 fn main() {
     if let Err(e) = windows_impl::run() {
-        log::error!("Error: Zed update failed, {:?}", e);
+        log::error!("Error: Edna update failed, {:?}", e);
         windows_impl::show_error(format!("Error: {:?}", e));
     }
 }
@@ -57,7 +57,7 @@ mod windows_impl {
             .context("No parent directory")?
             .to_path_buf();
 
-        log::info!("======= Starting Zed update =======");
+        log::info!("======= Starting Edna update =======");
         let (tx, rx) = std::sync::mpsc::channel();
         let hwnd = create_dialog_window(rx)?.0 as isize;
         let args = parse_args(std::env::args_os().skip(1));
@@ -123,7 +123,7 @@ mod windows_impl {
             MessageBoxW(
                 None,
                 &HSTRING::from(content),
-                windows::core::w!("Error: Zed update failed."),
+                windows::core::w!("Error: Edna update failed."),
                 MB_ICONERROR | MB_SYSTEMMODAL,
             )
         };

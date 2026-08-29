@@ -1,4 +1,4 @@
-// Default semantic token rules for Zed (read-only).
+// Default semantic token rules for Edna (read-only).
 //
 // These rules map LSP semantic token types to syntax theme styles.
 // To customize, add rules to "semantic_token_rules" in your settings.json.
