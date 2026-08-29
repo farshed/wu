@@ -20,7 +20,6 @@ members = [
     "crates/command_palette_hooks",
     "crates/component",
     "crates/component_preview",
-    "crates/crashes",
     "crates/dap",
     "crates/dap_adapters",
     "crates/db",
@@ -215,7 +214,6 @@ command_palette_hooks = { path = "crates/command_palette_hooks" }
 compliance = { path = "tooling/compliance" }
 component = { path = "crates/component" }
 component_preview = { path = "crates/component_preview" }
-crashes = { path = "crates/crashes" }
 dap = { path = "crates/dap" }
 dap_adapters = { path = "crates/dap_adapters" }
 db = { path = "crates/db" }
@@ -429,7 +427,6 @@ core-graphics = "0.24"
 core-text = "21"
 core-video = { version = "0.5.2", features = ["metal"] }
 cpal = "0.17"
-crash-handler = "0.8"
 criterion = { version = "0.5", features = ["html_reports"] }
 crossbeam = "0.8.4"
 ctor = "1.0.12"
@@ -518,7 +515,6 @@ mach2 = "0.5"
 markup5ever_rcdom = "0.39"
 metal = "0.33"
 mime = "0.3.17"
-minidumper = "0.11"
 moka = { version = "0.12.10", features = ["sync"] }
 nanoid = "0.4"
 nix = "0.29"
@@ -850,7 +846,6 @@ wasmtime = { opt-level = 3 }
 cranelift-codegen = { opt-level = 3 }
 wasmtime-environ = { opt-level = 3 }
 wasmtime-internal-cranelift = { opt-level = 3 }
-minidumper = { opt-level = 3 }
 serde_json = { opt-level = 3 }
 # Build single-source-file crates with cg=1 as it helps make `cargo build` of a whole workspace a bit faster
 activity_indicator = { codegen-units = 1 }

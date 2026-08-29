@@ -1,13 +1,3 @@
-use release_channel::ReleaseChannel;
-use std::env;
-
-pub fn should_install_crash_handler(channel: ReleaseChannel) -> bool {
-    matches!(
-        env::var("ZED_GENERATE_MINIDUMPS").as_deref(),
-        Ok("true" | "1")
-    ) || channel != ReleaseChannel::Dev
-}
-
 pub fn os_name() -> String {
     #[cfg(target_os = "macos")]
     {

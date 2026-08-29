@@ -40,7 +40,6 @@ use rpc::AnyProtoClient;
 use rpc::proto::{self, Envelope, REMOTE_SERVER_PROJECT_ID};
 use settings::{Settings, SettingsStore, watch_config_file};
 use smol::{
-    Timer,
     channel::{Receiver, Sender},
     io::AsyncReadExt,
     stream::StreamExt as _,
@@ -464,7 +463,6 @@ fn init_paths() -> anyhow::Result<()> {
         paths::languages_dir(),
         paths::logs_dir(),
         paths::temp_dir(),
-        paths::hang_traces_dir(),
         paths::remote_extensions_dir(),
         paths::remote_extensions_uploads_dir(),
     ]
@@ -473,6 +471,18 @@ fn init_paths() -> anyhow::Result<()> {
         std::fs::create_dir_all(path).with_context(|| format!("creating directory {path:?}"))?;
     }
     Ok(())
+}
+
+fn install_panic_hook() {
+    let old_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
+        old_hook(info);
+        // prevent the macOS crash dialog from popping up
+        if cfg!(target_os = "macos") {
+            std::process::exit(1);
+        }
+    }));
 }
 
 pub fn execute_run(
@@ -487,34 +497,7 @@ pub fn execute_run(
     let startup_time = Instant::now();
     let app = gpui_platform::headless();
     let pid = std::process::id();
-    let id = pid.to_string();
-    let should_install_crash_handler =
-        client::os_info::should_install_crash_handler(*RELEASE_CHANNEL);
-
-    let crash_handler = if should_install_crash_handler {
-        Some(app.background_executor().spawn(crashes::init(
-            crashes::InitCrashHandler {
-                session_id: id,
-                zed_version: VERSION.to_owned(),
-                binary: "zed-remote-server".to_string(),
-                release_channel: release_channel::RELEASE_CHANNEL_NAME.clone(),
-                commit_sha: option_env!("ZED_COMMIT_SHA").unwrap_or("no_sha").to_owned(),
-            },
-            {
-                let background_executor = app.background_executor();
-                move |task| {
-                    background_executor.spawn(task).detach();
-                }
-            },
-            |pid| paths::temp_dir().join(format!("zed-remote-server-crash-handler-{pid}")),
-            // we are running outside gpui
-            #[allow(clippy::disallowed_methods)]
-            |duration| FutureExt::map(Timer::after(duration), |_| ()),
-        )))
-    } else {
-        crashes::force_backtrace();
-        None
-    };
+    install_panic_hook();
     let log_rx = init_logging_server(&log_file)?;
     log::info!(
         "starting up with PID {}:\npid_file: {:?}, log_file: {:?}, stdin_socket: {:?}, stdout_socket: {:?}, stderr_socket: {:?}",
@@ -554,13 +537,6 @@ pub fn execute_run(
 
     let git_hosting_provider_registry = Arc::new(GitHostingProviderRegistry::new());
     let run = move |cx: &mut App| {
-        if let Some(crash_handler) = crash_handler {
-            cx.spawn(async move |_cx| {
-                let _crash_handler = crash_handler.await;
-                // cx.update(|cx| cx.set_global(CrashHandler(crash_handler)))
-            })
-            .detach();
-        }
         settings::init(cx);
         let app_commit_sha = option_env!("ZED_COMMIT_SHA").map(|s| AppCommitSha::new(s.to_owned()));
         let app_version = AppVersion::load(
@@ -762,29 +738,6 @@ pub(crate) fn execute_proxy(
 
     let server_paths = ServerPaths::new(&identifier)?;
 
-    let id = std::process::id().to_string();
-    let should_install_crash_handler =
-        client::os_info::should_install_crash_handler(*RELEASE_CHANNEL);
-
-    if should_install_crash_handler {
-        smol::spawn(crashes::init(
-            crashes::InitCrashHandler {
-                session_id: id,
-                zed_version: VERSION.to_owned(),
-                binary: "zed-remote-proxy".to_string(),
-                release_channel: release_channel::RELEASE_CHANNEL_NAME.clone(),
-                commit_sha: option_env!("ZED_COMMIT_SHA").unwrap_or("no_sha").to_owned(),
-            },
-            |task| {
-                smol::spawn(task).detach();
-            },
-            |pid| paths::temp_dir().join(format!("zed-remote-server-proxy-crash-handler-{pid}")),
-            // we are running outside gpui
-            #[allow(clippy::disallowed_methods)]
-            |duration| FutureExt::map(Timer::after(duration), |_| ()),
-        ))
-        .detach();
-    };
     log::info!("starting proxy process. PID: {}", std::process::id());
     let server_pid = {
         let server_pid = check_pid_file(&server_paths.pid_file).map_err(|source| {

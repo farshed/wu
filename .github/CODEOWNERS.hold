@@ -168,7 +168,6 @@
 /crates/aws_http_client/ @zed-industries/infrastructure-team
 /crates/clock/ @zed-industries/infrastructure-team
 /crates/collections/ @zed-industries/infrastructure-team
-/crates/crashes/ @zed-industries/infrastructure-team
 /crates/credentials_provider/ @zed-industries/infrastructure-team
 /crates/db/ @zed-industries/infrastructure-team
 /crates/denoise/ @zed-industries/infrastructure-team

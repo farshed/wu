@@ -319,7 +319,6 @@ process over SSH. `rpc` and `proto` define the wire protocol they share, and
 | [`auto_update`](../../crates/auto_update/)           | Checks release channels, downloads update assets, records update state, and invokes the platform update helper.               |
 | [`auto_update_ui`](../../crates/auto_update_ui/)     | Update notifications, release-note presentation, restart/install actions, and update-related prompt migration UI.             |
 | [`install_cli`](../../crates/install_cli/)           | Workspace actions for installing the `zed` CLI and registering Zed URL/file handlers.                                         |
-| [`crashes`](../../crates/crashes/)                   | Installs crash/panic handlers, gathers crash and GPU context, writes local minidumps and reports, and coordinates crash-server shutdown. |
 | [`zed_actions`](../../crates/zed_actions/)           | Central declarations for cross-feature GPUI actions so crates can dispatch them without depending on feature implementations. |
 
 ## Maintaining this map

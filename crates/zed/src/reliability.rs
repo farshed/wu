@@ -9,10 +9,8 @@ use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 use util::ResultExt;
 use workspace::WorkspaceStore;
 
-mod hang_detection;
 
 pub fn init(workspace_store: Entity<WorkspaceStore>, cx: &mut App) {
-    hang_detection::start(cx);
     start_memory_usage_logging(workspace_store, cx);
 }
 

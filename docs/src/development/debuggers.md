@@ -110,4 +110,3 @@ In `lldb`, use `backtrace` with `frame select`. `gdb` provides equivalent comman
 
 After the program stops on the exception, you usually cannot continue normal execution. You can still move between stack frames and inspect variables and expressions, which is often enough to identify the crash cause.
 
-You can find additional information on debugging Zed crashes [here](./debugging-crashes.md).

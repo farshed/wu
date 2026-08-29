@@ -74,7 +74,6 @@ clock = { workspace = true, optional = true }
 collections.workspace = true
 command_palette.workspace = true
 component_preview.workspace = true
-crashes.workspace = true
 dap_adapters.workspace = true
 db.workspace = true
 debug_adapter_extension.workspace = true
