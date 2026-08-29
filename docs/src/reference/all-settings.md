@@ -130,8 +130,6 @@ Non-negative `float` values
 }
 ```
 
-> Note: This setting has no effect in Vim mode, as rewrap is already allowed everywhere.
-
 ## Auto Indent
 
 - Description: Whether indentation should be adjusted based on context while typing. This can be specified on a per-language basis.
@@ -5093,12 +5091,6 @@ Run the {#action theme_selector::Toggle} action in the command palette to see a 
 
 > Note: This setting only affects Linux. GNOME Wayland does not support server-side decorations. Changes only apply to newly created windows. Restart Zed to apply the setting to all windows.
 
-## Vim
-
-- Description: Whether or not to enable vim mode.
-- Setting: `vim_mode`
-- Default: `false`
-
 ## When Closing With No Tabs
 
 - Description: Whether the window should be closed when using 'close active item' on a window with no tabs
@@ -5895,7 +5887,6 @@ To preview and enable a settings profile, open the command palette via {#kb comm
 
   "autosave": "on_focus_change",
   "format_on_save": "off",
-  "vim_mode": false,
   "terminal": {
     "font_family": "FiraCode Nerd Font Mono",
     "blinking": "off"

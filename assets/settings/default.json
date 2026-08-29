@@ -125,8 +125,6 @@
   // 2. Maps `Control` on Linux and Windows and to `Command` on MacOS:
   //    "cmd_or_ctrl" (alias: "cmd", "ctrl")
   "multi_cursor_modifier": "alt",
-  // Whether to enable vim modes and key bindings.
-  "vim_mode": false,
   // Whether to show the informational hover box when moving the mouse
   // over symbols in the editor.
   "hover_popover_enabled": true,
@@ -485,8 +483,6 @@
   // When using values other than `in_comments`, it is possible for the rewrapping to produce code
   // that is syntactically invalid. Keep this in mind when selecting which behavior you would like
   // to use.
-  //
-  // Note: This setting has no effect in Vim mode, as rewrap is already allowed everywhere.
   "allow_rewrap": "in_comments",
   // Whether to show tabs and spaces in the editor.
   // This setting can take four values:
@@ -2249,26 +2245,6 @@
     //
     // Default rules are viewable via the "zed: show default semantic token rules" action.
     "semantic_token_rules": [],
-  },
-  // Vim settings
-  "vim": {
-    "default_mode": "normal",
-    "toggle_relative_line_numbers": false,
-    "use_system_clipboard": "always",
-    "use_smartcase_find": false,
-    "use_regex_search": true,
-    "gdefault": false,
-    "highlight_on_yank_duration": 200,
-    "custom_digraphs": {},
-    // Cursor shape for each mode.
-    // The shape can be one of the following: "block", "bar", "underline", "hollow".
-    "cursor_shape": {
-      "normal": "block",
-      "replace": "underline",
-      "visual": "block",
-      // Set to "inherit" to use the editor's cursor_shape.
-      "insert": "inherit",
-    },
   },
   // Which-key popup settings
   "which_key": {

@@ -17,7 +17,7 @@ use theme::Appearance;
 ///
 /// # fn example(cx: &App) {
 /// let hint = KeybindingHint::new(
-///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-s").unwrap())].into(), false),
+///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-s").unwrap())].into()),
 ///     Hsla::black()
 /// )
 ///     .prefix("Save:")
@@ -48,7 +48,7 @@ impl KeybindingHint {
     ///
     /// # fn example(cx: &App) {
     /// let hint = KeybindingHint::new(
-    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-c").unwrap())].into(), false),
+    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-c").unwrap())].into()),
     ///     Hsla::black()
     /// );
     /// # }
@@ -78,7 +78,7 @@ impl KeybindingHint {
     /// # fn example(cx: &App) {
     /// let hint = KeybindingHint::with_prefix(
     ///     "Copy:",
-    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-c").unwrap())].into(), false),
+    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-c").unwrap())].into()),
     ///     Hsla::black()
     /// );
     /// # }
@@ -111,7 +111,7 @@ impl KeybindingHint {
     ///
     /// # fn example(cx: &App) {
     /// let hint = KeybindingHint::with_suffix(
-    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-v").unwrap())].into(), false),
+    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-v").unwrap())].into()),
     ///     "Paste",
     ///     Hsla::black()
     /// );
@@ -144,7 +144,7 @@ impl KeybindingHint {
     ///
     /// # fn example(cx: &App) {
     /// let hint = KeybindingHint::new(
-    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-x").unwrap())].into(), false),
+    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-x").unwrap())].into()),
     ///     Hsla::black()
     /// )
     ///     .prefix("Cut:");
@@ -168,7 +168,7 @@ impl KeybindingHint {
     ///
     /// # fn example(cx: &App) {
     /// let hint = KeybindingHint::new(
-    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-f").unwrap())].into(), false),
+    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-f").unwrap())].into()),
     ///     Hsla::black()
     /// )
     ///     .suffix("Find");
@@ -192,7 +192,7 @@ impl KeybindingHint {
     ///
     /// # fn example(cx: &App) {
     /// let hint = KeybindingHint::new(
-    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-z").unwrap())].into(), false),
+    ///     KeyBinding::from_keystrokes(vec![KeybindingKeystroke::from_keystroke(Keystroke::parse("ctrl-z").unwrap())].into()),
     ///     Hsla::black()
     /// )
     ///     .size(Pixels::from(16.0));

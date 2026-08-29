@@ -57,7 +57,7 @@ Project settings take precedence over user settings for that project only.
 
 You can also add settings files in subdirectories for more granular control.
 
-**Limitation:** Not all settings can be set at the project level. Settings that affect the editor globally (like `theme` or `vim_mode`) only work in user settings. Project settings are limited to editor behavior and language tooling options like `tab_size`, `formatter`, and `format_on_save`.
+**Limitation:** Not all settings can be set at the project level. Settings that affect the editor globally (like `theme`) only work in user settings. Project settings are limited to editor behavior and language tooling options like `tab_size`, `formatter`, and `format_on_save`.
 
 ## How Settings Merge
 
@@ -80,10 +80,10 @@ Use different settings for Stable, Preview, or Nightly builds by adding top-leve
 ```json [settings]
 {
   "theme": "One Dark",
-  "vim_mode": false,
+  "buffer_font_size": 14,
   "nightly": {
     "theme": "Rosé Pine",
-    "vim_mode": true
+    "buffer_font_size": 16
   },
   "preview": {
     "theme": "Catppuccin Mocha"
@@ -93,9 +93,9 @@ Use different settings for Stable, Preview, or Nightly builds by adding top-leve
 
 With this configuration:
 
-- **Stable** uses One Dark with vim mode off
-- **Preview** uses Catppuccin Mocha with vim mode off
-- **Nightly** uses Rosé Pine with vim mode on
+- **Stable** uses One Dark with a 14px buffer font
+- **Preview** uses Catppuccin Mocha with a 14px buffer font
+- **Nightly** uses Rosé Pine with a 16px buffer font
 
 Changes made in the Settings Editor apply across all channels.
 
@@ -105,7 +105,7 @@ Zed supports deep links that open specific settings directly:
 
 ```
 zed://settings/theme
-zed://settings/vim_mode
+zed://settings/tab_size
 zed://settings/buffer_font_size
 ```
 
@@ -125,7 +125,6 @@ These are useful for sharing configuration tips or linking from documentation.
   "tab_size": 2,
   "format_on_save": "on",
   "autosave": "on_focus_change",
-  "vim_mode": false,
   "terminal": {
     "font_family": "JetBrains Mono",
     "font_size": 14

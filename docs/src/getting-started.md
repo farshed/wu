@@ -82,10 +82,6 @@ We have dedicated guides for switching from other editors:
 - [WebStorm](./migrate/webstorm.md) — Configure JavaScript/TypeScript workflows
 - [RustRover](./migrate/rustrover.md) — Rust development in Zed
 
-You can also enable familiar keybindings:
-
-- **Vim**: Enable `vim_mode` in settings. See [Vim Mode](./vim.md).
-
 ## Join the Community
 
 Zed is open source. Join us on GitHub or in Discord to contribute code, report bugs, or suggest features.

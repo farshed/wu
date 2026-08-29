@@ -10,7 +10,6 @@ use ui::{
     StatefulInteractiveElement, SwitchField, TintColor, ToggleButtonGroup, ToggleButtonGroupSize,
     ToggleButtonSimple, ToggleButtonWithIcon, Tooltip, prelude::*,
 };
-use vim_mode_setting::VimModeSetting;
 
 use crate::{
     ImportCursorSettings, ImportVsCodeSettings, SettingsImportState,
@@ -283,39 +282,6 @@ fn render_base_keymap_section(tab_index: &mut isize, cx: &mut App) -> impl IntoE
     }
 }
 
-fn render_vim_mode_switch(tab_index: &mut isize, cx: &mut App) -> impl IntoElement {
-    let toggle_state = if VimModeSetting::get_global(cx).0 {
-        ui::ToggleState::Selected
-    } else {
-        ui::ToggleState::Unselected
-    };
-    SwitchField::new(
-        "onboarding-vim-mode",
-        Some("Vim Mode"),
-        Some("Coming from Neovim? Use our first-class implementation of Vim Mode".into()),
-        toggle_state,
-        {
-            let fs = <dyn Fs>::global(cx);
-            move |&selection, _, cx| {
-                let vim_mode = match selection {
-                    ToggleState::Selected => true,
-                    ToggleState::Unselected => false,
-                    ToggleState::Indeterminate => {
-                        return;
-                    }
-                };
-                update_settings_file(fs.clone(), cx, move |setting, _| {
-                    setting.vim_mode = Some(vim_mode);
-                });
-            }
-        },
-    )
-    .tab_index({
-        *tab_index += 1;
-        *tab_index - 1
-    })
-}
-
 fn render_worktree_auto_trust_switch(tab_index: &mut isize, cx: &mut App) -> impl IntoElement {
     let toggle_state = if ProjectSettings::get_global(cx).session.trust_all_worktrees {
         ui::ToggleState::Selected
@@ -423,6 +389,5 @@ pub(crate) fn render_basics_page(cx: &mut App) -> impl IntoElement {
         .child(render_theme_section(&mut tab_index, cx))
         .child(render_base_keymap_section(&mut tab_index, cx))
         .child(render_import_settings_section(&mut tab_index, cx))
-        .child(render_vim_mode_switch(&mut tab_index, cx))
         .child(render_worktree_auto_trust_switch(&mut tab_index, cx))
 }

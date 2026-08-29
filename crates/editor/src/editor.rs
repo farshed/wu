@@ -9,8 +9,6 @@
 //!   Contains all metadata related to text transformations (folds, fake inlay text insertions, soft wraps, tab markup, etc.).
 //!
 //! All other submodules and structs are mostly concerned with holding editor data about the way it displays current buffer region(s).
-//!
-//! If you're looking to improve Vim mode, you should check out Vim crate that wraps Editor and overrides its behavior.
 pub mod actions;
 pub mod blink_manager;
 mod bracket_colorization;
@@ -717,7 +715,7 @@ impl BufferSerialization {
     }
 }
 
-/// Addons allow storing per-editor state in other crates (e.g. Vim)
+/// Addons allow storing per-editor state in other crates (e.g. git_ui)
 pub trait Addon: 'static {
     fn extend_key_context(&self, _: &mut KeyContext, _: &App) {}
 
@@ -1014,7 +1012,6 @@ pub struct Editor {
     workspace: Option<(WeakEntity<Workspace>, Option<WorkspaceId>)>,
     input_enabled: bool,
     expects_character_input: bool,
-    use_modal_editing: bool,
     read_only: bool,
     pub hover_state: HoverState,
     pending_mouse_down: Option<Rc<RefCell<Option<MouseDownEvent>>>>,
@@ -2308,7 +2305,6 @@ impl Editor {
             workspace: None,
             input_enabled: !is_minimap,
             expects_character_input: !is_minimap,
-            use_modal_editing: full_mode,
             read_only: is_minimap,
             use_autoclose: true,
             use_auto_surround: true,
@@ -2476,31 +2472,26 @@ impl Editor {
                     editor.refresh_sticky_headers(&editor.snapshot(window, cx), cx);
                 }
                 EditorEvent::Edited { .. } => {
-                    let vim_mode = vim_mode_setting::VimModeSetting::try_get(cx)
-                        .map(|vim_mode| vim_mode.0)
+                    let display_map = editor.display_snapshot(cx);
+                    let selections = editor.selections.all_adjusted_display(&display_map);
+                    let pop_state = editor
+                        .change_list
+                        .last()
+                        .map(|previous| {
+                            previous.len() == selections.len()
+                                && previous.iter().enumerate().all(|(ix, p)| {
+                                    p.to_display_point(&display_map).row()
+                                        == selections[ix].head().row()
+                                })
+                        })
                         .unwrap_or(false);
-                    if !vim_mode {
-                        let display_map = editor.display_snapshot(cx);
-                        let selections = editor.selections.all_adjusted_display(&display_map);
-                        let pop_state = editor
-                            .change_list
-                            .last()
-                            .map(|previous| {
-                                previous.len() == selections.len()
-                                    && previous.iter().enumerate().all(|(ix, p)| {
-                                        p.to_display_point(&display_map).row()
-                                            == selections[ix].head().row()
-                                    })
-                            })
-                            .unwrap_or(false);
-                        let new_positions = selections
-                            .into_iter()
-                            .map(|s| display_map.display_point_to_anchor(s.head(), Bias::Left))
-                            .collect();
-                        editor
-                            .change_list
-                            .push_to_change_list(pop_state, new_positions);
-                    }
+                    let new_positions = selections
+                        .into_iter()
+                        .map(|s| display_map.display_point_to_anchor(s.head(), Bias::Left))
+                        .collect();
+                    editor
+                        .change_list
+                        .push_to_change_list(pop_state, new_positions);
                 }
                 _ => (),
             },
@@ -3238,14 +3229,6 @@ impl Editor {
 
     fn should_serialize_buffer(&self) -> bool {
         self.buffer_serialization.is_some()
-    }
-
-    pub fn set_use_modal_editing(&mut self, to: bool) {
-        self.use_modal_editing = to;
-    }
-
-    pub fn use_modal_editing(&self) -> bool {
-        self.use_modal_editing
     }
 
     /// Inserted text is normalized to LF line endings before being applied.

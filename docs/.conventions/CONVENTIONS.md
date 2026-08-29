@@ -41,7 +41,7 @@ For voice, tone, and writing style, see the [brand-writer/](./brand-writer/) dir
 
 ### Create a new page when:
 
-- Introducing a **major feature** with multiple sub-features (e.g., Git integration, Vim mode)
+- Introducing a **major feature** with multiple sub-features (e.g., Git integration)
 - The topic requires **extensive configuration examples**
 - Users would search for it **by name** (e.g., "Zed terminal", "Zed snippets")
 - It's a **new category** (e.g., a new AI provider type)
@@ -133,7 +133,7 @@ Use anchor IDs when:
 
 Use inline `code` for:
 
-- Setting names: `vim_mode`, `buffer_font_size`
+- Setting names: `tab_size`, `buffer_font_size`
 - Keybindings: `cmd-shift-p`, `ctrl-w h`
 - Commands: `:w`, `:q`
 - File paths: `~/.config/zed/settings.json`
@@ -155,7 +155,7 @@ Always use the `[settings]` or `[keymap]` annotation:
 
 ```json [settings]
 {
-  "vim_mode": true
+  "buffer_font_size": 14
 }
 ```
 
@@ -228,7 +228,6 @@ Include the version number and what changed. This helps users on older versions 
 
 Link to other docs using relative paths:
 
-- `[Vim mode](./vim.md)`
 - `[AI Quick Start](./ai/quick-start.md)`
 
 ### External Links

@@ -131,4 +131,3 @@ Zed provides extensive control over UI elements including:
 
 - [All Settings](./reference/all-settings.md) — Complete settings reference
 - [Key bindings](./key-bindings.md) — Customize keyboard shortcuts
-- [Vim Mode](./vim.md) — Enable modal editing

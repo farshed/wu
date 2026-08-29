@@ -151,12 +151,6 @@ pub fn default_keymap() -> Cow<'static, str> {
     asset_str::<SettingsAssets>(DEFAULT_KEYMAP_PATH)
 }
 
-pub const VIM_KEYMAP_PATH: &str = "keymaps/vim.json";
-
-pub fn vim_keymap() -> Cow<'static, str> {
-    asset_str::<SettingsAssets>(VIM_KEYMAP_PATH)
-}
-
 /// Specific keybinding overrides. Loaded after the base keymap so they win over
 /// conflicting base-keymap (and default `Editor`) bindings for the same chords,
 /// while still allowing user keymaps (loaded last) to override them. Shared

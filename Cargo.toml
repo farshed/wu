@@ -156,8 +156,6 @@ members = [
     "crates/ui_prompt",
     "crates/util",
     "crates/util_macros",
-    "crates/vim",
-    "crates/vim_mode_setting",
     "crates/watch",
     "crates/which_key",
     "crates/windows_resources",
@@ -348,8 +346,6 @@ ui_macros = { path = "crates/ui_macros" }
 ui_prompt = { path = "crates/ui_prompt" }
 util = { path = "crates/util" }
 util_macros = { path = "crates/util_macros" }
-vim = { path = "crates/vim" }
-vim_mode_setting = { path = "crates/vim_mode_setting" }
 watch = { path = "crates/watch" }
 which_key = { path = "crates/which_key" }
 workspace = { path = "crates/workspace" }

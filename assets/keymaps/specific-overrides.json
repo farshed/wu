@@ -3,7 +3,7 @@
 // also add a comment to the default keymaps that this binding exists here, to
 // make it a little more discoverable.
 //
-// This is loaded after all the base keymaps (Atom, vim etc) but before the user
+// This is loaded after all the base keymaps (Atom etc) but before the user
 // keymaps, giving it the highest precedence of all the bindings set by us.
 [
   {

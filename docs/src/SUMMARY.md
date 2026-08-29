@@ -51,7 +51,6 @@
   - [Icon Themes](./icon-themes.md)
   - [Fonts & Visual Tweaks](./visual-customization.md)
 - [Keybindings](./key-bindings.md)
-  - [Vim Mode](./vim.md)
 
 # Language Support
 

@@ -80,7 +80,7 @@
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # core-team
-# GPUI framework, text editing, vim, buffers, text manipulation
+# GPUI framework, text editing, buffers, text manipulation
 # ═══════════════════════════════════════════════════════════════════════════════
 
 /crates/action_log/ @zed-industries/core-team
@@ -106,8 +106,6 @@
 /crates/streaming_diff/ @zed-industries/core-team
 /crates/sum_tree/ @zed-industries/core-team
 /crates/text/ @zed-industries/core-team
-/crates/vim/ @zed-industries/core-team
-/crates/vim_mode_setting/ @zed-industries/core-team
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # developer-tools-team

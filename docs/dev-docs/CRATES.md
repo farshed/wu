@@ -226,8 +226,6 @@ and `multi_buffer` projects excerpts from one or more buffers for `editor`.
 | [`markdown_preview`](../../crates/markdown_preview/)         | Live workspace preview synchronized with markdown editor buffers and persisted preview settings.                                                                     |
 | [`diagnostics`](../../crates/diagnostics/)                   | Project diagnostics view, buffer diagnostic navigation/rendering, toolbar controls, filtering, and editor integration.                                               |
 | [`keymap_editor`](../../crates/keymap_editor/)               | Settings UI for searching, adding, editing, and resolving key bindings with action completion.                                                                       |
-| [`vim`](../../crates/vim/)                                   | Vim modal editing state, motions, operators, text objects, registers, commands, and editor action overrides.                                                         |
-| [`vim_mode_setting`](../../crates/vim_mode_setting/)         | Small settings-only crate for enabling Vim mode without depending on the full `vim` implementation.                                                                  |
 | [`which_key`](../../crates/which_key/)                       | Which-key modal that shows available continuation bindings for a key sequence.                                                                                       |
 
 ## Settings, themes, and migration

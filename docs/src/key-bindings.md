@@ -24,9 +24,6 @@ We currently support:
 
 This setting can also be changed via the command palette through the {#action zed::ToggleBaseKeymapSelector} action.
 
-You can also enable `vim_mode`, which adds modal bindings.
-For more information, see the documentation for [Vim mode](./vim.md).
-
 ## Keymap Editor
 
 You can access the keymap editor through the {#kb zed::OpenKeymap} action or by running {#action zed::OpenKeymap} action from the command palette. You can easily add or change a keybind for an action with the `Change Keybinding` or `Add Keybinding` button on the command palette's left bottom corner.
@@ -129,7 +126,7 @@ For example:
 # in an editor, it might look like this:
 Workspace os=macos keyboard_layout=com.apple.keylayout.QWERTY
   Pane
-    Editor mode=full extension=md vim_mode=insert
+    Editor mode=full extension=md
 
 # in the project panel
 Workspace os=macos
@@ -151,11 +148,9 @@ For example:
 - `"context": "!Editor && !Terminal"` - matches anywhere except where an Editor or Terminal is focused
 - `"context": "os == macos > Editor"` - matches any editor on macOS.
 
-It's worth noting that attributes are only available on the node they are defined on. This means that if you want to (for example) only enable a keybinding when the debugger is stopped in vim normal mode, you need to do `debugger_stopped > vim_mode == normal`.
+It's worth noting that attributes are only available on the node they are defined on. This means that if you want to (for example) only enable a keybinding when the debugger is stopped in a full editor, you need to do `debugger_stopped > mode == full`.
 
 > Note: Before Zed v0.197.x, the `!` operator only looked at one node at a time, and `>` meant "parent" not "ancestor". This meant that `!Editor` would match the context `Workspace > Pane > Editor`, because (confusingly) the Pane matches `!Editor`, and that `os == macos > Editor` did not match the context `Workspace > Pane > Editor` because of the intermediate `Pane` node.
-
-If you're using Vim mode, we have information on how [vim modes influence the context](./vim.md#contexts).
 
 ### Actions
 
@@ -265,12 +260,6 @@ A common request is to be able to map from a single keystroke to a sequence. You
         "workspace::SendKeystrokes",
         "ctrl-shift-right ctrl-shift-right ctrl-shift-right cmd-c ctrl-shift-left ctrl-shift-left ctrl-shift-left"
       ]
-    }
-  },
-  {
-    "context": "Editor && vim_mode == insert",
-    "bindings": {
-      "j k": ["workspace::SendKeystrokes", "escape"]
     }
   }
 ]

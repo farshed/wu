@@ -382,11 +382,6 @@ impl VsCodeThemeConverter {
                 .active_foreground
                 .as_deref()
                 .map(Into::into),
-            vim_yank_background: vscode_colors
-                .editor
-                .range_highlight_background
-                .as_deref()
-                .map(Into::into),
             ..Default::default()
         })
     }
