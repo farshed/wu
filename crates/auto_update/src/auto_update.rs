@@ -8,7 +8,7 @@ use gpui::{
 };
 use http_client::{HttpClient, HttpClientWithUrl};
 use paths::remote_servers_dir;
-use release_channel::{AppCommitSha, ReleaseChannel};
+use release_channel::ReleaseChannel;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use settings::{RegisterSetting, Settings, SettingsStore};
@@ -45,7 +45,6 @@ impl std::fmt::Display for MissingDependencyError {
 
 impl std::error::Error for MissingDependencyError {}
 const POLL_INTERVAL: Duration = Duration::from_secs(60 * 60);
-const NIGHTLY_POLL_INTERVAL: Duration = Duration::from_secs(15 * 60);
 const REMOTE_SERVER_CACHE_LIMIT: usize = 5;
 
 #[cfg(target_os = "linux")]
@@ -337,7 +336,7 @@ pub fn check(_: &Check, window: &mut Window, cx: &mut App) {
 pub fn release_notes_url(cx: &mut App) -> Option<String> {
     let release_channel = ReleaseChannel::try_global(cx)?;
     let url = match release_channel {
-        ReleaseChannel::Stable | ReleaseChannel::Preview => {
+        ReleaseChannel::Stable => {
             let auto_updater = AutoUpdater::get(cx)?;
             let auto_updater = auto_updater.read(cx);
             let mut current_version = auto_updater.current_version.clone();
@@ -346,9 +345,6 @@ pub fn release_notes_url(cx: &mut App) -> Option<String> {
             let release_channel = release_channel.dev_name();
             let path = format!("/releases/{release_channel}/{current_version}");
             auto_updater.client.http_client().build_url(&path)
-        }
-        ReleaseChannel::Nightly => {
-            "https://github.com/zed-industries/zed/commits/nightly/".to_string()
         }
         ReleaseChannel::Dev => "https://github.com/zed-industries/zed/commits/main/".to_string(),
     };
@@ -478,11 +474,7 @@ impl AutoUpdater {
     }
 
     pub fn start_polling(&self, cx: &mut Context<Self>) -> Task<Result<()>> {
-        let poll_interval =
-            ReleaseChannel::try_global(cx).map_or(POLL_INTERVAL, |channel| match channel {
-                ReleaseChannel::Nightly => NIGHTLY_POLL_INTERVAL,
-                _ => POLL_INTERVAL,
-            });
+        let poll_interval = POLL_INTERVAL;
 
         cx.spawn(async move |this, cx| {
             if cfg!(target_os = "windows") {
@@ -730,10 +722,7 @@ impl AutoUpdater {
         let fetched_release_data =
             Self::get_release_asset(&this, release_channel, None, "zed", OS, ARCH, cx).await?;
         let fetched_version = fetched_release_data.clone().version;
-        let app_commit_sha = Ok(cx.update(|cx| AppCommitSha::try_global(cx).map(|sha| sha.full())));
         let newer_version = Self::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
             installed_version,
             fetched_version,
             previous_status.clone(),
@@ -833,39 +822,20 @@ impl AutoUpdater {
     }
 
     fn check_if_fetched_version_is_newer(
-        release_channel: ReleaseChannel,
-        app_commit_sha: Result<Option<String>>,
         installed_version: Version,
         fetched_version: String,
         status: AutoUpdateStatus,
     ) -> Result<Option<Version>> {
         let fetched_version = fetched_version.parse::<Version>()?;
-
-        match release_channel {
-            ReleaseChannel::Nightly => {
-                let should_download = if let AutoUpdateStatus::Updated { version } = status {
-                    fetched_version != version
-                } else {
-                    let fetched_sha = fetched_version.build.as_str().rsplit('.').next();
-                    app_commit_sha
-                        .ok()
-                        .flatten()
-                        .is_none_or(|sha| fetched_sha != Some(sha.as_str()))
-                };
-                Ok(should_download.then_some(fetched_version))
-            }
-            _ => {
-                let current_version = if let AutoUpdateStatus::Updated { version } = status {
-                    version
-                } else {
-                    installed_version
-                };
-                Ok(Self::check_if_fetched_version_is_newer_non_nightly(
-                    current_version,
-                    fetched_version,
-                ))
-            }
-        }
+        let current_version = if let AutoUpdateStatus::Updated { version } = status {
+            version
+        } else {
+            installed_version
+        };
+        Ok(Self::check_if_fetched_version_is_newer_non_nightly(
+            current_version,
+            fetched_version,
+        ))
     }
 
     fn check_dependencies() -> Result<()> {
@@ -1585,15 +1555,11 @@ mod tests {
 
     #[test]
     fn test_stable_does_not_update_when_fetched_version_is_not_higher() {
-        let release_channel = ReleaseChannel::Stable;
-        let app_commit_sha = Ok(Some("a".to_string()));
         let installed_version = semver::Version::new(1, 0, 0);
         let status = AutoUpdateStatus::Idle;
         let fetched_version = semver::Version::new(1, 0, 0);
 
         let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
             installed_version,
             fetched_version.to_string(),
             status,
@@ -1604,15 +1570,11 @@ mod tests {
 
     #[test]
     fn test_stable_does_update_when_fetched_version_is_higher() {
-        let release_channel = ReleaseChannel::Stable;
-        let app_commit_sha = Ok(Some("a".to_string()));
         let installed_version = semver::Version::new(1, 0, 0);
         let status = AutoUpdateStatus::Idle;
         let fetched_version = semver::Version::new(1, 0, 1);
 
         let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
             installed_version,
             fetched_version.to_string(),
             status,
@@ -1623,8 +1585,6 @@ mod tests {
 
     #[test]
     fn test_stable_does_not_update_when_fetched_version_is_not_higher_than_cached() {
-        let release_channel = ReleaseChannel::Stable;
-        let app_commit_sha = Ok(Some("a".to_string()));
         let installed_version = semver::Version::new(1, 0, 0);
         let status = AutoUpdateStatus::Updated {
             version: semver::Version::new(1, 0, 1),
@@ -1632,8 +1592,6 @@ mod tests {
         let fetched_version = semver::Version::new(1, 0, 1);
 
         let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
             installed_version,
             fetched_version.to_string(),
             status,
@@ -1644,8 +1602,6 @@ mod tests {
 
     #[test]
     fn test_stable_does_update_when_fetched_version_is_higher_than_cached() {
-        let release_channel = ReleaseChannel::Stable;
-        let app_commit_sha = Ok(Some("a".to_string()));
         let installed_version = semver::Version::new(1, 0, 0);
         let status = AutoUpdateStatus::Updated {
             version: semver::Version::new(1, 0, 1),
@@ -1653,8 +1609,6 @@ mod tests {
         let fetched_version = semver::Version::new(1, 0, 2);
 
         let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
             installed_version,
             fetched_version.to_string(),
             status,
@@ -1663,190 +1617,11 @@ mod tests {
         assert_eq!(newer_version.unwrap(), Some(fetched_version));
     }
 
-    #[test]
-    fn test_nightly_does_not_update_when_fetched_sha_is_same() {
-        let release_channel = ReleaseChannel::Nightly;
-        let app_commit_sha = Ok(Some("a".to_string()));
-        let mut installed_version = semver::Version::new(1, 0, 0);
-        installed_version.build = semver::BuildMetadata::new("a").unwrap();
-        let status = AutoUpdateStatus::Idle;
-        let fetched_version = "1.0.0+a".to_string();
 
-        let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
-            installed_version,
-            fetched_version,
-            status,
-        );
 
-        assert_eq!(newer_version.unwrap(), None);
-    }
 
-    #[test]
-    fn test_nightly_does_update_when_fetched_sha_is_not_same() {
-        let release_channel = ReleaseChannel::Nightly;
-        let app_commit_sha = Ok(Some("a".to_string()));
-        let installed_version = semver::Version::new(1, 0, 0);
-        let status = AutoUpdateStatus::Idle;
-        let fetched_version = "1.0.0+b".to_string();
 
-        let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
-            installed_version,
-            fetched_version.clone(),
-            status,
-        );
 
-        assert_eq!(
-            newer_version.unwrap(),
-            Some(fetched_version.parse().unwrap())
-        );
-    }
 
-    #[test]
-    fn test_nightly_does_not_update_when_fetched_version_is_same_as_cached() {
-        let release_channel = ReleaseChannel::Nightly;
-        let app_commit_sha = Ok(Some("a".to_string()));
-        let mut installed_version = semver::Version::new(1, 0, 0);
-        installed_version.build = semver::BuildMetadata::new("a").unwrap();
-        let status = AutoUpdateStatus::Updated {
-            version: "1.0.0+b".parse().unwrap(),
-        };
-        let fetched_version = "1.0.0+b".to_string();
 
-        let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
-            installed_version,
-            fetched_version,
-            status,
-        );
-
-        assert_eq!(newer_version.unwrap(), None);
-    }
-
-    #[test]
-    fn test_nightly_does_update_when_fetched_sha_is_not_same_as_cached() {
-        let release_channel = ReleaseChannel::Nightly;
-        let app_commit_sha = Ok(Some("a".to_string()));
-        let mut installed_version = semver::Version::new(1, 0, 0);
-        installed_version.build = semver::BuildMetadata::new("a").unwrap();
-        let status = AutoUpdateStatus::Updated {
-            version: "1.0.0+b".parse().unwrap(),
-        };
-        let fetched_version = "1.0.0+c".to_string();
-
-        let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
-            installed_version,
-            fetched_version.clone(),
-            status,
-        );
-
-        assert_eq!(
-            newer_version.unwrap(),
-            Some(fetched_version.parse().unwrap())
-        );
-    }
-
-    #[test]
-    fn test_nightly_does_not_redownload_after_updating_to_fetched_version() {
-        let release_channel = ReleaseChannel::Nightly;
-        let installed_version = semver::Version::new(1, 0, 0);
-        let fetched_version = "1.0.0+nightly.b".to_string();
-
-        let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            Ok(Some("a".to_string())),
-            installed_version.clone(),
-            fetched_version.clone(),
-            AutoUpdateStatus::Idle,
-        )
-        .unwrap()
-        .expect("a newer nightly version should be available");
-
-        let next_check = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            Ok(Some("a".to_string())),
-            installed_version,
-            fetched_version,
-            AutoUpdateStatus::Updated {
-                version: newer_version,
-            },
-        );
-
-        assert_eq!(next_check.unwrap(), None);
-    }
-
-    #[test]
-    fn test_nightly_does_update_when_installed_versions_sha_cannot_be_retrieved() {
-        let release_channel = ReleaseChannel::Nightly;
-        let app_commit_sha = Ok(None);
-        let installed_version = semver::Version::new(1, 0, 0);
-        let status = AutoUpdateStatus::Idle;
-        let fetched_version = "1.0.0+a".to_string();
-
-        let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
-            installed_version,
-            fetched_version.clone(),
-            status,
-        );
-
-        assert_eq!(
-            newer_version.unwrap(),
-            Some(fetched_version.parse().unwrap())
-        );
-    }
-
-    #[test]
-    fn test_nightly_does_not_update_when_cached_update_is_same_as_fetched_and_installed_versions_sha_cannot_be_retrieved()
-     {
-        let release_channel = ReleaseChannel::Nightly;
-        let app_commit_sha = Ok(None);
-        let installed_version = semver::Version::new(1, 0, 0);
-        let status = AutoUpdateStatus::Updated {
-            version: "1.0.0+b".parse().unwrap(),
-        };
-        let fetched_version = "1.0.0+b".to_string();
-
-        let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
-            installed_version,
-            fetched_version,
-            status,
-        );
-
-        assert_eq!(newer_version.unwrap(), None);
-    }
-
-    #[test]
-    fn test_nightly_does_update_when_cached_update_is_not_same_as_fetched_and_installed_versions_sha_cannot_be_retrieved()
-     {
-        let release_channel = ReleaseChannel::Nightly;
-        let app_commit_sha = Ok(None);
-        let installed_version = semver::Version::new(1, 0, 0);
-        let status = AutoUpdateStatus::Updated {
-            version: "1.0.0+b".parse().unwrap(),
-        };
-        let fetched_version = "1.0.0+c".to_string();
-
-        let newer_version = AutoUpdater::check_if_fetched_version_is_newer(
-            release_channel,
-            app_commit_sha,
-            installed_version,
-            fetched_version.clone(),
-            status,
-        );
-
-        assert_eq!(
-            newer_version.unwrap(),
-            Some(fetched_version.parse().unwrap())
-        );
-    }
 }

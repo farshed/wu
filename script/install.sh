@@ -96,12 +96,6 @@ linux() {
       stable)
         appid="me.farshed.Edna"
         ;;
-      nightly)
-        appid="me.farshed.Edna-Nightly"
-        ;;
-      preview)
-        appid="me.farshed.Edna-Preview"
-        ;;
       dev)
         appid="me.farshed.Edna-Dev"
         ;;

@@ -61,14 +61,6 @@ linux() {
         appid="me.farshed.Edna"
         db_suffix="stable"
         ;;
-      nightly)
-        appid="me.farshed.Edna-Nightly"
-        db_suffix="nightly"
-        ;;
-      preview)
-        appid="me.farshed.Edna-Preview"
-        db_suffix="preview"
-        ;;
       dev)
         appid="me.farshed.Edna-Dev"
         db_suffix="dev"
@@ -109,16 +101,6 @@ macos() {
     db_suffix="stable"
     app_id="me.farshed.Edna"
     case "$channel" in
-      nightly)
-        app="Edna Nightly.app"
-        db_suffix="nightly"
-        app_id="me.farshed.Edna-Nightly"
-        ;;
-      preview)
-        app="Edna Preview.app"
-        db_suffix="preview"
-        app_id="me.farshed.Edna-Preview"
-        ;;
       dev)
         app="Edna Dev.app"
         db_suffix="dev"

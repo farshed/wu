@@ -181,13 +181,7 @@ export DO_STARTUP_NOTIFY="true"
 export APP_CLI="edna"
 export APP_ICON="zed"
 export APP_ARGS="%U"
-if [[ "$channel" == "preview" ]]; then
-  export APP_NAME="Zed Preview"
-  APP_ID="me.farshed.Edna-Preview"
-elif [[ "$channel" == "nightly" ]]; then
-  export APP_NAME="Zed Nightly"
-  APP_ID="me.farshed.Edna-Nightly"
-elif [[ "$channel" == "dev" ]]; then
+if [[ "$channel" == "dev" ]]; then
   export APP_NAME="Zed Devel"
   APP_ID="me.farshed.Edna-Dev"
 else

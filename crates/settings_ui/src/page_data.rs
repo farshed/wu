@@ -319,23 +319,9 @@ fn general_page(cx: &App) -> SettingsPage {
         ]
     }
 
-    fn scoped_settings_section() -> [SettingsPageItem; 3] {
+    fn scoped_settings_section() -> [SettingsPageItem; 2] {
         [
             SettingsPageItem::SectionHeader("Scoped Settings"),
-            SettingsPageItem::SettingItem(SettingItem {
-                files: USER,
-                title: "Preview Channel",
-                description: "Which settings should be activated only in Preview build of Edna.",
-                field: Box::new(
-                    SettingField {
-                        json_path: Some("preview_channel_settings"),
-                        pick: |settings_content| Some(settings_content),
-                        write: |_settings_content, _value, _| {},
-                    }
-                    .unimplemented(),
-                ),
-                metadata: None,
-            }),
             SettingsPageItem::SettingItem(SettingItem {
                 files: USER,
                 title: "Settings Profiles",

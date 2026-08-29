@@ -45,8 +45,6 @@ pub fn compile(manifest: bool) -> Result<(), Box<dyn std::error::Error>> {
     let channel = option_env!("RELEASE_CHANNEL").unwrap_or("dev");
     let (icon_filename, product_name) = match channel {
         "stable" => ("app-icon.ico", "Edna"),
-        "preview" => ("app-icon-preview.ico", "Edna Preview"),
-        "nightly" => ("app-icon-nightly.ico", "Edna Nightly"),
         _ => ("app-icon-dev.ico", "Edna Dev"),
     };
     let icon = std::path::PathBuf::from(ICON_DIR).join(icon_filename);

@@ -9,7 +9,7 @@ use semver::Version;
 
 const ZED_DOCS_URL: &str = "https://zed.dev/docs";
 
-/// stable | dev | nightly | preview
+/// stable | dev
 pub static RELEASE_CHANNEL_NAME: LazyLock<String> = LazyLock::new(|| {
     if cfg!(debug_assertions) {
         env::var("ZED_RELEASE_CHANNEL").unwrap_or_else(|_| compile_time_release_channel_name())
@@ -45,8 +45,6 @@ pub static RELEASE_CHANNEL: LazyLock<ReleaseChannel> =
 pub fn app_identifier() -> &'static str {
     match *RELEASE_CHANNEL {
         ReleaseChannel::Dev => "Zed-Editor-Dev",
-        ReleaseChannel::Nightly => "Zed-Editor-Nightly",
-        ReleaseChannel::Preview => "Zed-Editor-Preview",
         ReleaseChannel::Stable => "Zed-Editor-Stable",
     }
 }
@@ -143,12 +141,6 @@ pub enum ReleaseChannel {
     #[default]
     Dev,
 
-    /// The Nightly release channel.
-    Nightly,
-
-    /// The Preview release channel.
-    Preview,
-
     /// The Stable release channel.
     Stable,
 }
@@ -179,12 +171,7 @@ pub fn docs_url(slug: &str, cx: &App) -> String {
 
 impl ReleaseChannel {
     /// All release channels.
-    pub const ALL: [ReleaseChannel; 4] = [
-        ReleaseChannel::Dev,
-        ReleaseChannel::Nightly,
-        ReleaseChannel::Preview,
-        ReleaseChannel::Stable,
-    ];
+    pub const ALL: [ReleaseChannel; 2] = [ReleaseChannel::Dev, ReleaseChannel::Stable];
 
     /// Returns the global [`ReleaseChannel`].
     pub fn global(cx: &App) -> Self {
@@ -206,8 +193,6 @@ impl ReleaseChannel {
     pub fn display_name(&self) -> &'static str {
         match self {
             ReleaseChannel::Dev => "Edna Dev",
-            ReleaseChannel::Nightly => "Edna Nightly",
-            ReleaseChannel::Preview => "Edna Preview",
             ReleaseChannel::Stable => "Edna",
         }
     }
@@ -216,8 +201,6 @@ impl ReleaseChannel {
     pub fn dev_name(&self) -> &'static str {
         match self {
             ReleaseChannel::Dev => "dev",
-            ReleaseChannel::Nightly => "nightly",
-            ReleaseChannel::Preview => "preview",
             ReleaseChannel::Stable => "stable",
         }
     }
@@ -228,36 +211,18 @@ impl ReleaseChannel {
     pub fn app_id(&self) -> &'static str {
         match self {
             ReleaseChannel::Dev => "me.farshed.Edna-Dev",
-            ReleaseChannel::Nightly => "me.farshed.Edna-Nightly",
-            ReleaseChannel::Preview => "me.farshed.Edna-Preview",
             ReleaseChannel::Stable => "me.farshed.Edna",
         }
     }
 
-    /// Returns the query parameter for this [`ReleaseChannel`].
-    pub fn release_query_param(&self) -> Option<&'static str> {
-        match self {
-            Self::Dev => None,
-            Self::Nightly => Some("nightly=1"),
-            Self::Preview => Some("preview=1"),
-            Self::Stable => None,
-        }
-    }
 
     /// Returns the Zed docs URL for this [`ReleaseChannel`] for the given
     /// `slug`.
     pub fn docs_url(&self, slug: &str) -> String {
-        let channel_path_segment = match self {
-            Self::Dev | Self::Nightly => Some("nightly"),
-            Self::Preview => Some("preview"),
-            Self::Stable => None,
-        };
-
-        match channel_path_segment {
-            Some(channel) if slug.is_empty() => format!("{ZED_DOCS_URL}/{channel}"),
-            Some(channel) => format!("{ZED_DOCS_URL}/{channel}/{slug}"),
-            None if slug.is_empty() => ZED_DOCS_URL.to_string(),
-            None => format!("{ZED_DOCS_URL}/{slug}"),
+        if slug.is_empty() {
+            ZED_DOCS_URL.to_string()
+        } else {
+            format!("{ZED_DOCS_URL}/{slug}")
         }
     }
 }
@@ -272,8 +237,6 @@ impl FromStr for ReleaseChannel {
     fn from_str(channel: &str) -> Result<Self, Self::Err> {
         Ok(match channel {
             "dev" => ReleaseChannel::Dev,
-            "nightly" => ReleaseChannel::Nightly,
-            "preview" => ReleaseChannel::Preview,
             "stable" => ReleaseChannel::Stable,
             _ => return Err(InvalidReleaseChannel),
         })
@@ -288,19 +251,12 @@ mod tests {
     fn test_docs_url_for_release_channel() {
         assert_eq!(
             ReleaseChannel::Dev.docs_url("settings"),
-            "https://zed.dev/docs/nightly/settings"
-        );
-        assert_eq!(
-            ReleaseChannel::Nightly.docs_url("settings"),
-            "https://zed.dev/docs/nightly/settings"
-        );
-        assert_eq!(
-            ReleaseChannel::Preview.docs_url("settings"),
-            "https://zed.dev/docs/preview/settings"
+            "https://zed.dev/docs/settings"
         );
         assert_eq!(
             ReleaseChannel::Stable.docs_url("settings"),
             "https://zed.dev/docs/settings"
         );
+        assert_eq!(ReleaseChannel::Stable.docs_url(""), "https://zed.dev/docs");
     }
 }

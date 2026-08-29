@@ -20,11 +20,8 @@ fn docs_url(cx: &App) -> String {
         ReleaseChannel::Stable => {
             format!("{server_url}/docs")
         }
-        ReleaseChannel::Preview => {
-            format!("{server_url}/docs/preview")
-        }
-        ReleaseChannel::Dev | ReleaseChannel::Nightly => {
-            format!("{server_url}/docs/nightly")
+        ReleaseChannel::Dev => {
+            format!("{server_url}/docs")
         }
     }
 }

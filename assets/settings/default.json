@@ -2249,21 +2249,6 @@
   // The server to connect to. If the environment variable
   // ZED_SERVER_URL is set, it will override this setting.
   "server_url": "https://zed.dev",
-  // Settings overrides to use when using Edna Preview.
-  // Mostly useful for developers who are managing multiple instances of Edna.
-  "preview": {
-    // "theme": "Andromeda"
-  },
-  // Settings overrides to use when using Edna Nightly.
-  // Mostly useful for developers who are managing multiple instances of Edna.
-  "nightly": {
-    // "theme": "Andromeda"
-    "instrumentation": {
-      "performance_profiler": {
-        "enabled": true,
-      },
-    },
-  },
   // Settings overrides to use when using Edna Stable.
   // Mostly useful for developers who are managing multiple instances of Edna.
   "stable": {
