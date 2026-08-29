@@ -94,7 +94,7 @@ macro_rules! settings_overrides {
         }
     }
 }
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::hash::Hash;
 use std::sync::Arc;
 pub use util::serde::default_true;
@@ -229,11 +229,6 @@ pub struct SettingsContent {
     /// The settings for the markdown preview.
     pub markdown_preview: Option<MarkdownPreviewSettingsContent>,
 
-    /// Whether or not to enable Helix mode.
-    ///
-    /// Default: false
-    pub helix_mode: Option<bool>,
-
     /// Determines when the mouse cursor should be hidden in response to
     /// keyboard input. Applies globally across all input surfaces (editors,
     /// terminals, palettes, etc.).
@@ -340,7 +335,7 @@ fallible_options::flattened_deserialize!(SettingsContent {
         call_hierarchy, file_finder, git_panel, tabs, tab_bar, status_bar, activity_bar, preview_tabs,
         auto_update, base_keymap, debugger, diagnostics,
         git,
-        global_lsp_settings, image_viewer, markdown_preview, helix_mode, hide_mouse,
+        global_lsp_settings, image_viewer, markdown_preview, hide_mouse,
         log, line_indicator_format, outline_panel, project_panel,
         node, proxy, reduce_motion, server_url, credentials_url, session, terminal,
         title_bar, vim_mode, which_key, vim, modeline_lines,
@@ -1143,32 +1138,7 @@ pub enum ImageFileSizeUnit {
 pub struct RemoteSettingsContent {
     pub ssh_connections: Option<Vec<SshConnection>>,
     pub wsl_connections: Option<Vec<WslConnection>>,
-    pub dev_container_connections: Option<Vec<DevContainerConnection>>,
     pub read_ssh_config: Option<bool>,
-    pub use_podman: Option<bool>,
-    /// Whether to build dev container images with BuildKit.
-    ///
-    /// When unset, Zed auto-detects BuildKit by probing for the `buildx` CLI
-    /// plugin. Set to `false` to force the classic Docker builder, which is
-    /// required for Docker-compatible engines that lack an integrated BuildKit
-    /// (e.g. Apple Container via a Docker-API bridge), where BuildKit builds
-    /// cannot resolve locally-built images.
-    ///
-    /// Default: null (auto-detect)
-    pub dev_container_use_buildkit: Option<bool>,
-}
-
-#[with_fallible_options]
-#[derive(
-    Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema, MergeFrom, Hash,
-)]
-pub struct DevContainerConnection {
-    pub name: String,
-    pub remote_user: String,
-    pub container_id: String,
-    pub use_podman: bool,
-    pub extension_ids: Vec<String>,
-    pub remote_env: BTreeMap<String, String>,
 }
 
 #[with_fallible_options]

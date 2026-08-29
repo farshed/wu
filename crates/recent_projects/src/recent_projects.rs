@@ -1,4 +1,3 @@
-mod dev_container_suggest;
 pub mod disconnected_overlay;
 mod remote_connections;
 mod remote_servers;
@@ -38,7 +37,6 @@ pub use remote_servers::RemoteServerProjects;
 use settings::{DefaultOpenBehavior, Settings, WorktreeId};
 use workspace::ProjectGroupKey;
 
-use dev_container::{DevContainerContext, find_devcontainer_configs};
 use ui::{
     ButtonLike, ContextMenu, Divider, HighlightedLabel, KeyBinding, ListItem, ListItemSpacing,
     ListSubHeader, PopoverMenu, PopoverMenuHandle, TintColor, Tooltip, prelude::*,
@@ -49,7 +47,7 @@ use workspace::{
     SerializedWorkspaceLocation, Workspace, WorkspaceDb, WorkspaceId,
     notifications::DetachAndPromptErr, with_active_or_new_workspace,
 };
-use zed_actions::{OpenDevContainer, OpenRecent, OpenRemote};
+use zed_actions::{OpenRecent, OpenRemote};
 
 actions!(
     recent_projects,
@@ -502,71 +500,6 @@ pub fn init(cx: &mut App) {
     });
 
     cx.observe_new(DisconnectedOverlay::register).detach();
-
-    cx.on_action(|_: &OpenDevContainer, cx| {
-        with_active_or_new_workspace(cx, move |workspace, window, cx| {
-            if !workspace.project().read(cx).is_local() {
-                cx.spawn_in(window, async move |_, cx| {
-                    cx.prompt(
-                        gpui::PromptLevel::Critical,
-                        "Cannot open Dev Container from remote project",
-                        None,
-                        &["OK"],
-                    )
-                    .await
-                    .ok();
-                })
-                .detach();
-                return;
-            }
-
-            let fs = workspace.project().read(cx).fs().clone();
-            let configs = find_devcontainer_configs(workspace, cx);
-            let app_state = workspace.app_state().clone();
-            let dev_container_context = DevContainerContext::from_workspace(workspace, cx);
-            let handle = cx.entity().downgrade();
-            workspace.toggle_modal(window, cx, |window, cx| {
-                RemoteServerProjects::new_dev_container(
-                    fs,
-                    configs,
-                    app_state,
-                    dev_container_context,
-                    window,
-                    handle,
-                    cx,
-                )
-            });
-        });
-    });
-
-    // Subscribe to worktree additions to suggest opening the project in a dev container
-    cx.observe_new(
-        |workspace: &mut Workspace, window: Option<&mut Window>, cx: &mut Context<Workspace>| {
-            let Some(window) = window else {
-                return;
-            };
-            cx.subscribe_in(
-                workspace.project(),
-                window,
-                move |workspace, project, event, window, cx| {
-                    if let project::Event::WorktreeUpdatedEntries(worktree_id, updated_entries) =
-                        event
-                    {
-                        dev_container_suggest::suggest_on_worktree_updated(
-                            workspace,
-                            *worktree_id,
-                            updated_entries,
-                            project,
-                            window,
-                            cx,
-                        );
-                    }
-                },
-            )
-            .detach();
-        },
-    )
-    .detach();
 }
 
 #[cfg(target_os = "windows")]
@@ -1994,7 +1927,6 @@ pub(crate) fn icon_for_remote_connection(options: Option<&RemoteConnectionOption
         Some(options) => match options {
             RemoteConnectionOptions::Ssh(_) => IconName::Server,
             RemoteConnectionOptions::Wsl(_) => IconName::Linux,
-            RemoteConnectionOptions::Docker(_) => IconName::Box,
             #[cfg(any(test, feature = "test-support"))]
             RemoteConnectionOptions::Mock(_) => IconName::Server,
         },
@@ -2804,128 +2736,6 @@ mod tests {
 
         draw(cx);
         assert_pinned_to_bottom(&picker, cx, "after redraw");
-    }
-
-    #[gpui::test]
-    async fn test_open_dev_container_action_with_single_config(cx: &mut TestAppContext) {
-        let app_state = init_test(cx);
-
-        app_state
-            .fs
-            .as_fake()
-            .insert_tree(
-                path!("/project"),
-                json!({
-                    ".devcontainer": {
-                        "devcontainer.json": "{}"
-                    },
-                    "src": {
-                        "main.rs": "fn main() {}"
-                    }
-                }),
-            )
-            .await;
-
-        // Open a file path (not a directory) so that the worktree root is a
-        // file. This means `active_project_directory` returns `None`, which
-        // causes `DevContainerContext::from_workspace` to return `None`,
-        // preventing `open_dev_container` from spawning real I/O (docker
-        // commands, shell environment loading) that is incompatible with the
-        // test scheduler. The modal is still created and the re-entrancy
-        // guard that this test validates is still exercised.
-        cx.update(|cx| {
-            open_paths(
-                &[PathBuf::from(path!("/project/src/main.rs"))],
-                app_state,
-                workspace::OpenOptions::default(),
-                cx,
-            )
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(cx.update(|cx| cx.windows().len()), 1);
-        let multi_workspace = cx.update(|cx| cx.windows()[0].downcast::<MultiWorkspace>().unwrap());
-
-        cx.run_until_parked();
-
-        // This dispatch triggers with_active_or_new_workspace -> MultiWorkspace::update
-        // -> Workspace::update -> toggle_modal -> new_dev_container.
-        // Before the fix, this panicked with "cannot read workspace::Workspace while
-        // it is already being updated" because new_dev_container and open_dev_container
-        // tried to read the Workspace entity through a WeakEntity handle while it was
-        // already leased by the outer update.
-        cx.dispatch_action(*multi_workspace, OpenDevContainer);
-
-        multi_workspace
-            .update(cx, |multi_workspace, _, cx| {
-                let modal = multi_workspace
-                    .workspace()
-                    .read(cx)
-                    .active_modal::<RemoteServerProjects>(cx);
-                assert!(
-                    modal.is_some(),
-                    "Dev container modal should be open after dispatching OpenDevContainer"
-                );
-            })
-            .unwrap();
-    }
-
-    #[gpui::test]
-    async fn test_open_dev_container_action_with_multiple_configs(cx: &mut TestAppContext) {
-        let app_state = init_test(cx);
-
-        app_state
-            .fs
-            .as_fake()
-            .insert_tree(
-                path!("/project"),
-                json!({
-                    ".devcontainer": {
-                        "rust": {
-                            "devcontainer.json": "{}"
-                        },
-                        "python": {
-                            "devcontainer.json": "{}"
-                        }
-                    },
-                    "src": {
-                        "main.rs": "fn main() {}"
-                    }
-                }),
-            )
-            .await;
-
-        cx.update(|cx| {
-            open_paths(
-                &[PathBuf::from(path!("/project"))],
-                app_state,
-                workspace::OpenOptions::default(),
-                cx,
-            )
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(cx.update(|cx| cx.windows().len()), 1);
-        let multi_workspace = cx.update(|cx| cx.windows()[0].downcast::<MultiWorkspace>().unwrap());
-
-        cx.run_until_parked();
-
-        cx.dispatch_action(*multi_workspace, OpenDevContainer);
-
-        multi_workspace
-            .update(cx, |multi_workspace, _, cx| {
-                let modal = multi_workspace
-                    .workspace()
-                    .read(cx)
-                    .active_modal::<RemoteServerProjects>(cx);
-                assert!(
-                    modal.is_some(),
-                    "Dev container modal should be open after dispatching OpenDevContainer with multiple configs"
-                );
-            })
-            .unwrap();
     }
 
     #[gpui::test]

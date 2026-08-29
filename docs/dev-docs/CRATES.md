@@ -226,8 +226,8 @@ and `multi_buffer` projects excerpts from one or more buffers for `editor`.
 | [`markdown_preview`](../../crates/markdown_preview/)         | Live workspace preview synchronized with markdown editor buffers and persisted preview settings.                                                                     |
 | [`diagnostics`](../../crates/diagnostics/)                   | Project diagnostics view, buffer diagnostic navigation/rendering, toolbar controls, filtering, and editor integration.                                               |
 | [`keymap_editor`](../../crates/keymap_editor/)               | Settings UI for searching, adding, editing, and resolving key bindings with action completion.                                                                       |
-| [`vim`](../../crates/vim/)                                   | Vim and Helix modal editing state, motions, operators, text objects, registers, commands, and editor action overrides.                                               |
-| [`vim_mode_setting`](../../crates/vim_mode_setting/)         | Small settings-only crate for enabling Vim or Helix mode without depending on the full `vim` implementation.                                                         |
+| [`vim`](../../crates/vim/)                                   | Vim modal editing state, motions, operators, text objects, registers, commands, and editor action overrides.                                                         |
+| [`vim_mode_setting`](../../crates/vim_mode_setting/)         | Small settings-only crate for enabling Vim mode without depending on the full `vim` implementation.                                                                  |
 | [`which_key`](../../crates/which_key/)                       | Which-key modal that shows available continuation bindings for a key sequence.                                                                                       |
 
 ## Settings, themes, and migration
@@ -262,10 +262,9 @@ panes and items.
 | [`workspace`](../../crates/workspace/)                 | Window-level panes, items, docks, modals, navigation history, persistence, notifications, task integration, project security, and multi-workspace management.      |
 | [`session`](../../crates/session/)                     | Generates application session IDs and persists/restores window stacking information across launches.                                                               |
 | [`project_panel`](../../crates/project_panel/)         | Project Panel tree UI for files, folders, worktrees, selection, drag/drop, file operations, and undo.                                                              |
-| [`recent_projects`](../../crates/recent_projects/)     | Recent local/remote projects, SSH/WSL/dev-container connection entries, disconnected overlays, and recent-project sidebar UI.                                      |
+| [`recent_projects`](../../crates/recent_projects/)     | Recent local/remote projects, SSH/WSL connection entries, disconnected overlays, and recent-project sidebar UI.                                      |
 | [`remote_connection`](../../crates/remote_connection/) | Modal and prompt UI for creating and editing SSH or WSL connection options.                                                                                        |
 | [`onboarding`](../../crates/onboarding/)               | First-run flow for keymap/theme selection, editor basics, and importing VS Code or Cursor settings.                                                                |
-| [`dev_container`](../../crates/dev_container/)         | Parses devcontainer manifests/features, talks to Docker or Podman, and opens projects inside development containers.                                               |
 
 ## Git
 

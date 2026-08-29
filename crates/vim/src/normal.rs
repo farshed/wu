@@ -62,10 +62,6 @@ actions!(
         DeleteLeft,
         /// Deletes character to the right.
         DeleteRight,
-        /// Deletes using Helix-style behavior.
-        HelixDelete,
-        /// Collapse the current selection
-        HelixCollapseSelection,
         /// Changes from cursor to end of line.
         ChangeToEndOfLine,
         /// Deletes from cursor to end of line.
@@ -142,48 +138,6 @@ pub(crate) fn register(editor: &mut Editor, cx: &mut Context<Vim>) {
         let times = Vim::take_count(cx);
         let forced_motion = Vim::take_forced_motion(cx);
         vim.delete_motion(Motion::Right, times, forced_motion, window, cx);
-    });
-
-    Vim::action(editor, cx, |vim, _: &HelixDelete, window, cx| {
-        vim.record_current_action(cx);
-        let original_selections =
-            vim.update_editor(cx, |_, editor, _| editor.selections.disjoint_anchors_arc());
-        vim.update_editor(cx, |_, editor, cx| {
-            editor.change_selections(SelectionEffects::no_scroll(), window, cx, |s| {
-                s.move_with(&mut |map, selection| {
-                    if selection.is_empty() {
-                        selection.end = movement::right(map, selection.end)
-                    }
-                })
-            })
-        });
-        let transaction_id = vim.visual_delete(false, window, cx);
-        if let (Some(original_selections), Some(transaction_id)) =
-            (original_selections, transaction_id)
-            && !original_selections.is_empty()
-        {
-            let updated = vim.update_editor(cx, |_, editor, _| {
-                editor.modify_transaction_selection_history(transaction_id, |selections| {
-                    selections.undo = original_selections;
-                })
-            });
-            debug_assert_ne!(updated, Some(false));
-        }
-        vim.switch_mode(Mode::HelixNormal, true, window, cx);
-    });
-
-    Vim::action(editor, cx, |vim, _: &HelixCollapseSelection, window, cx| {
-        vim.update_editor(cx, |_, editor, cx| {
-            editor.change_selections(SelectionEffects::no_scroll(), window, cx, |s| {
-                s.move_with(&mut |map, selection| {
-                    let mut point = selection.head();
-                    if !selection.reversed && !selection.is_empty() {
-                        point = movement::left(map, selection.head());
-                    }
-                    selection.collapse_to(point, selection.goal)
-                });
-            });
-        });
     });
 
     Vim::action(editor, cx, |vim, _: &ChangeToEndOfLine, window, cx| {
@@ -559,19 +513,10 @@ impl Vim {
                     self.replace_with_register_object(object, around, window, cx)
                 }
                 Some(Operator::Exchange) => self.exchange_object(object, around, window, cx),
-                Some(Operator::HelixMatch) => {
-                    self.select_current_object(object, around, window, cx)
-                }
                 _ => {
                     // Can't do anything for namespace operators. Ignoring
                 }
             },
-            Some(Operator::HelixNext { around }) => {
-                self.select_next_object(object, around, window, cx);
-            }
-            Some(Operator::HelixPrevious { around }) => {
-                self.select_previous_object(object, around, window, cx);
-            }
             Some(Operator::DeleteSurrounds) => {
                 waiting_operator = Some(Operator::DeleteSurrounds);
             }

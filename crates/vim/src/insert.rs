@@ -2,9 +2,7 @@ use crate::{Vim, state::Mode};
 use editor::{Bias, Editor};
 use gpui::{Action, Context, Window, actions};
 use language::SelectionGoal;
-use settings::Settings;
 use text::Point;
-use vim_mode_setting::HelixModeSetting;
 use workspace::searchable::Direction;
 
 actions!(
@@ -49,38 +47,6 @@ impl Vim {
         self.stop_recording_immediately(action.boxed_clone(), cx);
         if count <= 1 || Vim::globals(cx).dot_replaying {
             self.create_mark("^".into(), window, cx);
-
-            if HelixModeSetting::get_global(cx).0 {
-                // Restore the pre-append selections only if nothing happened in
-                // insert mode: no edits (tracked by current_tx/current_anchor)
-                // and the cursors are still where the append left them.
-                let no_insert_transaction =
-                    self.current_tx.is_none() && self.current_anchor.is_none();
-                let restore_append_selection = self
-                    .helix_append_state
-                    .take()
-                    .filter(|_| no_insert_transaction);
-                self.update_editor(cx, |_, editor, cx| {
-                    editor.dismiss_menus_and_popups(window, cx);
-                    if let Some(append_state) = restore_append_selection {
-                        let snapshot = editor.display_snapshot(cx);
-                        let current = editor
-                            .selections
-                            .all_anchors(&snapshot)
-                            .iter()
-                            .map(|selection| selection.range())
-                            .collect::<Vec<_>>();
-
-                        if current == append_state.cursors_after_append {
-                            editor.change_selections(Default::default(), window, cx, |s| {
-                                s.select_anchor_ranges(append_state.selections_before_append);
-                            });
-                        }
-                    }
-                });
-                self.switch_mode(Mode::HelixNormal, false, window, cx);
-                return;
-            }
 
             self.update_editor(cx, |_, editor, cx| {
                 editor.dismiss_menus_and_popups(window, cx);

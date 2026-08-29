@@ -327,29 +327,6 @@
     },
   },
   {
-    "context": "vim_mode == helix_select",
-    "bindings": {
-      "v": "vim::NormalBefore",
-      ";": "vim::HelixCollapseSelection",
-      "~": "vim::ChangeCase",
-      "ctrl-a": "vim::Increment",
-      "ctrl-x": "vim::Decrement",
-      "shift-j": "vim::JoinLines",
-      "i": "vim::InsertBefore",
-      "a": "vim::HelixAppend",
-      "o": "vim::InsertLineBelow",
-      "shift-o": "vim::InsertLineAbove",
-      "p": "vim::Paste",
-      "u": "vim::Undo",
-      "r": "vim::PushReplace",
-      "s": "vim::Substitute",
-      "ctrl-pageup": "pane::ActivatePreviousItem",
-      "ctrl-pagedown": "pane::ActivateNextItem",
-      ".": "vim::Repeat",
-      "alt-.": "vim::RepeatFind",
-    },
-  },
-  {
     "context": "vim_mode == insert",
     "bindings": {
       "ctrl-c": "vim::NormalBefore",
@@ -388,7 +365,7 @@
     },
   },
   {
-    "context": "(vim_mode == normal || vim_mode == helix_normal) && !menu",
+    "context": "vim_mode == normal && !menu",
     "bindings": {
       "escape": "editor::Cancel",
       "shift-d": "vim::DeleteToEndOfLine",
@@ -413,185 +390,13 @@
       "ctrl-pageup": "pane::ActivatePreviousItem",
     },
   },
-  {
-    "context": "VimControl && vim_mode == helix_normal && !menu && !BufferSearchBar",
-    "bindings": {
-      "j": ["vim::Down", { "display_lines": true }],
-      "down": ["vim::Down", { "display_lines": true }],
-      "k": ["vim::Up", { "display_lines": true }],
-      "up": ["vim::Up", { "display_lines": true }],
-      "g j": "vim::Down",
-      "g down": "vim::Down",
-      "g k": "vim::Up",
-      "g up": "vim::Up",
-      "escape": "vim::SwitchToHelixNormalMode",
-      "i": "vim::HelixInsert",
-      "a": "vim::HelixAppend",
-      "shift-a": "vim::HelixInsertEndOfLine",
-      "ctrl-[": "editor::Cancel",
-    },
-  },
-  // Vim/Helix consume Escape before menu::Cancel can dismiss notifications. macOS (Ctrl-C) and Linux
+  // Vim consumes Escape before menu::Cancel can dismiss notifications. macOS (Ctrl-C) and Linux
   // (Ctrl-Escape) have alternatives, but Windows does not, so try menu::Cancel first on Windows and
   // let Escape fall through when no notification is shown.
   {
     "context": "Editor && mode == full && VimControl && vim_mode == normal && !menu && os == windows",
     "bindings": {
       "escape": "menu::Cancel",
-    },
-  },
-  {
-    "context": "Editor && mode == full && VimControl && vim_mode == helix_normal && !menu && !BufferSearchBar && os == windows",
-    "bindings": {
-      "escape": "menu::Cancel",
-    },
-  },
-  {
-    "context": "vim_mode == helix_select && !menu && !BufferSearchBar",
-    "bindings": {
-      "escape": "vim::SwitchToHelixNormalMode",
-    },
-  },
-  {
-    "context": "(vim_mode == helix_normal || vim_mode == helix_select) && !menu",
-    "bindings": {
-      // Movement
-      "h": "vim::WrappingLeft",
-      "left": "vim::WrappingLeft",
-      "l": "vim::WrappingRight",
-      "right": "vim::WrappingRight",
-      "t": ["vim::PushFindForward", { "before": true, "multiline": true }],
-      "f": ["vim::PushFindForward", { "before": false, "multiline": true }],
-      "shift-t": ["vim::PushFindBackward", { "after": true, "multiline": true }],
-      "shift-f": ["vim::PushFindBackward", { "after": false, "multiline": true }],
-      "alt-.": "vim::RepeatFind",
-      "alt-b": "editor::MoveToStartOfLargerSyntaxNode",
-      "alt-e": "editor::MoveToEndOfLargerSyntaxNode",
-      "shift-g": "vim::HelixGotoLine",
-
-      // Changes
-      "shift-r": "editor::Paste",
-      "`": "vim::ConvertToLowerCase",
-      "alt-`": "vim::ConvertToUpperCase",
-      "insert": "vim::InsertBefore", // not a helix default
-      "shift-u": "editor::Redo",
-      "ctrl-r": "vim::Redo", // not a helix default
-      "y": "vim::HelixYank",
-      "p": "vim::HelixPaste",
-      "shift-p": ["vim::HelixPaste", { "before": true }],
-      ">": "vim::Indent",
-      "<": "vim::Outdent",
-      "=": "vim::AutoIndent",
-      "d": "vim::HelixDelete",
-      "alt-d": "editor::Delete", // Delete selection, without yanking
-      "c": "vim::HelixSubstitute",
-      "alt-c": "vim::HelixSubstituteNoYank",
-
-      // Selection manipulation
-      "s": "vim::HelixSelectRegex",
-      "alt-s": ["editor::SplitSelectionIntoLines", { "keep_selections": true }],
-      ";": "vim::HelixCollapseSelection",
-      "alt-;": "vim::OtherEnd",
-      ",": "vim::HelixKeepNewestSelection",
-      "shift-c": "vim::HelixDuplicateBelow",
-      "alt-shift-c": "vim::HelixDuplicateAbove",
-      "%": "editor::SelectAll",
-      "x": "vim::HelixSelectLine",
-      "*": "buffer_search::UseSelectionForFind",
-      "shift-x": "editor::SelectLine",
-      "_": "vim::HelixTrimSelections",
-      "ctrl-c": "editor::ToggleComments",
-      "alt-o": "editor::SelectLargerSyntaxNode",
-      "alt-i": "editor::SelectSmallerSyntaxNode",
-      "alt-p": "editor::SelectPreviousSyntaxNode",
-      "alt-n": "editor::SelectNextSyntaxNode",
-
-      // Search
-      "n": "vim::HelixSelectNext",
-      "shift-n": "vim::HelixSelectPrevious",
-
-      // Macros — Helix swaps Vim's q/Q: Q records, q replays
-      "q": "vim::ReplayLastRecording",
-      "shift-q": "vim::ToggleRecord",
-
-      // Goto mode
-      "g e": "vim::EndOfDocument",
-      "g h": "vim::StartOfLine",
-      "g l": "vim::EndOfLine",
-      "g s": "vim::FirstNonWhitespace",
-      "g t": "vim::WindowTop",
-      "g c": "vim::WindowMiddle",
-      "g b": "vim::WindowBottom",
-      "g r": "editor::FindAllReferences",
-      "g i": "editor::GoToImplementation",
-      "g a": "pane::AlternateFile",
-      "g n": "pane::ActivateNextItem",
-      "shift-l": "pane::ActivateNextItem", // not a helix default
-      "g p": "pane::ActivatePreviousItem",
-      "shift-h": "pane::ActivatePreviousItem", // not a helix default
-      "g w": "vim::HelixJumpToWord",
-      "g .": "vim::HelixGotoLastModification",
-      "g o": "editor::ToggleSelectedDiffHunks", // Zed specific
-      "g shift-o": "git::ToggleStaged", // Zed specific
-      "g shift-r": "git::Restore", // Zed specific
-      "g u": "git::StageAndNext", // Zed specific
-      "g shift-u": "git::UnstageAndNext", // Zed specific
-
-      // Window mode
-      "space w v": "pane::SplitRight",
-      "space w s": "pane::SplitDown",
-      "space w h": "workspace::ActivatePaneLeft",
-      "space w j": "workspace::ActivatePaneDown",
-      "space w k": "workspace::ActivatePaneUp",
-      "space w l": "workspace::ActivatePaneRight",
-      "space w q": "pane::CloseActiveItem",
-      "space w r": "pane::SplitRight", // not a helix default
-      "space w d": "pane::SplitDown", // not a helix default
-
-      // Space mode
-      "space b": "tab_switcher::ToggleAll",
-      "space f": "file_finder::Toggle",
-      "space k": "editor::Hover",
-      "space s": "outline::Toggle",
-      "space shift-s": "project_symbols::Toggle",
-      "space d": "editor::GoToDiagnostic",
-      "space r": "editor::Rename",
-      "space a": "editor::ToggleCodeActions",
-      "space h": "editor::SelectAllMatches",
-      "space c": "editor::ToggleComments",
-      "space p": "editor::Paste",
-      "space y": "editor::Copy",
-      "space /": "pane::DeploySearch",
-
-      // View mode
-      "z c": "editor::ScrollCursorCenter",
-
-      // Debug mode (Helix space G)
-      "space shift-g l": "debugger::Start",
-      "space shift-g r": "debugger::Restart",
-      "space shift-g b": "editor::ToggleBreakpoint",
-      "space shift-g c": "debugger::Continue",
-      "space shift-g h": "debugger::Pause",
-      "space shift-g i": "debugger::StepInto",
-      "space shift-g o": "debugger::StepOut",
-      "space shift-g n": "debugger::StepOver",
-      "space shift-g t": "debugger::Stop",
-      "space shift-g ctrl-l": "editor::EditLogBreakpoint",
-
-      // Other
-      ":": "command_palette::Toggle",
-      "m": "vim::PushHelixMatch",
-      "]": ["vim::PushHelixNext", { "around": true }],
-      "[": ["vim::PushHelixPrevious", { "around": true }],
-      "ctrl-s": "editor::SaveLocation",
-      "g q": "vim::PushRewrap",
-    },
-  },
-  {
-    "context": "Editor && (vim_mode == helix_normal || vim_mode == helix_select) && showing_code_actions",
-    "bindings": {
-      "tab": "editor::ContextMenuNext",
-      "shift-tab": "editor::ContextMenuPrevious",
     },
   },
   {
@@ -654,7 +459,7 @@
     },
   },
   {
-    "context": "vim_operator == a || vim_operator == i || vim_operator == cs || vim_operator == helix_next || vim_operator == helix_previous",
+    "context": "vim_operator == a || vim_operator == i || vim_operator == cs",
     "bindings": {
       "w": "vim::Word",
       "shift-w": ["vim::Word", { "ignore_punctuation": true }],
@@ -689,65 +494,6 @@
       "f": "vim::Method",
       "c": "vim::Class",
       "e": "vim::EntireFile",
-    },
-  },
-  {
-    // Helix textobject keys that differ from vim's: `mim`/`mam` select the
-    // closest surrounding pair, and `t`/`c`/`x` follow Helix's meanings
-    // (type, comment, xml element) instead of vim's (tag, class, unbound).
-    "context": "(vim_operator == a || vim_operator == i || vim_operator == helix_next || vim_operator == helix_previous) && helix_mode",
-    "bindings": {
-      "m": "vim::AnyPair",
-      "t": "vim::Class",
-      "c": "vim::Comment",
-      "x": "vim::Tag",
-    },
-  },
-  {
-    "context": "vim_operator == helix_m",
-    "bindings": {
-      "m": ["vim::Matching", { "match_quotes": true }],
-      "s": "vim::PushHelixSurroundAdd",
-      "r": "vim::PushHelixSurroundReplace",
-      "d": "vim::PushHelixSurroundDelete",
-    },
-  },
-  {
-    "context": "vim_operator == helix_next",
-    "bindings": {
-      "z": "vim::NextSectionStart",
-      "shift-z": "vim::NextSectionEnd",
-      "*": "vim::NextComment",
-      "/": "vim::NextComment",
-      "-": "vim::NextLesserIndent",
-      "+": "vim::NextGreaterIndent",
-      "=": "vim::NextSameIndent",
-      "b": "pane::ActivateNextItem",
-      "shift-b": "pane::ActivateLastItem",
-      "x": "editor::SelectSmallerSyntaxNode",
-      "d": "editor::GoToDiagnostic",
-      "c": "vim::NextComment",
-      "g": "editor::GoToHunk",
-      "space": "vim::InsertEmptyLineBelow",
-    },
-  },
-  {
-    "context": "vim_operator == helix_previous",
-    "bindings": {
-      "z": "vim::PreviousSectionStart",
-      "shift-z": "vim::PreviousSectionEnd",
-      "*": "vim::PreviousComment",
-      "/": "vim::PreviousComment",
-      "-": "vim::PreviousLesserIndent",
-      "+": "vim::PreviousGreaterIndent",
-      "=": "vim::PreviousSameIndent",
-      "b": "pane::ActivatePreviousItem",
-      "shift-b": ["pane::ActivateItem", 0],
-      "x": "editor::SelectLargerSyntaxNode",
-      "d": "editor::GoToPreviousDiagnostic",
-      "c": "vim::PreviousComment",
-      "g": "editor::GoToPreviousHunk",
-      "space": "vim::InsertEmptyLineAbove",
     },
   },
   {

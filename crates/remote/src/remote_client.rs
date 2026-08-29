@@ -5,7 +5,6 @@ use crate::{
     protocol::MessageId,
     proxy::ProxyLaunchError,
     transport::{
-        docker::{DockerConnectionOptions, DockerExecConnection},
         ssh::SshRemoteConnection,
         wsl::{WslConnectionOptions, WslRemoteConnection},
     },
@@ -1032,7 +1031,7 @@ impl RemoteClient {
     }
 
     /// A stable identifier for the kind of remote connection (e.g. `"ssh"`,
-    /// `"wsl"`, `"docker"`, `"podman"`).
+    /// `"wsl"`).
     pub fn connection_type(&self) -> &'static str {
         self.connection_options.connection_type()
     }
@@ -1266,11 +1265,6 @@ impl ConnectionPool {
                                 .await
                                 .map(|connection| Arc::new(connection) as Arc<dyn RemoteConnection>)
                         }
-                        RemoteConnectionOptions::Docker(opts) => {
-                            DockerExecConnection::new(opts, delegate, cx)
-                                .await
-                                .map(|connection| Arc::new(connection) as Arc<dyn RemoteConnection>)
-                        }
                         #[cfg(any(test, feature = "test-support"))]
                         RemoteConnectionOptions::Mock(opts) => match cx.update(|cx| {
                             cx.default_global::<crate::transport::mock::MockConnectionRegistry>()
@@ -1317,7 +1311,6 @@ impl ConnectionPool {
 pub enum RemoteConnectionOptions {
     Ssh(SshConnectionOptions),
     Wsl(WslConnectionOptions),
-    Docker(DockerConnectionOptions),
     #[cfg(any(test, feature = "test-support"))]
     Mock(crate::transport::mock::MockConnectionOptions),
 }
@@ -1330,31 +1323,17 @@ impl RemoteConnectionOptions {
                 .clone()
                 .unwrap_or_else(|| opts.host.to_string()),
             RemoteConnectionOptions::Wsl(opts) => opts.distro_name.clone(),
-            RemoteConnectionOptions::Docker(opts) => {
-                if opts.use_podman {
-                    format!("[podman] {}", opts.name)
-                } else {
-                    opts.name.clone()
-                }
-            }
             #[cfg(any(test, feature = "test-support"))]
             RemoteConnectionOptions::Mock(opts) => format!("mock-{}", opts.id),
         }
     }
 
     /// A stable identifier for the kind of remote connection, suitable for
-    /// telemetry (e.g. `"ssh"`, `"wsl"`, `"docker"`, `"podman"`).
+    /// telemetry (e.g. `"ssh"`, `"wsl"`).
     pub fn connection_type(&self) -> &'static str {
         match self {
             RemoteConnectionOptions::Ssh(_) => "ssh",
             RemoteConnectionOptions::Wsl(_) => "wsl",
-            RemoteConnectionOptions::Docker(opts) => {
-                if opts.use_podman {
-                    "podman"
-                } else {
-                    "docker"
-                }
-            }
             #[cfg(any(test, feature = "test-support"))]
             RemoteConnectionOptions::Mock(_) => "mock",
         }
@@ -1401,22 +1380,6 @@ mod tests {
             })
             .connection_type(),
             "wsl"
-        );
-        assert_eq!(
-            RemoteConnectionOptions::Docker(DockerConnectionOptions {
-                use_podman: false,
-                ..Default::default()
-            })
-            .connection_type(),
-            "docker"
-        );
-        assert_eq!(
-            RemoteConnectionOptions::Docker(DockerConnectionOptions {
-                use_podman: true,
-                ..Default::default()
-            })
-            .connection_type(),
-            "podman"
         );
     }
 

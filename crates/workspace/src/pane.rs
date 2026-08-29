@@ -4149,7 +4149,7 @@ impl Pane {
                 if project.is_via_remote_server() {
                     if !project.is_via_wsl(cx) {
                         workspace.show_error(
-                            "Cannot drop local files on a remote SSH/Docker project",
+                            "Cannot drop local files on a remote SSH project",
                             cx,
                         );
                         return (true, false);

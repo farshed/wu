@@ -2851,39 +2851,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dev_container"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-tar",
- "async-trait",
- "env_logger 0.11.8",
- "fs",
- "futures 0.3.32",
- "gpui",
- "http 1.3.1",
- "http_client",
- "indoc",
- "log",
- "menu",
- "picker",
- "project",
- "regex",
- "serde",
- "serde_json",
- "serde_json_lenient",
- "serde_yaml",
- "settings",
- "shlex 1.3.0",
- "ui",
- "util",
- "walkdir",
- "workspace",
- "worktree",
- "yaml-rust2",
-]
-
-[[package]]
 name = "diagnostics"
 version = "0.1.0"
 dependencies = [
@@ -10360,10 +10327,8 @@ dependencies = [
  "askpass",
  "chrono",
  "db",
- "dev_container",
  "editor",
  "extension",
- "extension_host",
  "fs",
  "futures 0.3.32",
  "fuzzy_nucleo",
@@ -16630,7 +16595,6 @@ dependencies = [
  "debug_adapter_extension",
  "debugger_tools",
  "debugger_ui",
- "dev_container",
  "diagnostics",
  "editor",
  "encoding_selector",

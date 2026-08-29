@@ -2767,16 +2767,6 @@ Example:
 
 `boolean` values
 
-## Helix Mode
-
-- Description: Whether or not to enable Helix mode. Enabling `helix_mode` also enables `vim_mode`. See the [Helix documentation](../helix.md) for more details.
-- Setting: `helix_mode`
-- Default: `false`
-
-**Options**
-
-`boolean` values
-
 ## Indent Guides
 
 - Description: Configuration related to indent guides. Indent guides can be configured separately for each language.

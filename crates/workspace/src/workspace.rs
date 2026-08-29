@@ -1367,8 +1367,6 @@ pub struct Workspace {
     scheduled_tasks: Vec<Task<()>>,
     last_open_dock_positions: Vec<DockPosition>,
     removing: bool,
-    open_in_dev_container: bool,
-    _dev_container_task: Option<Task<Result<()>>>,
     _panels_task: Option<Task<Result<()>>>,
     multi_workspace: Option<WeakEntity<MultiWorkspace>>,
     /// Shared with the parent `MultiWorkspace` and any sibling workspaces: holds
@@ -1774,8 +1772,6 @@ impl Workspace {
             multi_workspace,
             active_workspace_id: None,
             active_worktree_creation: ActiveWorktreeCreation::default(),
-            open_in_dev_container: false,
-            _dev_container_task: None,
             deferred_save_items: Vec::new(),
             persisted_recent_navigation_history: Vec::new(),
             last_active_project_path: None,
@@ -2962,18 +2958,6 @@ impl Workspace {
 
     pub fn set_debugger_provider(&mut self, provider: impl DebuggerProvider + 'static) {
         self.debugger_provider = Some(Arc::new(provider));
-    }
-
-    pub fn set_open_in_dev_container(&mut self, value: bool) {
-        self.open_in_dev_container = value;
-    }
-
-    pub fn open_in_dev_container(&self) -> bool {
-        self.open_in_dev_container
-    }
-
-    pub fn set_dev_container_task(&mut self, task: Task<Result<()>>) {
-        self._dev_container_task = Some(task);
     }
 
     pub fn debugger_provider(&self) -> Option<Arc<dyn DebuggerProvider>> {
@@ -8492,9 +8476,6 @@ pub fn workspace_windows_for_location(
                     // The WSL username is not consistently populated in the workspace location, so ignore it for now.
                     a.distro_name == b.distro_name
                 }
-                (RemoteConnectionOptions::Docker(a), RemoteConnectionOptions::Docker(b)) => {
-                    a.container_id == b.container_id
-                }
                 #[cfg(any(test, feature = "test-support"))]
                 (RemoteConnectionOptions::Mock(a), RemoteConnectionOptions::Mock(b)) => {
                     a.id == b.id
@@ -8644,7 +8625,6 @@ pub struct OpenOptions {
     pub requesting_window: Option<WindowHandle<MultiWorkspace>>,
     pub open_mode: OpenMode,
     pub env: Option<HashMap<String, String>>,
-    pub open_in_dev_container: bool,
 }
 
 impl OpenOptions {
@@ -8832,18 +8812,12 @@ pub fn open_paths(
             }
         }
 
-
-        let open_in_dev_container = open_options.open_in_dev_container;
-
         let result = if let Some((existing, target_workspace)) = existing {
             let open_task = existing
                 .update(cx, |multi_workspace, window, cx| {
                     window.activate_window();
                     multi_workspace.activate(target_workspace.clone(), None, window, cx);
                     target_workspace.update(cx, |workspace, cx| {
-                        if open_in_dev_container {
-                            workspace.set_open_in_dev_container(true);
-                        }
                         workspace.open_paths(
                             abs_paths,
                             OpenOptions {
@@ -8871,13 +8845,6 @@ pub fn open_paths(
 
             Ok(OpenResult { window: existing, workspace: target_workspace, opened_items: open_task })
         } else {
-            let init = if open_in_dev_container {
-                Some(Box::new(|workspace: &mut Workspace, _window: &mut Window, _cx: &mut Context<Workspace>| {
-                    workspace.set_open_in_dev_container(true);
-                }) as Box<dyn FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>) + Send>)
-            } else {
-                None
-            };
             let result = cx
                 .update(move |cx| {
                     Workspace::new_local(
@@ -8885,7 +8852,7 @@ pub fn open_paths(
                         app_state.clone(),
                         open_options.requesting_window,
                         open_options.env,
-                        init,
+                        None,
                         open_options.open_mode,
                         cx,
                     )

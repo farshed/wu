@@ -424,7 +424,6 @@ Vim mode adds several contexts to the `"Editor"` context:
 | vim_mode == waiting  | Waiting for an arbitrary key (e.g., after typing `f` or `t`)                                                                                                                       |
 | vim_mode == operator | Waiting for another binding to trigger (e.g., after typing `c` or `d`)                                                                                                             |
 | vim_operator         | Set to `none` unless `vim_mode == operator`, in which case it is set to the current operator's default keybinding (e.g., after typing `d`, `vim_operator == d`)                    |
-| helix_mode           | Set when the current mode is a Helix mode (`helix_normal` or `helix_select`), including while an operator is pending and `vim_mode` reports `operator` or `waiting`                |
 
 > **Note**: Contexts are matched only on one level at a time. So it is possible to use the expression `"Editor && vim_mode == normal"`, but `"Workspace && vim_mode == normal"` will never match because we set the vim context at the `"Editor"` level.
 
@@ -540,17 +539,6 @@ The [Sneak motion](https://github.com/justinmk/vim-sneak) feature allows for qui
 }
 ```
 
-The Helix-style jump-to-word action shows jump labels at visible word starts. It has no default binding in Vim mode, but you can enable it by adding a keybinding to your keymap. This example uses `g w`, which matches the default Helix binding, but overrides Vim mode's default rewrap binding.
-
-```json [keymap]
-{
-  "context": "vim_mode == normal || vim_mode == visual",
-  "bindings": {
-    "g w": "vim::HelixJumpToWord"
-  }
-}
-```
-
 The [vim-exchange](https://github.com/tommcdo/vim-exchange) feature does not have a default binding for visual mode, as the `shift-x` binding conflicts with the default `shift-x` binding for visual mode (`vim::VisualDeleteLine`). To assign the default vim-exchange binding, add the following keybinding to your keymap:
 
 ```json [keymap]
@@ -590,7 +578,7 @@ You can change the following settings to modify vim mode's behavior:
 
 | Property                     | Description                                                                                                                                                                                   | Default Value |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| default_mode                 | The default mode to start in. One of "normal", "insert", "replace", "visual", "visual_line", "visual_block", "helix_normal".                                                                  | "normal"      |
+| default_mode                 | The default mode to start in. One of "normal", "insert", "replace", "visual", "visual_line", "visual_block".                                                                  | "normal"      |
 | use_system_clipboard         | Determines how system clipboard is used:<br><ul><li>"always": use for all operations</li><li>"never": only use when explicitly specified</li><li>"on_yank": use for yank operations</li></ul> | "always"      |
 | use_multiline_find           | deprecated                                                                                                                                                                                    |
 | use_smartcase_find           | If `true`, `f` and `t` motions are case-insensitive when the target letter is lowercase.                                                                                                      | false         |

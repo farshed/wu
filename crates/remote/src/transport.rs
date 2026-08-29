@@ -14,7 +14,6 @@ use gpui::{AppContext as _, AsyncApp, Task};
 use rpc::proto::Envelope;
 use util::command::Child;
 
-pub mod docker;
 #[cfg(any(test, feature = "test-support"))]
 pub mod mock;
 pub mod ssh;

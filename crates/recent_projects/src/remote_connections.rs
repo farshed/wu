@@ -10,12 +10,9 @@ use futures::{FutureExt as _, channel::oneshot, select};
 use gpui::{AppContext, AsyncApp, PromptLevel, WindowHandle};
 
 use project::trusted_worktrees;
-use remote::{
-    DockerConnectionOptions, Interactive, RemoteConnection, RemoteConnectionOptions,
-    SshConnectionOptions,
-};
+use remote::{Interactive, RemoteConnection, RemoteConnectionOptions, SshConnectionOptions};
 pub use settings::SshConnection;
-use settings::{DevContainerConnection, ExtendingVec, RegisterSetting, Settings, WslConnection};
+use settings::{ExtendingVec, RegisterSetting, Settings, WslConnection};
 use util::paths::PathWithPosition;
 use workspace::{
     AppState, MultiWorkspace, OpenOptions, SerializedWorkspaceLocation, Workspace,
@@ -80,7 +77,6 @@ impl RemoteSettings {
 pub enum Connection {
     Ssh(SshConnection),
     Wsl(WslConnection),
-    DevContainer(DevContainerConnection),
 }
 
 impl From<Connection> for RemoteConnectionOptions {
@@ -88,16 +84,6 @@ impl From<Connection> for RemoteConnectionOptions {
         match val {
             Connection::Ssh(conn) => RemoteConnectionOptions::Ssh(conn.into()),
             Connection::Wsl(conn) => RemoteConnectionOptions::Wsl(conn.into()),
-            Connection::DevContainer(conn) => {
-                RemoteConnectionOptions::Docker(DockerConnectionOptions {
-                    name: conn.name,
-                    remote_user: conn.remote_user,
-                    container_id: conn.container_id,
-                    upload_binary_over_docker_exec: false,
-                    use_podman: conn.use_podman,
-                    remote_env: conn.remote_env,
-                })
-            }
         }
     }
 }
@@ -316,9 +302,6 @@ pub async fn open_remote_project(
                             match connection_options {
                                 RemoteConnectionOptions::Ssh(_) => "Failed to connect over SSH",
                                 RemoteConnectionOptions::Wsl(_) => "Failed to connect to WSL",
-                                RemoteConnectionOptions::Docker(_) => {
-                                    "Failed to connect to Dev Container"
-                                }
                                 #[cfg(any(test, feature = "test-support"))]
                                 RemoteConnectionOptions::Mock(_) => {
                                     "Failed to connect to mock server"
@@ -377,9 +360,6 @@ pub async fn open_remote_project(
                             match connection_options {
                                 RemoteConnectionOptions::Ssh(_) => "Failed to connect over SSH",
                                 RemoteConnectionOptions::Wsl(_) => "Failed to connect to WSL",
-                                RemoteConnectionOptions::Docker(_) => {
-                                    "Failed to connect to Dev Container"
-                                }
                                 #[cfg(any(test, feature = "test-support"))]
                                 RemoteConnectionOptions::Mock(_) => {
                                     "Failed to connect to mock server"

@@ -177,12 +177,6 @@ pub struct ThemeColors {
     pub vim_visual_block_background: Hsla,
     /// Background color for Vim yank highlight.
     pub vim_yank_background: Hsla,
-    /// Foreground color for Helix jump labels.
-    pub vim_helix_jump_label_foreground: Hsla,
-    /// Background color for Vim Helix Normal mode indicator.
-    pub vim_helix_normal_background: Hsla,
-    /// Background color for Vim Helix Select mode indicator.
-    pub vim_helix_select_background: Hsla,
     /// Foreground color for Vim Normal mode indicator.
     pub vim_normal_foreground: Hsla,
     /// Foreground color for Vim Insert mode indicator.
@@ -195,10 +189,6 @@ pub struct ThemeColors {
     pub vim_visual_line_foreground: Hsla,
     /// Foreground color for Vim Visual Block mode indicator.
     pub vim_visual_block_foreground: Hsla,
-    /// Foreground color for Vim Helix Normal mode indicator.
-    pub vim_helix_normal_foreground: Hsla,
-    /// Foreground color for Vim Helix Select mode indicator.
-    pub vim_helix_select_foreground: Hsla,
 
     // ===
     // Editor

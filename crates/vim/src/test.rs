@@ -415,7 +415,6 @@ async fn test_escape_dismisses_workspace_notification_in_normal_modes(
     cx: &mut gpui::TestAppContext,
 ) {
     struct VimEscapeNotification;
-    struct HelixEscapeNotification;
 
     let mut cx = VimTestContext::new(cx, true).await;
     let notification_ids =
@@ -426,14 +425,7 @@ async fn test_escape_dismisses_workspace_notification_in_normal_modes(
             Mode::Normal,
             NotificationId::unique::<VimEscapeNotification>(),
         ),
-        (
-            Mode::HelixNormal,
-            NotificationId::unique::<HelixEscapeNotification>(),
-        ),
     ] {
-        if mode == Mode::HelixNormal {
-            cx.enable_helix();
-        }
         cx.set_state("aˇbˇc", mode);
         cx.workspace(|workspace, _, cx| {
             workspace.show_notification(notification_id.clone(), cx, |cx| {

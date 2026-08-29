@@ -161,7 +161,6 @@ fn send_args_to_instance(args: &Args) -> anyhow::Result<()> {
             open_behavior: Default::default(),
             env: None,
             user_data_dir: args.user_data_dir.clone(),
-            dev_container: args.dev_container,
             cwd: std::env::current_dir().ok(),
         }
     };

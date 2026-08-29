@@ -212,18 +212,6 @@ impl Vim {
                         }
                     }
 
-                    Mode::HelixNormal | Mode::HelixSelect => {
-                        if selection.is_empty() {
-                            // Handle empty selection by operating on single character
-                            let start = selection.start;
-                            let end = snapshot.clip_point(start + Point::new(0, 1), Bias::Right);
-                            ranges.push(start..end);
-                            cursor_positions.push(selection.start..selection.start);
-                        } else {
-                            ranges.push(selection.start..selection.end);
-                            cursor_positions.push(selection.start..selection.end);
-                        }
-                    }
                     Mode::Insert | Mode::Normal | Mode::Replace => {
                         let start = selection.start;
                         let mut end = start;
@@ -256,16 +244,12 @@ impl Vim {
                 })
             });
         });
-        if self.mode != Mode::HelixNormal {
-            self.switch_mode(Mode::Normal, true, window, cx)
-        }
+        self.switch_mode(Mode::Normal, true, window, cx)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::test::VimTestContext;
-
     use crate::{state::Mode, test::NeovimBackedTestContext};
 
     #[gpui::test]
@@ -435,35 +419,4 @@ mod test {
             .assert_eq("ˇnopqrstuvwxyzabcdefghijklmNOPQRSTUVWXYZABCDEFGHIJKLM");
     }
 
-    #[gpui::test]
-    async fn test_change_case_helix_mode(cx: &mut gpui::TestAppContext) {
-        let mut cx = VimTestContext::new(cx, true).await;
-
-        // Explicit selection
-        cx.set_state("«hello worldˇ»", Mode::HelixNormal);
-        cx.simulate_keystrokes("~");
-        cx.assert_state("«HELLO WORLDˇ»", Mode::HelixNormal);
-
-        // Cursor-only (empty) selection - switch case
-        cx.set_state("The ˇquick brown", Mode::HelixNormal);
-        cx.simulate_keystrokes("~");
-        cx.assert_state("The ˇQuick brown", Mode::HelixNormal);
-        cx.simulate_keystrokes("~");
-        cx.assert_state("The ˇquick brown", Mode::HelixNormal);
-
-        // Cursor-only (empty) selection - switch to uppercase and lowercase explicitly
-        cx.set_state("The ˇquick brown", Mode::HelixNormal);
-        cx.simulate_keystrokes("alt-`");
-        cx.assert_state("The ˇQuick brown", Mode::HelixNormal);
-        cx.simulate_keystrokes("`");
-        cx.assert_state("The ˇquick brown", Mode::HelixNormal);
-
-        // With `e` motion (which extends selection to end of word in Helix)
-        cx.set_state("The ˇquick brown fox", Mode::HelixNormal);
-        cx.simulate_keystrokes("e");
-        cx.simulate_keystrokes("~");
-        cx.assert_state("The «QUICKˇ» brown fox", Mode::HelixNormal);
-
-        // Cursor-only
-    }
 }

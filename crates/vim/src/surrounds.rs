@@ -633,30 +633,6 @@ pub fn bracket_pair_for_str_vim(text: &str) -> BracketPair {
         })
 }
 
-/// Resolve a character to its surround pair using Helix semantics (no Vim aliases).
-/// Returns None only for 'm' (match nearest). Unknown chars map to symmetric pairs.
-pub fn surround_pair_for_char_helix(ch: char) -> Option<SurroundPair> {
-    if ch == 'm' {
-        return None;
-    }
-    literal_surround_pair(ch).or_else(|| Some(SurroundPair::new(ch, ch)))
-}
-
-/// Get a BracketPair for the given string in Helix mode (literal, symmetric fallback).
-pub fn bracket_pair_for_str_helix(text: &str) -> BracketPair {
-    text.chars()
-        .next()
-        .and_then(surround_pair_for_char_helix)
-        .map(|p| p.to_bracket_pair())
-        .unwrap_or_else(|| BracketPair {
-            start: text.to_string(),
-            end: text.to_string(),
-            close: true,
-            surround: true,
-            newline: false,
-        })
-}
-
 #[cfg(test)]
 mod test {
     use gpui::KeyBinding;
@@ -1818,7 +1794,7 @@ mod test {
 
     #[test]
     fn test_surround_pair_for_char() {
-        use super::{SURROUND_PAIRS, surround_pair_for_char_helix, surround_pair_for_char_vim};
+        use super::{SURROUND_PAIRS, surround_pair_for_char_vim};
 
         fn as_tuple(pair: Option<super::SurroundPair>) -> Option<(char, char)> {
             pair.map(|p| (p.open, p.close))
@@ -1844,12 +1820,5 @@ mod test {
 
         // Test unknown char returns None
         assert_eq!(surround_pair_for_char_vim('x'), None);
-
-        // Helix resolves literal chars and falls back to symmetric pairs.
-        assert_eq!(
-            as_tuple(surround_pair_for_char_helix('*')),
-            Some(('*', '*'))
-        );
-        assert_eq!(surround_pair_for_char_helix('m'), None);
     }
 }

@@ -204,33 +204,10 @@ impl DelimiterRange {
 
 /// The innermost pair from the language's bracket queries that surrounds
 /// `relative_to` and whose delimiters form a known single-character surround
-/// pair, like Helix's tree-sitter based closest-pair matching. Returns None
-/// in buffers without bracket queries.
+/// pair. Returns None in buffers without bracket queries.
 pub(crate) fn innermost_surrounding_pair(
     map: &DisplaySnapshot,
     relative_to: Range<DisplayPoint>,
-) -> Option<DelimiterRange> {
-    innermost_surrounding_pair_impl(map, relative_to, PairMatchMode::Any)
-}
-
-pub(crate) fn innermost_surrounding_pair_for_text_object(
-    map: &DisplaySnapshot,
-    relative_to: Range<DisplayPoint>,
-    around: bool,
-) -> Option<DelimiterRange> {
-    innermost_surrounding_pair_impl(map, relative_to, PairMatchMode::ExpandSelection { around })
-}
-
-#[derive(Clone, Copy)]
-enum PairMatchMode {
-    Any,
-    ExpandSelection { around: bool },
-}
-
-fn innermost_surrounding_pair_impl(
-    map: &DisplaySnapshot,
-    relative_to: Range<DisplayPoint>,
-    match_mode: PairMatchMode,
 ) -> Option<DelimiterRange> {
     let snapshot = map.buffer_snapshot();
     let offset_range =
@@ -238,16 +215,6 @@ fn innermost_surrounding_pair_impl(
 
     let results = snapshot.map_excerpt_ranges(offset_range, |buffer, _, input_range| {
         let filter = |open: Range<usize>, close: Range<usize>| {
-            if let PairMatchMode::ExpandSelection { around } = match_mode {
-                let input_range = input_range.start.0..input_range.end.0;
-                let selects_around = input_range == (open.start..close.end);
-                let selects_inside = input_range == (open.end..close.start);
-                // `mam` after `mim` changes the form of the current pair;
-                // every other exact match expands to the enclosing pair.
-                if selects_around || (selects_inside && !around) {
-                    return false;
-                }
-            }
             is_surround_pair_delimiter(buffer, open, close)
         };
         let Some((open, close)) = buffer.innermost_enclosing_bracket_ranges(
@@ -273,7 +240,7 @@ fn innermost_surrounding_pair_impl(
 }
 
 /// Bracket queries can also match multi-character delimiters (e.g. HTML
-/// element tags), which Helix's pair matching rejects.
+/// element tags), which are not surround pairs.
 fn is_surround_pair_delimiter(
     buffer: &BufferSnapshot,
     open: Range<usize>,
@@ -435,7 +402,7 @@ actions!(
         AnyBrackets,
         /// Selects text within the closest surrounding pair of any type
         /// (brackets, quotes, backticks, or vertical bars), based on the
-        /// language's bracket queries, like Helix's `m` text object.
+        /// language's bracket queries.
         AnyPair,
         /// Selects a function argument.
         Argument,
@@ -560,10 +527,8 @@ impl Vim {
         let count = Self::take_count(cx);
 
         match self.mode {
-            Mode::Normal | Mode::HelixNormal => {
-                self.normal_object(object, count, opening, window, cx)
-            }
-            Mode::Visual | Mode::VisualLine | Mode::VisualBlock | Mode::HelixSelect => {
+            Mode::Normal => self.normal_object(object, count, opening, window, cx),
+            Mode::Visual | Mode::VisualLine | Mode::VisualBlock => {
                 self.visual_object(object, count, window, cx)
             }
             Mode::Insert | Mode::Replace => {

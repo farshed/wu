@@ -1129,15 +1129,6 @@ pub struct ThemeColorsContent {
     /// Background color for Vim yank highlight.
     #[serde(rename = "vim.yank.background")]
     pub vim_yank_background: Option<ThemeColor>,
-    /// Foreground color for Helix jump labels.
-    #[serde(rename = "vim.helix_jump_label.foreground")]
-    pub vim_helix_jump_label_foreground: Option<ThemeColor>,
-    /// Background color for Vim Helix Normal mode indicator.
-    #[serde(rename = "vim.helix_normal.background")]
-    pub vim_helix_normal_background: Option<ThemeColor>,
-    /// Background color for Vim Helix Select mode indicator.
-    #[serde(rename = "vim.helix_select.background")]
-    pub vim_helix_select_background: Option<ThemeColor>,
     /// Background color for Vim Normal mode indicator.
     #[serde(rename = "vim.normal.foreground")]
     pub vim_normal_foreground: Option<ThemeColor>,
@@ -1156,12 +1147,6 @@ pub struct ThemeColorsContent {
     /// Foreground color for Vim Visual Block mode indicator.
     #[serde(rename = "vim.visual_block.foreground")]
     pub vim_visual_block_foreground: Option<ThemeColor>,
-    /// Foreground color for Vim Helix Normal mode indicator.
-    #[serde(rename = "vim.helix_normal.foreground")]
-    pub vim_helix_normal_foreground: Option<ThemeColor>,
-    /// Foreground color for Vim Helix Select mode indicator.
-    #[serde(rename = "vim.helix_select.foreground")]
-    pub vim_helix_select_foreground: Option<ThemeColor>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, MergeFrom, PartialEq)]

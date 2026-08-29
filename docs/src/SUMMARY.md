@@ -32,7 +32,6 @@
 
 - [Overview](./remote-development.md)
 - [Environment Variables](./environment.md)
-- [Dev Containers](./dev-containers.md)
 
 # Privacy & Security
 
@@ -53,7 +52,6 @@
   - [Fonts & Visual Tweaks](./visual-customization.md)
 - [Keybindings](./key-bindings.md)
   - [Vim Mode](./vim.md)
-  - [Helix Mode](./helix.md)
 
 # Language Support
 

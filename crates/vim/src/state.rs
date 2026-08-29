@@ -49,8 +49,6 @@ pub enum Mode {
     Visual,
     VisualLine,
     VisualBlock,
-    HelixNormal,
-    HelixSelect,
 }
 
 impl Display for Mode {
@@ -62,8 +60,6 @@ impl Display for Mode {
             Mode::Visual => write!(f, "VISUAL"),
             Mode::VisualLine => write!(f, "VISUAL LINE"),
             Mode::VisualBlock => write!(f, "VISUAL BLOCK"),
-            Mode::HelixNormal => write!(f, "NORMAL"),
-            Mode::HelixSelect => write!(f, "SELECT"),
         }
     }
 }
@@ -71,18 +67,13 @@ impl Display for Mode {
 impl Mode {
     pub fn is_visual(&self) -> bool {
         match self {
-            Self::Visual | Self::VisualLine | Self::VisualBlock | Self::HelixSelect => true,
-            Self::Normal | Self::Insert | Self::Replace | Self::HelixNormal => false,
+            Self::Visual | Self::VisualLine | Self::VisualBlock => true,
+            Self::Normal | Self::Insert | Self::Replace => false,
         }
     }
 
-    pub fn is_helix(&self) -> bool {
-        matches!(self, Self::HelixNormal | Self::HelixSelect)
-    }
-
-    /// `HelixNormal` qualifies because its cursor is itself a one-character selection.
     pub fn has_selection(&self) -> bool {
-        self.is_visual() || matches!(self, Self::HelixNormal)
+        self.is_visual()
     }
 }
 
@@ -149,37 +140,6 @@ pub enum Operator {
     ToggleBlockComments,
     ReplaceWithRegister,
     Exchange,
-    HelixMatch,
-    HelixNext {
-        around: bool,
-    },
-    HelixPrevious {
-        around: bool,
-    },
-    HelixSurroundAdd,
-    HelixSurroundReplace {
-        replaced_char: Option<char>,
-    },
-    HelixSurroundDelete,
-    HelixJump {
-        behaviour: HelixJumpBehaviour,
-        first_char: Option<char>,
-        labels: Vec<HelixJumpLabel>,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct HelixJumpLabel {
-    pub label: [char; 2],
-    pub range: Range<Anchor>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HelixJumpBehaviour {
-    Move,
-    MoveToWordStart,
-    Extend,
-    ExtendToWordStart,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -1063,7 +1023,6 @@ pub struct SearchState {
     pub prior_selections: Vec<Range<Anchor>>,
     pub prior_operator: Option<Operator>,
     pub prior_mode: Mode,
-    pub helix_select: bool,
     pub _dismiss_subscription: Option<gpui::Subscription>,
 }
 
@@ -1107,13 +1066,6 @@ impl Operator {
             Operator::ReplayRegister => "@",
             Operator::ToggleComments => "gc",
             Operator::ToggleBlockComments => "gb",
-            Operator::HelixMatch => "helix_m",
-            Operator::HelixNext { .. } => "helix_next",
-            Operator::HelixPrevious { .. } => "helix_previous",
-            Operator::HelixJump { .. } => "gw",
-            Operator::HelixSurroundAdd => "helix_ms",
-            Operator::HelixSurroundReplace { .. } => "helix_mr",
-            Operator::HelixSurroundDelete => "helix_md",
         }
     }
 
@@ -1135,18 +1087,6 @@ impl Operator {
             } => format!("^V{}", make_visible(prefix)),
             Operator::AutoIndent => "=".to_string(),
             Operator::ShellCommand => "=".to_string(),
-            Operator::HelixMatch => "m".to_string(),
-            Operator::HelixNext { .. } => "]".to_string(),
-            Operator::HelixPrevious { .. } => "[".to_string(),
-            Operator::HelixJump { .. } => "gw".to_string(),
-            Operator::HelixSurroundAdd => "ms".to_string(),
-            Operator::HelixSurroundReplace {
-                replaced_char: None,
-            } => "mr".to_string(),
-            Operator::HelixSurroundReplace {
-                replaced_char: Some(c),
-            } => format!("mr{}", c),
-            Operator::HelixSurroundDelete => "md".to_string(),
             _ => self.id().to_string(),
         }
     }
@@ -1169,8 +1109,7 @@ impl Operator {
             | Operator::ChangeSurrounds {
                 target: Some(_), ..
             }
-            | Operator::DeleteSurrounds
-            | Operator::HelixJump { .. } => true,
+            | Operator::DeleteSurrounds => true,
             Operator::Change
             | Operator::Delete
             | Operator::Yank
@@ -1189,13 +1128,7 @@ impl Operator {
             | Operator::ChangeSurrounds { target: None, .. }
             | Operator::OppositeCase
             | Operator::ToggleComments
-            | Operator::ToggleBlockComments
-            | Operator::HelixMatch
-            | Operator::HelixNext { .. }
-            | Operator::HelixPrevious { .. } => false,
-            Operator::HelixSurroundAdd
-            | Operator::HelixSurroundReplace { .. }
-            | Operator::HelixSurroundDelete => true,
+            | Operator::ToggleBlockComments => false,
         }
     }
 
@@ -1220,12 +1153,7 @@ impl Operator {
             | Operator::AddSurrounds { target: None }
             | Operator::ChangeSurrounds { target: None, .. }
             | Operator::DeleteSurrounds
-            | Operator::Exchange
-            | Operator::HelixNext { .. }
-            | Operator::HelixPrevious { .. }
-            | Operator::HelixSurroundAdd
-            | Operator::HelixSurroundReplace { .. }
-            | Operator::HelixSurroundDelete => true,
+            | Operator::Exchange => true,
             Operator::Yank
             | Operator::Object { .. }
             | Operator::FindForward { .. }
@@ -1240,9 +1168,7 @@ impl Operator {
             | Operator::Jump { .. }
             | Operator::Register
             | Operator::RecordRegister
-            | Operator::ReplayRegister
-            | Operator::HelixMatch
-            | Operator::HelixJump { .. } => false,
+            | Operator::ReplayRegister => false,
         }
     }
 }

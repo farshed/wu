@@ -179,13 +179,6 @@ impl VimTestContext {
         })
     }
 
-    pub fn enable_helix(&mut self) {
-        self.cx.update(|_, cx| {
-            SettingsStore::update_global(cx, |store, cx| {
-                store.update_user_settings(cx, |s| s.helix_mode = Some(true));
-            });
-        })
-    }
 
     pub fn mode(&mut self) -> Mode {
         self.update_editor(|editor, _, cx| editor.addon::<VimAddon>().unwrap().entity.read(cx).mode)
@@ -255,25 +248,6 @@ impl VimTestContext {
         assert_eq!(self.active_operator(), None, "{}", self.assertion_context());
     }
 
-    pub fn shared_clipboard(&mut self) -> VimClipboard {
-        VimClipboard {
-            editor: self
-                .read_from_clipboard()
-                .map(|item| item.text().unwrap())
-                .unwrap_or_default(),
-        }
-    }
-}
-
-pub struct VimClipboard {
-    editor: String,
-}
-
-impl VimClipboard {
-    #[track_caller]
-    pub fn assert_eq(&self, expected: &str) {
-        assert_eq!(self.editor, expected);
-    }
 }
 
 impl Deref for VimTestContext {

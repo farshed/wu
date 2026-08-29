@@ -182,17 +182,12 @@ impl ThemeColors {
             vim_visual_line_background: system.transparent,
             vim_visual_block_background: system.transparent,
             vim_yank_background: neutral().light_alpha().step_3(),
-            vim_helix_jump_label_foreground: red().light().step_9(),
-            vim_helix_normal_background: system.transparent,
-            vim_helix_select_background: system.transparent,
             vim_normal_foreground: system.transparent,
             vim_insert_foreground: system.transparent,
             vim_replace_foreground: system.transparent,
             vim_visual_foreground: system.transparent,
             vim_visual_line_foreground: system.transparent,
             vim_visual_block_foreground: system.transparent,
-            vim_helix_normal_foreground: system.transparent,
-            vim_helix_select_foreground: system.transparent,
         }
     }
 
@@ -335,17 +330,12 @@ impl ThemeColors {
             vim_visual_line_background: system.transparent,
             vim_visual_block_background: system.transparent,
             vim_yank_background: neutral().dark_alpha().step_4(),
-            vim_helix_jump_label_foreground: red().dark().step_9(),
-            vim_helix_normal_background: system.transparent,
-            vim_helix_select_background: system.transparent,
             vim_normal_foreground: system.transparent,
             vim_insert_foreground: system.transparent,
             vim_replace_foreground: system.transparent,
             vim_visual_foreground: system.transparent,
             vim_visual_line_foreground: system.transparent,
             vim_visual_block_foreground: system.transparent,
-            vim_helix_normal_foreground: system.transparent,
-            vim_helix_select_foreground: system.transparent,
         }
     }
 }

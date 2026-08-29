@@ -1,7 +1,7 @@
 //! Mock transport for testing remote connections.
 //!
 //! This module provides a mock implementation of the `RemoteConnection` trait
-//! that allows testing remote editing functionality without actual SSH/WSL/Docker
+//! that allows testing remote editing functionality without actual SSH/WSL
 //! connections.
 //!
 //! # Usage

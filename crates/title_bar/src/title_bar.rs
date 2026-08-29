@@ -502,9 +502,6 @@ impl TitleBar {
                 IconName::Server,
             ),
             RemoteConnectionOptions::Wsl(_) => (None, "Remote Project", IconName::Linux),
-            RemoteConnectionOptions::Docker(_dev_container_connection) => {
-                (None, "Dev Container", IconName::Box)
-            }
             #[cfg(any(test, feature = "test-support"))]
             RemoteConnectionOptions::Mock(_) => (None, "Mock Remote Project", IconName::Server),
         };
