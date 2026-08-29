@@ -96,7 +96,7 @@ git_hosting_providers.workspace = true
 git_ui.workspace = true
 git_ui_core.workspace = true
 go_to_line.workspace = true
-gpui = { workspace = true, features = ["profiler", "stacker"] }
+gpui = { workspace = true, features = ["stacker"] }
 gpui_platform = { workspace = true, features = [
     "font-kit",
     "wayland",
@@ -132,7 +132,6 @@ markdown_preview.workspace = true
 menu.workspace = true
 migrator.workspace = true
 mimalloc = { version = "0.1", optional = true }
-miniprofiler_ui.workspace = true
 node_runtime.workspace = true
 notifications.workspace = true
 onboarding.workspace = true
@@ -197,13 +196,13 @@ ztracing.workspace = true
 [target.'cfg(target_os = "windows")'.dependencies]
 etw_tracing.workspace = true
 windows.workspace = true
-gpui = { workspace = true, features = ["profiler", "windows-manifest"] }
+gpui = { workspace = true, features = ["windows-manifest"] }
 
 [build-dependencies]
 windows_resources = { path = "../windows_resources" }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
-gpui = { workspace = true, features = ["profiler", "wayland", "x11"] }
+gpui = { workspace = true, features = ["wayland", "x11"] }
 ashpd.workspace = true
 image.workspace = true
 
@@ -218,7 +217,7 @@ pkg-config = "0.3.22"
 activity_indicator = { workspace = true, features = ["test-support"] }
 editor = { workspace = true, features = ["test-support"] }
 fs = { workspace = true, features = ["test-support"] }
-gpui = { workspace = true, features = ["profiler", "test-support"] }
+gpui = { workspace = true, features = ["test-support"] }
 image_viewer = { workspace = true, features = ["test-support"] }
 itertools.workspace = true
 language = { workspace = true, features = ["test-support"] }

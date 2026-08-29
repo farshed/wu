@@ -87,7 +87,6 @@ members = [
     "crates/markdown_preview",
     "crates/menu",
     "crates/migrator",
-    "crates/miniprofiler_ui",
     "crates/multi_buffer",
     "crates/net",
     "crates/node_runtime",
@@ -283,7 +282,6 @@ markdown = { path = "crates/markdown" }
 markdown_preview = { path = "crates/markdown_preview" }
 menu = { path = "crates/menu" }
 migrator = { path = "crates/migrator" }
-miniprofiler_ui = { path = "crates/miniprofiler_ui" }
 multi_buffer = { path = "crates/multi_buffer" }
 net = { path = "crates/net" }
 node_runtime = { path = "crates/node_runtime" }

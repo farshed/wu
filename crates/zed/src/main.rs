@@ -190,6 +190,7 @@ fn fail_to_open_window(e: anyhow::Error, _cx: &mut App) {
         .detach();
     }
 }
+
 static STARTUP_TIME: OnceLock<Instant> = OnceLock::new();
 
 fn main() {
@@ -675,7 +676,6 @@ fn main() {
         extensions_ui::init(cx);
         inspector_ui::init(app_state.clone(), cx);
         json_schema_store::init(cx);
-        miniprofiler_ui::init(*STARTUP_TIME.get().unwrap(), cx);
         which_key::init(cx);
         #[cfg(target_os = "windows")]
         etw_tracing::init(cx);

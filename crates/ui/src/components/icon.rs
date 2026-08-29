@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub use decorated_icon::*;
-use gpui::{AnimationElement, AnyElement, Hsla, IntoElement, Rems, Transformation, img, svg};
+use gpui::{
+    AnimationElement, AnyElement, App, Asset, AssetLogger, DevicePixels, Hsla, ImageCacheError,
+    IntoElement, Rems, RenderImage, Size, SvgSize, Transformation, Window, img, svg,
+};
 pub use icon_decoration::*;
 pub use icons::*;
 
@@ -212,8 +215,39 @@ impl Transformable for Icon {
     }
 }
 
+/// Rasterizes an icon theme's SVG at the size it will be displayed at.
+///
+/// Going through `img(path)` would rasterize the SVG at its intrinsic size, and icon
+/// themes ship icons with viewBoxes as large as 960x960, which turns a 16px icon into
+/// a multi-megabyte bitmap that is kept both in the image cache and in the GPU atlas.
+enum ExternalSvgIcon {}
+
+impl Asset for ExternalSvgIcon {
+    type Source = (Arc<Path>, DevicePixels);
+    type Output = Result<Arc<RenderImage>, ImageCacheError>;
+
+    fn load(
+        (path, size): Self::Source,
+        cx: &mut App,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let svg_renderer = cx.svg_renderer();
+        async move {
+            let bytes = std::fs::read(path.as_ref())?;
+            let svg = svg_renderer.parse_svg(&bytes)?;
+            let image = svg_renderer.render_parsed(
+                &svg,
+                SvgSize::Size(Size {
+                    width: size,
+                    height: size,
+                }),
+            )?;
+            Ok(image)
+        }
+    }
+}
+
 impl RenderOnce for Icon {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         match self.source {
             IconSource::Embedded(path) => svg()
                 .with_transformation(self.transformation)
@@ -229,6 +263,26 @@ impl RenderOnce for Icon {
                 .flex_none()
                 .text_color(self.color.color(cx))
                 .into_any_element(),
+            IconSource::External(path)
+                if path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("svg")) =>
+            {
+                let device_size = DevicePixels(
+                    (f32::from(self.size.to_pixels(window.rem_size())) * window.scale_factor()).ceil()
+                        as i32,
+                );
+                img(move |window: &mut Window, cx: &mut App| {
+                    window.use_asset::<AssetLogger<ExternalSvgIcon>>(
+                        &(path.clone(), device_size),
+                        cx,
+                    )
+                })
+                .size(self.size)
+                .flex_none()
+                .text_color(self.color.color(cx))
+                .into_any_element()
+            }
             IconSource::External(path) => img(path)
                 .size(self.size)
                 .flex_none()
