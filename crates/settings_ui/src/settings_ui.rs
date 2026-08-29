@@ -3587,7 +3587,6 @@ impl SettingsWindow {
             }
 
             let parse_error = error.parse_error();
-            let parse_failed = parse_error.is_some();
 
             warning_banner = v_flex()
                 .gap_2()
@@ -3597,23 +3596,6 @@ impl SettingsWindow {
                         err,
                         cx,
                     ))
-                })
-                .map(|this| match &error.migration_status {
-                    settings::MigrationStatus::Succeeded => this.child(banner(
-                        "Your settings are out of date, and need to be updated.",
-                        match &self.current_file {
-                            SettingsUiFile::User => "They can be automatically migrated to the latest version.",
-                            SettingsUiFile::Server(_) | SettingsUiFile::Project(_)  => "They must be manually migrated to the latest version."
-                        }.to_string(),
-                        cx,
-                    )),
-                    settings::MigrationStatus::Failed { error: err } if !parse_failed => this
-                        .child(banner(
-                            "Your settings file is out of date, automatic migration failed",
-                            err.clone(),
-                            cx,
-                        )),
-                    _ => this,
                 })
                 .into_any_element()
         }

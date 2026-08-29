@@ -214,7 +214,6 @@ impl VsCodeSettings {
             theme: Box::new(self.theme_settings_content()),
             title_bar: None,
             workspace: self.workspace_settings_content(),
-            which_key: None,
             modeline_lines: None,
             instrumentation: None,
         }

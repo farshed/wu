@@ -7205,25 +7205,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "migrator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "collections",
- "convert_case 0.11.0",
- "log",
- "pretty_assertions",
- "serde_json",
- "serde_json_lenient",
- "settings_content",
- "settings_json",
- "streaming-iterator",
- "tree-sitter",
- "tree-sitter-json",
- "unindent",
-]
-
-[[package]]
 name = "mimalloc"
 version = "0.1.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11309,7 +11290,6 @@ dependencies = [
  "indoc",
  "inventory",
  "log",
- "migrator",
  "paths",
  "pretty_assertions",
  "release_channel",
@@ -14912,19 +14892,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "which_key"
-version = "0.1.0"
-dependencies = [
- "command_palette",
- "gpui",
- "settings",
- "theme_settings",
- "ui",
- "util",
- "workspace",
-]
-
-[[package]]
 name = "wiggle"
 version = "48.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16481,7 +16448,6 @@ dependencies = [
  "markdown",
  "markdown_preview",
  "menu",
- "migrator",
  "mimalloc",
  "node_runtime",
  "notifications",
@@ -16542,7 +16508,6 @@ dependencies = [
  "util",
  "uuid",
  "watch",
- "which_key",
  "windows 0.61.3",
  "windows_resources",
  "workspace",

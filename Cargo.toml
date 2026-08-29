@@ -85,7 +85,6 @@ members = [
     "crates/markdown",
     "crates/markdown_preview",
     "crates/menu",
-    "crates/migrator",
     "crates/multi_buffer",
     "crates/net",
     "crates/node_runtime",
@@ -157,7 +156,6 @@ members = [
     "crates/util",
     "crates/util_macros",
     "crates/watch",
-    "crates/which_key",
     "crates/windows_resources",
     "crates/workspace",
     "crates/worktree",
@@ -277,7 +275,6 @@ lsp_locations = { path = "crates/lsp_locations" }
 markdown = { path = "crates/markdown" }
 markdown_preview = { path = "crates/markdown_preview" }
 menu = { path = "crates/menu" }
-migrator = { path = "crates/migrator" }
 multi_buffer = { path = "crates/multi_buffer" }
 net = { path = "crates/net" }
 node_runtime = { path = "crates/node_runtime" }
@@ -347,7 +344,6 @@ ui_prompt = { path = "crates/ui_prompt" }
 util = { path = "crates/util" }
 util_macros = { path = "crates/util_macros" }
 watch = { path = "crates/watch" }
-which_key = { path = "crates/which_key" }
 workspace = { path = "crates/workspace" }
 worktree = { path = "crates/worktree" }
 zed_actions = { path = "crates/zed_actions" }

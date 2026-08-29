@@ -129,7 +129,6 @@ lsp_locations.workspace = true
 markdown.workspace = true
 markdown_preview.workspace = true
 menu.workspace = true
-migrator.workspace = true
 mimalloc = { version = "0.1", optional = true }
 node_runtime.workspace = true
 notifications.workspace = true
@@ -182,7 +181,6 @@ urlencoding.workspace = true
 util.workspace = true
 uuid.workspace = true
 watch.workspace = true
-which_key.workspace = true
 workspace.workspace = true
 zed_actions.workspace = true
 zed_env_vars.workspace = true

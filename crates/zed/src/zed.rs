@@ -1,7 +1,6 @@
 mod app_menus;
 #[cfg(target_os = "macos")]
 pub(crate) mod mac_only_instance;
-mod migrate;
 #[cfg(target_os = "macos")]
 pub(crate) mod move_to_applications;
 mod open_listener;
@@ -44,8 +43,6 @@ use language_onboarding::BasedPyrightBanner;
 use language_tools::lsp_button::{self, LspButton};
 use language_tools::lsp_log_view::LspLogToolbarItemView;
 use markdown::{Markdown, MarkdownElement, MarkdownFont, MarkdownStyle};
-use migrate::{MigrationBanner, MigrationEvent, MigrationNotification, MigrationType};
-use migrator::migrate_keymap;
 use onboarding::multibuffer_hint::MultibufferHint;
 pub use open_listener::*;
 use outline_panel::OutlinePanel;
@@ -65,7 +62,7 @@ use rope::Rope;
 use search::project_search::ProjectSearchBar;
 use settings::{
     BaseKeymap, DEFAULT_KEYMAP_PATH, DefaultOpenBehavior, InvalidSettingsError, KeybindSource,
-    KeymapFile, KeymapFileLoadResult, MigrationStatus, SPECIFIC_OVERRIDES_KEYMAP_PATH, Settings,
+    KeymapFile, KeymapFileLoadResult, SPECIFIC_OVERRIDES_KEYMAP_PATH, Settings,
     SettingsFile, SettingsStore, initial_local_debug_tasks_content,
     initial_project_settings_content, initial_tasks_content, update_settings_file,
 };
@@ -1181,7 +1178,6 @@ fn initialize_pane(
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) {
-    let workspace_handle = cx.weak_entity();
     pane.update(cx, |pane, cx| {
         pane.toolbar().update(cx, |toolbar, cx| {
             let multibuffer_hint = cx.new(|_| MultibufferHint::new());
@@ -1211,9 +1207,6 @@ fn initialize_pane(
             toolbar.add_item(dap_log_item, window, cx);
             let syntax_tree_item = cx.new(|_| language_tools::SyntaxTreeToolbarItemView::new());
             toolbar.add_item(syntax_tree_item, window, cx);
-            let migration_banner =
-                cx.new(|inner_cx| MigrationBanner::new(workspace_handle.clone(), inner_cx));
-            toolbar.add_item(migration_banner, window, cx);
             let highlights_tree_item =
                 cx.new(|_| language_tools::HighlightsTreeToolbarItemView::new());
             toolbar.add_item(highlights_tree_item, window, cx);
@@ -1638,14 +1631,13 @@ fn notify_settings_errors(result: settings::SettingsParseResult, is_user: bool, 
     };
     let id = NotificationId::Named(format!("failed-to-parse-settings-{is_user}").into());
 
-    let showed_parse_error = match error {
+    match error {
         Some(error) => {
-            if let Some(InvalidSettingsError::LocalSettings { .. }) =
-                error.downcast_ref::<InvalidSettingsError>()
+            // Local settings errors are displayed by the projects
+            if error
+                .downcast_ref::<InvalidSettingsError>()
+                .is_none_or(|error| !matches!(error, InvalidSettingsError::LocalSettings { .. }))
             {
-                false
-                // Local settings errors are displayed by the projects
-            } else {
                 show_app_notification(id, cx, move |cx| {
                     cx.new(|cx| {
                         MessageNotification::new(format!("Invalid user settings file\n{error}"), cx)
@@ -1660,42 +1652,10 @@ fn notify_settings_errors(result: settings::SettingsParseResult, is_user: bool, 
                             })
                     })
                 });
-                true
             }
         }
-        None => {
-            dismiss_app_notification(&id, cx);
-            false
-        }
-    };
-    let id = NotificationId::Named(format!("failed-to-migrate-settings-{is_user}").into());
-
-    match result.migration_status {
-        settings::MigrationStatus::Succeeded | settings::MigrationStatus::NotNeeded => {
-            dismiss_app_notification(&id, cx);
-        }
-        settings::MigrationStatus::Failed { error: err } => {
-            if !showed_parse_error {
-                show_app_notification(id, cx, move |cx| {
-                    cx.new(|cx| {
-                        MessageNotification::new(
-                            format!(
-                                "Failed to migrate settings\n\
-                                {err}"
-                            ),
-                            cx,
-                        )
-                        .primary_message("Open Settings File")
-                        .primary_icon(IconName::Settings)
-                        .primary_on_click(|window, cx| {
-                            window.dispatch_action(zed_actions::OpenSettingsFile.boxed_clone(), cx);
-                            cx.emit(DismissEvent);
-                        })
-                    })
-                });
-            }
-        }
-    };
+        None => dismiss_app_notification(&id, cx),
+    }
 }
 
 fn init_global_config_error_notifications(cx: &mut App) {
@@ -1794,22 +1754,10 @@ fn init_reduce_motion(cx: &mut App) {
 }
 
 pub fn watch_settings_files(fs: Arc<dyn fs::Fs>, cx: &mut App) {
-    MigrationNotification::set_global(cx.new(|_| MigrationNotification), cx);
-
     SettingsStore::update_global(cx, move |store, cx| {
         store.watch_settings_files(fs, cx, |settings_file, result, cx| {
             let is_user = matches!(settings_file, SettingsFile::User);
-            let migrating_in_memory =
-                matches!(&result.migration_status, MigrationStatus::Succeeded);
             notify_settings_errors(result, is_user, cx);
-            if let Some(notifier) = MigrationNotification::try_global(cx) {
-                notifier.update(cx, |_, cx| {
-                    cx.emit(MigrationEvent::ContentChanged {
-                        migration_type: MigrationType::Settings,
-                        migrating_in_memory,
-                    });
-                });
-            }
         });
     });
 }
@@ -1868,32 +1816,17 @@ pub fn handle_keymap_file_changes(
     cx.spawn(async move |cx| {
         let _user_keymap_watcher = user_keymap_watcher;
         let mut user_keymap_content = String::new();
-        let mut migrating_in_memory = false;
         loop {
             select_biased! {
                 _ = base_keymap_rx.next() => {},
                 _ = keyboard_layout_rx.next() => {},
                 content = user_keymap_file_rx.next() => {
                     if let Some(content) = content {
-                        if let Ok(Some(migrated_content)) = migrate_keymap(&content) {
-                            user_keymap_content = migrated_content;
-                            migrating_in_memory = true;
-                        } else {
-                            user_keymap_content = content;
-                            migrating_in_memory = false;
-                        }
+                        user_keymap_content = content;
                     }
                 }
             };
             cx.update(|cx| {
-                if let Some(notifier) = MigrationNotification::try_global(cx) {
-                    notifier.update(cx, |_, cx| {
-                        cx.emit(MigrationEvent::ContentChanged {
-                            migration_type: MigrationType::Keymap,
-                            migrating_in_memory,
-                        });
-                    });
-                }
                 let load_result = KeymapFile::load(&user_keymap_content, cx);
                 match load_result {
                     KeymapFileLoadResult::Success { key_bindings } => {

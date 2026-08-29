@@ -2246,13 +2246,6 @@
     // Default rules are viewable via the "zed: show default semantic token rules" action.
     "semantic_token_rules": [],
   },
-  // Which-key popup settings
-  "which_key": {
-    // Whether to show the which-key popup when holding down key combinations.
-    "enabled": false,
-    // Delay in milliseconds before showing the which-key popup.
-    "delay_ms": 1000,
-  },
   // The server to connect to. If the environment variable
   // ZED_SERVER_URL is set, it will override this setting.
   "server_url": "https://zed.dev",

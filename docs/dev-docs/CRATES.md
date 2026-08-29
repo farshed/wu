@@ -226,7 +226,6 @@ and `multi_buffer` projects excerpts from one or more buffers for `editor`.
 | [`markdown_preview`](../../crates/markdown_preview/)         | Live workspace preview synchronized with markdown editor buffers and persisted preview settings.                                                                     |
 | [`diagnostics`](../../crates/diagnostics/)                   | Project diagnostics view, buffer diagnostic navigation/rendering, toolbar controls, filtering, and editor integration.                                               |
 | [`keymap_editor`](../../crates/keymap_editor/)               | Settings UI for searching, adding, editing, and resolving key bindings with action completion.                                                                       |
-| [`which_key`](../../crates/which_key/)                       | Which-key modal that shows available continuation bindings for a key sequence.                                                                                       |
 
 ## Settings, themes, and migration
 
@@ -238,7 +237,6 @@ and `multi_buffer` projects excerpts from one or more buffers for `editor`.
 | [`settings`](../../crates/settings/)                                   | Runtime settings store, sources, profiles, defaults, keymaps, EditorConfig, imports, observation, and project/worktree overrides.        |
 | [`settings_ui`](../../crates/settings_ui/)                             | Searchable Settings Editor pages and controls generated from registered setting metadata.                                                |
 | [`settings_profile_selector`](../../crates/settings_profile_selector/) | Picker for choosing and managing the active settings profile.                                                                            |
-| [`migrator`](../../crates/migrator/)                                   | Ordered, syntax-aware migrations for renamed or structurally changed settings and keymap actions.                                        |
 | [`syntax_theme`](../../crates/syntax_theme/)                           | Maps Tree-sitter capture names to highlight styles and merges bundled/user syntax overrides.                                             |
 | [`theme`](../../crates/theme/)                                         | Core UI/icon theme models, schemas, registries, color spaces, appearance, font/scale data, and active-theme global state.                |
 | [`theme_settings`](../../crates/theme_settings/)                       | Connects themes to settings, loads bundled/user themes and icon themes, and applies refinements.                                         |

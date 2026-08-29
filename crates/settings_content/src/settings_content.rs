@@ -276,9 +276,6 @@ pub struct SettingsContent {
 
     pub title_bar: Option<TitleBarSettingsContent>,
 
-    /// Settings for the which-key popup.
-    pub which_key: Option<WhichKeySettingsContent>,
-
     /// Number of lines to search for modelines at the beginning and end of files.
     /// Modelines contain editor directives (e.g., vim/emacs settings) that configure
     /// the editor behavior for specific files.
@@ -329,7 +326,7 @@ fallible_options::flattened_deserialize!(SettingsContent {
         global_lsp_settings, image_viewer, markdown_preview, hide_mouse,
         log, line_indicator_format, outline_panel, project_panel,
         node, proxy, reduce_motion, server_url, credentials_url, session, terminal,
-        title_bar, which_key, modeline_lines,
+        title_bar, modeline_lines,
         instrumentation,
     },
     defaults: {},
@@ -1067,19 +1064,6 @@ pub struct SshPortForwardOption {
     pub local_port: u16,
     pub remote_host: Option<String>,
     pub remote_port: u16,
-}
-
-/// Settings for configuring the which-key popup behaviour.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema, MergeFrom)]
-pub struct WhichKeySettingsContent {
-    /// Whether to show the which-key popup when holding down key combinations
-    ///
-    /// Default: false
-    pub enabled: Option<bool>,
-    /// Delay in milliseconds before showing the which-key popup.
-    ///
-    /// Default: 700
-    pub delay_ms: Option<u64>,
 }
 
 // An ExtendingVec in the settings can only accumulate new values.

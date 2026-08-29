@@ -221,7 +221,6 @@
 /crates/install_cli/ @zed-industries/platform-team
 /crates/keymap_editor/ @zed-industries/platform-team
 /crates/media/ @zed-industries/platform-team
-/crates/migrator/ @zed-industries/platform-team
 /crates/notifications/ @zed-industries/platform-team
 /crates/onboarding/ @zed-industries/platform-team
 # SUGGESTED: Review needed - based on Finn Evers (1 commits)
