@@ -26,6 +26,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
         run: rustup show
+      - name: Install lld
+        if: matrix.arch == 'aarch64'
+        run: brew install lld
       - name: Use the stable release channel
         run: echo stable > crates/zed/RELEASE_CHANNEL
       - name: Check that the tag matches the crate version
