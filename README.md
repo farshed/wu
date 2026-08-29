@@ -4,7 +4,7 @@ Edna is a fast, simple code editor. It is a specialized distribution of [Zed](ht
 
 ## Docs
 
-See [docs/index.html](./docs/index.html).
+See [docs](./docs/index.html).
 
 ## Building
 
