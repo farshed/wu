@@ -180,7 +180,6 @@ members = [
     # Tooling
     #
 
-    "tooling/compliance",
     "tooling/perf",
     "tooling/xtask",
 ]
@@ -211,7 +210,6 @@ cloud_api_types = { path = "crates/cloud_api_types" }
 collections = { path = "crates/collections", version = "0.1.0" }
 command_palette = { path = "crates/command_palette" }
 command_palette_hooks = { path = "crates/command_palette_hooks" }
-compliance = { path = "tooling/compliance" }
 component = { path = "crates/component" }
 component_preview = { path = "crates/component_preview" }
 dap = { path = "crates/dap" }
