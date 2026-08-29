@@ -105,7 +105,7 @@ else
         for attempt in 1 2 3; do
             echo "Attempting sentry upload (attempt $attempt/3)..."
             if sentry-cli debug-files upload --include-sources --wait -p zed -o zed-dev \
-                "${target_dir}/${target_triple}"/release/edna \
+                "${target_dir}/${target_triple}"/release/wu \
                 "${target_dir}/${remote_server_triple}"/release/remote_server; then
                 echo "Sentry upload successful on attempt $attempt"
                 break
@@ -124,7 +124,7 @@ fi
 # Strip debug symbols and save them for upload to DigitalOcean.
 # We use llvm-objcopy because GNU objcopy on older distros (e.g. Ubuntu 20.04)
 # doesn't understand CREL sections produced by newer LLVM.
-llvm-objcopy --strip-debug "${target_dir}/${target_triple}/release/edna"
+llvm-objcopy --strip-debug "${target_dir}/${target_triple}/release/wu"
 llvm-objcopy --strip-debug "${target_dir}/${target_triple}/release/cli"
 llvm-objcopy --strip-debug "${target_dir}/${remote_server_triple}/release/remote_server"
 
@@ -149,8 +149,8 @@ zed_dir="${temp_dir}/zed$suffix.app"
 
 # Binary
 mkdir -p "${zed_dir}/bin" "${zed_dir}/libexec"
-cp "${target_dir}/${target_triple}/release/edna" "${zed_dir}/libexec/edna-editor"
-cp "${target_dir}/${target_triple}/release/cli" "${zed_dir}/bin/edna"
+cp "${target_dir}/${target_triple}/release/wu" "${zed_dir}/libexec/wu-editor"
+cp "${target_dir}/${target_triple}/release/cli" "${zed_dir}/bin/wu"
 
 # Libs
 # Bundle libstdc++ so older supported systems can run binaries built with our
@@ -160,7 +160,7 @@ cp "${target_dir}/${target_triple}/release/cli" "${zed_dir}/bin/edna"
 # get dlopen'd are built against the system GLib, and resolving them against an
 # older bundled copy fails with missing symbols.
 find_libs() {
-    ldd ${target_dir}/${target_triple}/release/edna |\
+    ldd ${target_dir}/${target_triple}/release/wu |\
         cut -d' ' -f3 |\
         grep -v '\<\(libc.so\|libgcc_s.so\|libm.so\|libpthread.so\|libdl.so\|libasound.so\)' |\
         grep -v '\<\(libglib-2.0.so\|libgobject-2.0.so\|libgio-2.0.so\|libgmodule-2.0.so\|libpcre.so\|libpcre2-8.so\|libmount.so\|libblkid.so\|libselinux.so\|libffi.so\|libresolv.so\|libz.so\)'
@@ -178,15 +178,15 @@ cp "crates/zed/resources/app-icon$suffix@2x.png" "${zed_dir}/share/icons/hicolor
 
 # .desktop
 export DO_STARTUP_NOTIFY="true"
-export APP_CLI="edna"
+export APP_CLI="wu"
 export APP_ICON="zed"
 export APP_ARGS="%U"
 if [[ "$channel" == "dev" ]]; then
   export APP_NAME="Zed Devel"
-  APP_ID="me.farshed.Edna-Dev"
+  APP_ID="me.farshed.Wu-Dev"
 else
   export APP_NAME="Zed"
-  APP_ID="me.farshed.Edna"
+  APP_ID="me.farshed.Wu"
 fi
 
 mkdir -p "${zed_dir}/share/applications"

@@ -44,7 +44,7 @@ impl std::fmt::Display for MissingDependencyError {
 }
 
 impl std::error::Error for MissingDependencyError {}
-const POLL_INTERVAL: Duration = Duration::from_secs(60 * 60);
+const POLL_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const REMOTE_SERVER_CACHE_LIMIT: usize = 5;
 
 #[cfg(target_os = "linux")]
@@ -107,13 +107,6 @@ actions!(
         ViewReleaseNotes,
     ]
 );
-
-#[derive(Serialize, Debug)]
-pub struct AssetQuery<'a> {
-    asset: &'a str,
-    os: &'a str,
-    arch: &'a str,
-}
 
 #[derive(Clone, Debug)]
 pub enum AutoUpdateStatus {
@@ -184,6 +177,28 @@ pub struct AutoUpdater {
 pub struct ReleaseAsset {
     pub version: String,
     pub url: String,
+}
+
+const GITHUB_RELEASES_API_URL: &str = "https://api.github.com/repos/farshed/wu/releases";
+
+#[derive(Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    assets: Vec<GitHubReleaseAsset>,
+}
+
+#[derive(Deserialize)]
+struct GitHubReleaseAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+fn github_asset_name(asset: &str, os: &str, arch: &str) -> Result<String> {
+    match (asset, os) {
+        ("zed", "macos") => Ok(format!("Wu-{arch}.dmg")),
+        ("zed-remote-server", _) => Ok(format!("zed-remote-server-{os}-{arch}.gz")),
+        _ => anyhow::bail!("no release asset for {asset} on {os}"),
+    }
 }
 
 struct MacOsUnmounter<'a> {
@@ -305,7 +320,7 @@ pub fn check(_: &Check, window: &mut Window, cx: &mut App) {
     {
         drop(window.prompt(
             gpui::PromptLevel::Info,
-            "Edna was installed via a package manager.",
+            "Wu was installed via a package manager.",
             Some(&message),
             &["OK"],
             cx,
@@ -342,11 +357,9 @@ pub fn release_notes_url(cx: &mut App) -> Option<String> {
             let mut current_version = auto_updater.current_version.clone();
             current_version.pre = semver::Prerelease::EMPTY;
             current_version.build = semver::BuildMetadata::EMPTY;
-            let release_channel = release_channel.dev_name();
-            let path = format!("/releases/{release_channel}/{current_version}");
-            auto_updater.client.http_client().build_url(&path)
+            format!("https://github.com/farshed/wu/releases/tag/v{current_version}")
         }
-        ReleaseChannel::Dev => "https://github.com/zed-industries/zed/commits/main/".to_string(),
+        ReleaseChannel::Dev => "https://github.com/farshed/wu/commits/main/".to_string(),
     };
     Some(url)
 }
@@ -658,7 +671,7 @@ impl AutoUpdater {
 
     async fn get_release_asset(
         this: &Entity<Self>,
-        release_channel: ReleaseChannel,
+        _release_channel: ReleaseChannel,
         version: Option<Version>,
         asset: &str,
         os: &str,
@@ -666,19 +679,16 @@ impl AutoUpdater {
         cx: &mut AsyncApp,
     ) -> Result<ReleaseAsset> {
         let client = this.read_with(cx, |this, _| this.client.clone());
-
-        let version = if let Some(mut version) = version {
-            version.pre = semver::Prerelease::EMPTY;
-            version.build = semver::BuildMetadata::EMPTY;
-            version.to_string()
-        } else {
-            "latest".to_string()
-        };
         let http_client = client.http_client();
 
-        let path = format!("/releases/{}/{}/asset", release_channel.dev_name(), version,);
-        let url =
-            http_client.build_zed_cloud_url_with_query(&path, AssetQuery { os, arch, asset })?;
+        let url = match version {
+            Some(mut version) => {
+                version.pre = semver::Prerelease::EMPTY;
+                version.build = semver::BuildMetadata::EMPTY;
+                format!("{GITHUB_RELEASES_API_URL}/tags/v{version}")
+            }
+            None => format!("{GITHUB_RELEASES_API_URL}/latest"),
+        };
 
         let mut response = http_client
             .get(url.as_str(), Default::default(), true)
@@ -692,11 +702,33 @@ impl AutoUpdater {
             String::from_utf8_lossy(&body),
         );
 
-        serde_json::from_slice(body.as_slice()).with_context(|| {
-            format!(
-                "error deserializing release {:?}",
-                String::from_utf8_lossy(&body),
-            )
+        let release: GitHubRelease =
+            serde_json::from_slice(body.as_slice()).with_context(|| {
+                format!(
+                    "error deserializing release {:?}",
+                    String::from_utf8_lossy(&body),
+                )
+            })?;
+
+        let asset_name = github_asset_name(asset, os, arch)?;
+        let asset = release
+            .assets
+            .into_iter()
+            .find(|release_asset| release_asset.name == asset_name)
+            .with_context(|| {
+                format!(
+                    "release {} has no asset named {asset_name}",
+                    release.tag_name
+                )
+            })?;
+
+        Ok(ReleaseAsset {
+            version: release
+                .tag_name
+                .strip_prefix('v')
+                .unwrap_or(&release.tag_name)
+                .to_string(),
+            url: asset.browser_download_url,
         })
     }
 
@@ -859,7 +891,7 @@ impl AutoUpdater {
 
     async fn target_path(installer_dir: &InstallerDir) -> Result<PathBuf> {
         let filename = match OS {
-            "macos" => anyhow::Ok("Zed.dmg"),
+            "macos" => anyhow::Ok("Wu.dmg"),
             "linux" => Ok("zed.tar.gz"),
             "windows" => Ok("Zed.exe"),
             unsupported_os => anyhow::bail!("not supported: {unsupported_os}"),
@@ -1122,7 +1154,7 @@ async fn install_release_linux(
 
     anyhow::ensure!(
         output.status.success(),
-        "failed to copy Edna update from {:?} to {:?}: {:?}",
+        "failed to copy Wu update from {:?} to {:?}: {:?}",
         from,
         to,
         String::from_utf8_lossy(&output.stderr)
@@ -1141,7 +1173,7 @@ async fn install_release_macos(
         .file_name()
         .with_context(|| format!("invalid running app path {running_app_path:?}"))?;
 
-    let mount_path = temp_dir.path().join("Edna");
+    let mount_path = temp_dir.path().join("Wu");
     let mut mounted_app_path: OsString = mount_path.join(running_app_filename).into();
 
     mounted_app_path.push("/");

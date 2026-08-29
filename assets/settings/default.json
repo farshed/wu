@@ -1,6 +1,6 @@
 {
   "$schema": "zed://schemas/settings",
-  // The name of the Edna theme to use for the UI.
+  // The name of the Wu theme to use for the UI.
   //
   // `mode` is one of:
   // - "system": Use the theme that corresponds to the system's appearance
@@ -138,9 +138,9 @@
   // after the mouse moves away from the hover target.
   // Only applies when `hover_popover_sticky` is enabled.
   "hover_popover_hiding_delay": 300,
-  // Whether to confirm before quitting Edna.
+  // Whether to confirm before quitting Wu.
   "confirm_quit": false,
-  // Whether to restore last closed project when fresh Edna instance is opened
+  // Whether to restore last closed project when fresh Wu instance is opened
   // May take 3 values:
   //  1. All workspaces open during last session
   //         "restore_on_startup": "last_session"
@@ -153,7 +153,7 @@
   // an explicit `-e` (existing window) or `-n` (new window) flag.
   //
   // May take 2 values:
-  //  1. Open directories as a new workspace in the current Edna window's sidebar
+  //  1. Open directories as a new workspace in the current Wu window's sidebar
   //         "cli_default_open_behavior": "existing_window"
   //  2. Open paths in a new window, unless they are subpaths of an existing project
   //         "cli_default_open_behavior": "new_window"
@@ -161,7 +161,7 @@
   // The default behavior when opening projects from the UI.
   //
   // May take 2 values:
-  //  1. Open projects as a new workspace in the current Edna window's sidebar
+  //  1. Open projects as a new workspace in the current Wu window's sidebar
   //         "default_open_behavior": "existing_window"
   //  2. Open projects in a new window
   //         "default_open_behavior": "new_window"
@@ -216,28 +216,28 @@
   //
   // Default: true
   "zoomed_padding": true,
-  // On Linux, what draws Edna's window decorations (titlebar).
+  // On Linux, what draws Wu's window decorations (titlebar).
   // This setting has no effect on other platforms:
-  // 1. Edna draws its own window decorations.
+  // 1. Wu draws its own window decorations.
   //    "client"
   // 2. The window manager or compositor draws the window decorations.
   //    Not supported by GNOME Wayland.
   //    "server"
   //
-  // This requires restarting Edna for changes to take effect.
+  // This requires restarting Wu for changes to take effect.
   //
   // Default: "client"
   "window_decorations": "client",
-  // Whether to optimize Edna's interface for assistive technology such as screen
+  // Whether to optimize Wu's interface for assistive technology such as screen
   // readers.
   "accessible_mode": false,
   // Whether to use the system provided dialogs for Open and Save As.
-  // When set to false, Edna will use the built-in keyboard-first pickers.
+  // When set to false, Wu will use the built-in keyboard-first pickers.
   "use_system_path_prompts": true,
   // Whether to use the system provided dialogs for prompts, such as confirmation
   // prompts.
-  // When set to false, Edna will use its built-in prompts. Note that on Linux,
-  // this option is ignored and Edna will always use the built-in prompts.
+  // When set to false, Wu will use its built-in prompts. Note that on Linux,
+  // this option is ignored and Wu will always use the built-in prompts.
   "use_system_prompts": true,
   // Whether the cursor blinks in the editor.
   "cursor_blink": true,
@@ -450,11 +450,11 @@
   "use_on_type_format": true,
   // Whether to automatically add matching closing characters when typing
   // opening parenthesis, bracket, brace, single or double quote characters.
-  // For example, when you type '(', Edna will add a closing ) at the correct position.
+  // For example, when you type '(', Wu will add a closing ) at the correct position.
   "use_autoclose": true,
   // Whether to automatically surround selected text when typing opening parenthesis,
   // bracket, brace, single or double quote characters.
-  // For example, when you select text and type '(', Edna will surround the text with ().
+  // For example, when you select text and type '(', Wu will surround the text with ().
   "use_auto_surround": true,
   // Controls automatic indentation behavior when typing.
   // - "syntax_aware": Adjusts indentation based on syntax context (default)
@@ -1076,7 +1076,7 @@
   //
   // 1. Never automatically save:
   //     "autosave": "off",
-  // 2. Save when changing focus away from the Edna window:
+  // 2. Save when changing focus away from the Wu window:
   //     "autosave": "on_window_change",
   // 3. Save when changing focus away from a specific buffer:
   //     "autosave": "on_focus_change",
@@ -1199,11 +1199,11 @@
     // Default: true
     "skip_focus_for_active_in_search": true,
     // Whether to use gitignored files when searching.
-    // Only the file Edna had indexed will be used, not necessary all the gitignored files.
+    // Only the file Wu had indexed will be used, not necessary all the gitignored files.
     //
     // Can accept 3 values:
     //   * "all": Use all gitignored files
-    //   * "indexed": Use only the files Edna had indexed
+    //   * "indexed": Use only the files Wu had indexed
     //   * "smart": Be smart and search for ignored when called from a gitignored worktree
     "include_ignored": "smart",
   },
@@ -1248,7 +1248,7 @@
   "format_on_save": "off",
   // How to perform a buffer format. This setting can take multiple values:
   //
-  // 1. Default. Format files using Edna's Prettier integration (if applicable),
+  // 1. Default. Format files using Wu's Prettier integration (if applicable),
   //    or falling back to formatting via language server:
   //     "formatter": "auto"
   // 2. Format code using the current language server:
@@ -1262,7 +1262,7 @@
   //         "arguments": ["--stdin-filepath", "{buffer_path}"]
   //       }
   //     }
-  // 5. Format code using Edna's Prettier integration:
+  // 5. Format code using Wu's Prettier integration:
   //     "formatter": "prettier"
   // 6. Format code using a code action
   //     "formatter": {"code_action": "source.fixAll.eslint"}
@@ -1303,7 +1303,7 @@
   //
   // Default: true
   "word_diff_enabled": true,
-  // Automatically update Edna. This setting may be ignored on Linux if
+  // Automatically update Wu. This setting may be ignored on Linux if
   // installed through a package manager.
   "auto_update": true,
   // How to render LSP `textDocument/documentColor` colors in the editor.
@@ -1331,7 +1331,7 @@
     //
     // Default: true
     "include_warnings": true,
-    // Settings for using LSP pull diagnostics mechanism in Edna.
+    // Settings for using LSP pull diagnostics mechanism in Wu.
     "lsp_pull_diagnostics": {
       // Whether to pull for diagnostics or not.
       "enabled": true,
@@ -1358,7 +1358,7 @@
       "max_severity": null,
     },
   },
-  // Files or globs of files that will be excluded by Edna entirely. They will be skipped during file
+  // Files or globs of files that will be excluded by Wu entirely. They will be skipped during file
   // scans, file searches, and not be displayed in the project file tree. Takes precedence over `file_scan_inclusions`.
   "file_scan_exclusions": [
     "**/.git",
@@ -1373,9 +1373,9 @@
     "**/.classpath",
     "**/.settings",
   ],
-  // Files or globs of files that will be included by Edna, even when ignored by git. This is useful
+  // Files or globs of files that will be included by Wu, even when ignored by git. This is useful
   // for files that are not tracked by git, but are still important to your project. Note that globs
-  // that are overly broad can slow down Edna's file scanning. `file_scan_exclusions` takes
+  // that are overly broad can slow down Wu's file scanning. `file_scan_exclusions` takes
   // precedence over these inclusions.
   "file_scan_inclusions": [".env*"],
   // Maximum directory depth to eagerly index outside of git repositories;
@@ -1775,13 +1775,13 @@
   "tasks": {
     "variables": {},
     "enabled": true,
-    // Use LSP tasks over Edna language extension ones.
+    // Use LSP tasks over Wu language extension ones.
     // If no LSP tasks are returned due to error/timeout or regular execution,
-    // Edna language extension tasks will be used instead.
+    // Wu language extension tasks will be used instead.
     //
-    // Other Edna tasks will still be shown:
-    // * Edna task from either of the task config file
-    // * Edna task from history (e.g. one-off task was spawned before)
+    // Other Wu tasks will still be shown:
+    // * Wu task from either of the task config file
+    // * Wu task from history (e.g. one-off task was spawned before)
     //
     // Default: true
     "prefer_lsp": true,
@@ -1811,20 +1811,20 @@
   // Settings for which version of Node.js and NPM to use when installing
   // language servers and Copilot.
   //
-  // Note: changing this setting currently requires restarting Edna.
+  // Note: changing this setting currently requires restarting Wu.
   "node": {
-    // By default, Edna will look for `node` and `npm` on your `$PATH`, and use the
+    // By default, Wu will look for `node` and `npm` on your `$PATH`, and use the
     // existing executables if their version is recent enough. Set this to `true`
-    // to prevent this, and force Edna to always download and install its own
+    // to prevent this, and force Wu to always download and install its own
     // version of Node.
     "ignore_system_version": false,
     // You can also specify alternative paths to Node and NPM. If you specify
-    // `path`, but not `npm_path`, Edna will assume that `npm` is located at
+    // `path`, but not `npm_path`, Wu will assume that `npm` is located at
     // `${path}/../npm`.
     "path": null,
     "npm_path": null,
   },
-  // The extensions that Edna should automatically install on startup.
+  // The extensions that Wu should automatically install on startup.
   //
   // If you don't want any of these extensions, add this field to your settings
   // and change the value to `false`.
@@ -1874,7 +1874,7 @@
     // When LSP servers give an `InsertReplaceEdit` completion, they provides two ranges: `insert` and `replace`. Usually, `insert`
     // contains the word prefix before your cursor and `replace` contains the whole word.
     //
-    // Effectively, this setting just changes whether Edna will use the received range for `insert` or `replace`, so the results may
+    // Effectively, this setting just changes whether Wu will use the received range for `insert` or `replace`, so the results may
     // differ depending on the underlying LSP server.
     //
     // Possible values:
@@ -2151,7 +2151,7 @@
     // Default: false
     "trust_all_worktrees": false,
   },
-  // Edna's Prettier integration settings.
+  // Wu's Prettier integration settings.
   // Allows to enable/disable formatting with Prettier
   // and configure default Prettier, used when no project-level Prettier installation is found.
   "prettier": {
@@ -2179,7 +2179,7 @@
     // "rust-analyzer": {
     //     // A special flag for rust-analyzer integration, to use server-provided tasks
     //     enable_lsp_tasks": true,
-    //     // These initialization options are merged into Edna's defaults
+    //     // These initialization options are merged into Wu's defaults
     //     "initialization_options": {
     //         "check": {
     //             "command": "clippy" // rust-analyzer.check.command (default: "check")
@@ -2249,13 +2249,13 @@
   // The server to connect to. If the environment variable
   // ZED_SERVER_URL is set, it will override this setting.
   "server_url": "https://zed.dev",
-  // Settings overrides to use when using Edna Stable.
-  // Mostly useful for developers who are managing multiple instances of Edna.
+  // Settings overrides to use when using Wu Stable.
+  // Mostly useful for developers who are managing multiple instances of Wu.
   "stable": {
     // "theme": "Andromeda"
   },
-  // Settings overrides to use when using Edna Dev.
-  // Mostly useful for developers who are managing multiple instances of Edna.
+  // Settings overrides to use when using Wu Dev.
+  // Mostly useful for developers who are managing multiple instances of Wu.
   "dev": {
     // "theme": "Andromeda"
     "instrumentation": {
@@ -2288,7 +2288,7 @@
   // Supported URI scheme: `http`, `https`, `socks4`, `socks4a`, `socks5`,
   // `socks5h`. `http` will be used when no scheme is specified.
   //
-  // By default no proxy will be used, or Edna will try get proxy settings from
+  // By default no proxy will be used, or Wu will try get proxy settings from
   // environment variables. If certain hosts should not be proxied,
   // set the `no_proxy` environment variable and provide a comma-separated list.
   //
@@ -2306,7 +2306,7 @@
   "command_aliases": {},
   // ssh_connections is an array of ssh connections.
   // You can configure these from `project: Open Remote` in the command palette.
-  // Edna's ssh support will pull configuration from your ~/.ssh too.
+  // Wu's ssh support will pull configuration from your ~/.ssh too.
   // Examples:
   // [
   //   {
@@ -2337,7 +2337,7 @@
   // Each profile has an optional `base` ("user" or "default") and a `settings`
   // object. When `base` is "user" (the default), the profile applies on top of
   // your user settings. When `base` is "default", user settings are ignored and
-  // the profile applies on top of Edna's defaults.
+  // the profile applies on top of Wu's defaults.
   //
   // Examples:
   // "profiles": {

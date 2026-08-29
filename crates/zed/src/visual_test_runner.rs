@@ -770,7 +770,7 @@ edition = "2021"
     // Create README.md
     let readme = r#"# Test Project
 
-This is a test project for visual testing of Edna.
+This is a test project for visual testing of Wu.
 
 ## Features
 

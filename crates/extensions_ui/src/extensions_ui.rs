@@ -1019,72 +1019,72 @@ impl ExtensionsPage {
         for feature in &self.upsells {
             let banner = match feature {
                 Feature::AgentClaude => self.render_feature_upsell_banner(
-                    "Claude Agent support is built-in to Edna!".into(),
+                    "Claude Agent support is built-in to Wu!".into(),
                     "https://zed.dev/docs/ai/external-agents#claude-agent".into(),
                 ),
                 Feature::AgentCodex => self.render_feature_upsell_banner(
-                    "Codex CLI support is built-in to Edna!".into(),
+                    "Codex CLI support is built-in to Wu!".into(),
                     "https://zed.dev/docs/ai/external-agents#codex-cli".into(),
                 ),
                 Feature::AgentGemini => self.render_feature_upsell_banner(
-                    "Gemini CLI support is built-in to Edna!".into(),
+                    "Gemini CLI support is built-in to Wu!".into(),
                     "https://zed.dev/docs/ai/external-agents#gemini-cli".into(),
                 ),
                 Feature::ExtensionBasedpyright => self.render_feature_upsell_banner(
-                    "Basedpyright (Python language server) support is built-in to Edna!".into(),
+                    "Basedpyright (Python language server) support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/python#basedpyright".into(),
                 ),
                 Feature::ExtensionRuff => self.render_feature_upsell_banner(
-                    "Ruff (linter for Python) support is built-in to Edna!".into(),
+                    "Ruff (linter for Python) support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/python#code-formatting--linting".into(),
                 ),
                 Feature::ExtensionTailwind => self.render_feature_upsell_banner(
-                    "Tailwind CSS support is built-in to Edna!".into(),
+                    "Tailwind CSS support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/tailwindcss".into(),
                 ),
                 Feature::ExtensionTy => self.render_feature_upsell_banner(
-                    "Ty (Python language server) support is built-in to Edna!".into(),
+                    "Ty (Python language server) support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/python".into(),
                 ),
                 Feature::Git => self.render_feature_upsell_banner(
-                    "Edna comes with basic Git support—more features are coming in the future."
+                    "Wu comes with basic Git support—more features are coming in the future."
                         .into(),
                     "https://zed.dev/docs/git".into(),
                 ),
                 Feature::LanguageBash => self.render_feature_upsell_banner(
-                    "Shell support is built-in to Edna!".into(),
+                    "Shell support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/bash".into(),
                 ),
                 Feature::LanguageC => self.render_feature_upsell_banner(
-                    "C support is built-in to Edna!".into(),
+                    "C support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/c".into(),
                 ),
                 Feature::LanguageCpp => self.render_feature_upsell_banner(
-                    "C++ support is built-in to Edna!".into(),
+                    "C++ support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/cpp".into(),
                 ),
                 Feature::LanguageGo => self.render_feature_upsell_banner(
-                    "Go support is built-in to Edna!".into(),
+                    "Go support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/go".into(),
                 ),
                 Feature::LanguagePython => self.render_feature_upsell_banner(
-                    "Python support is built-in to Edna!".into(),
+                    "Python support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/python".into(),
                 ),
                 Feature::LanguageReact => self.render_feature_upsell_banner(
-                    "React support is built-in to Edna!".into(),
+                    "React support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/typescript".into(),
                 ),
                 Feature::LanguageRust => self.render_feature_upsell_banner(
-                    "Rust support is built-in to Edna!".into(),
+                    "Rust support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/rust".into(),
                 ),
                 Feature::LanguageTypescript => self.render_feature_upsell_banner(
-                    "Typescript support is built-in to Edna!".into(),
+                    "Typescript support is built-in to Wu!".into(),
                     "https://zed.dev/docs/languages/typescript".into(),
                 ),
                 Feature::OpenIn => self.render_feature_upsell_banner(
-                    "Edna supports linking to a source line on GitHub and others.".into(),
+                    "Wu supports linking to a source line on GitHub and others.".into(),
                     "https://zed.dev/docs/git#git-integrations".into(),
                 ),
             };

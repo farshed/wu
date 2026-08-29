@@ -1,10 +1,10 @@
 name: zed
-title: Edna
+title: Wu
 base: core24
 version: "$RELEASE_VERSION"
 summary: The editor for what's next
 description: |
-  Edna is a modern open-source code editor, built from the ground up in Rust with
+  Wu is a modern open-source code editor, built from the ground up in Rust with
   a GPU-accelerated renderer. We help you build software faster than ever before.
 grade: stable
 confinement: classic
@@ -26,10 +26,10 @@ parts:
 
     stage-packages:
       - libasound2t64
-      # snapcraft has a lint that this is unused, but without it Edna exits with
+      # snapcraft has a lint that this is unused, but without it Wu exits with
       # "Missing Vulkan entry points: LibraryLoadFailure" in wgpu.
       - libvulkan1
-      # snapcraft has a lint that this is unused, but without it Edna exits with
+      # snapcraft has a lint that this is unused, but without it Wu exits with
       # "NoWaylandLib" when run with Wayland.
       - libwayland-client0
       - libxcb1
@@ -53,7 +53,7 @@ parts:
 
 apps:
   zed:
-    command: usr/bin/edna
-    common-id: me.farshed.Edna
+    command: usr/bin/wu
+    common-id: me.farshed.Wu
     environment:
       ZED_BUNDLE_TYPE: snap

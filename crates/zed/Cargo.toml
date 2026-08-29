@@ -2,11 +2,11 @@
 description = "The fast, collaborative code editor."
 edition.workspace = true
 name = "zed"
-version = "1.19.0"
+version = "1.0.0"
 publish.workspace = true
 license = "GPL-3.0-or-later"
 authors = ["Zed Team <hi@zed.dev>"]
-default-run = "edna"
+default-run = "wu"
 
 [lints]
 workspace = true
@@ -49,7 +49,7 @@ visual-tests = [
 ]
 
 [[bin]]
-name = "edna"
+name = "wu"
 path = "src/main.rs"
 
 [[bin]]
@@ -229,16 +229,16 @@ search = { workspace = true, features = ["test-support"] }
 
 [package.metadata.bundle-dev]
 icon = ["resources/app-icon-dev@2x.png", "resources/app-icon-dev.png"]
-identifier = "me.farshed.Edna-Dev"
-name = "Edna Dev"
+identifier = "me.farshed.Wu-Dev"
+name = "Wu Dev"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
 osx_url_schemes = ["zed"]
 
 [package.metadata.bundle-stable]
 icon = ["resources/app-icon@2x.png", "resources/app-icon.png"]
-identifier = "me.farshed.Edna"
-name = "Edna"
+identifier = "me.farshed.Wu"
+name = "Wu"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
 osx_url_schemes = ["zed"]

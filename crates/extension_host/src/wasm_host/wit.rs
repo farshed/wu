@@ -83,7 +83,7 @@ pub fn authorize_access_to_unreleased_wasm_api_version(
 
     anyhow::ensure!(
         allow_unreleased_version,
-        "unreleased versions of the extension API can only be used on development builds of Edna"
+        "unreleased versions of the extension API can only be used on development builds of Wu"
     );
 
     Ok(())

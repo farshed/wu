@@ -25,7 +25,7 @@ const CANT_INSTALL_DOCS_URL: &str = "https://zed.dev/docs/macos#cant-install-cli
 /// commonly because the user is not an admin.
 async fn install_script(cx: &AsyncApp) -> Result<Option<PathBuf>> {
     let cli_path = cx.update(|cx| cx.path_for_auxiliary_executable("cli"))?;
-    let link_path = Path::new("/usr/local/bin/edna");
+    let link_path = Path::new("/usr/local/bin/wu");
     let bin_dir_path = link_path.parent().unwrap();
 
     // Don't re-create symlink if it points to the same CLI binary.
@@ -80,7 +80,7 @@ async fn install_script(cx: &AsyncApp) -> Result<Option<PathBuf>> {
 }
 
 pub fn install_cli_binary(window: &mut Window, cx: &mut Context<Workspace>) {
-    const LINUX_PROMPT_DETAIL: &str = "If you installed Edna from our official release add ~/.local/bin to your PATH.\n\nIf you installed Edna from a different source like your package manager, then you may need to create an alias/symlink manually.\n\nDepending on your package manager, the CLI might be named zeditor, zedit, zed-editor or something else.";
+    const LINUX_PROMPT_DETAIL: &str = "If you installed Wu from our official release add ~/.local/bin to your PATH.\n\nIf you installed Wu from a different source like your package manager, then you may need to create an alias/symlink manually.\n\nDepending on your package manager, the CLI might be named zeditor, zedit, zed-editor or something else.";
 
     cx.spawn_in(window, async move |workspace, cx| {
         if cfg!(any(target_os = "linux", target_os = "freebsd")) {
@@ -111,7 +111,7 @@ pub fn install_cli_binary(window: &mut Window, cx: &mut Context<Workspace>) {
                                     "You can add `zed` to your PATH manually.",
                                     cx,
                                 )
-                                .with_title("Couldn't install the Edna CLI")
+                                .with_title("Couldn't install the Wu CLI")
                                 .more_info_message("Show me how")
                                 .more_info_url(CANT_INSTALL_DOCS_URL)
                             })
@@ -140,5 +140,5 @@ pub fn install_cli_binary(window: &mut Window, cx: &mut Context<Workspace>) {
         register_zed_scheme(cx).await.log_err();
         Ok(())
     })
-    .detach_and_prompt_err("Cannot install the Edna CLI", window, cx, |_, _, _| None);
+    .detach_and_prompt_err("Cannot install the Wu CLI", window, cx, |_, _, _| None);
 }

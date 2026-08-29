@@ -57,10 +57,10 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
 
     vec![
         Menu {
-            name: "Edna".into(),
+            name: "Wu".into(),
             disabled: false,
             items: vec![
-                MenuItem::action("About Edna", zed_actions::About),
+                MenuItem::action("About Wu", zed_actions::About),
                 MenuItem::action("Check for Updates", auto_update::Check),
                 MenuItem::separator(),
                 MenuItem::submenu(Menu::new("Settings").items([
@@ -92,13 +92,13 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
                 MenuItem::action("Install CLI", install_cli::InstallCliBinary),
                 MenuItem::separator(),
                 #[cfg(target_os = "macos")]
-                MenuItem::action("Hide Edna", super::Hide),
+                MenuItem::action("Hide Wu", super::Hide),
                 #[cfg(target_os = "macos")]
                 MenuItem::action("Hide Others", super::HideOthers),
                 #[cfg(target_os = "macos")]
                 MenuItem::action("Show All", super::ShowAll),
                 MenuItem::separator(),
-                MenuItem::action("Quit Edna", Quit),
+                MenuItem::action("Quit Wu", Quit),
             ],
         },
         Menu {

@@ -197,7 +197,7 @@ fn main() {
 
     let args = Args::parse();
 
-    // `edna --askpass` Makes zed operate in nc/netcat mode for use with askpass
+    // `wu --askpass` Makes zed operate in nc/netcat mode for use with askpass
     #[cfg(not(target_os = "windows"))]
     if let Some(socket) = &args.askpass {
         askpass::main(socket);
@@ -237,7 +237,7 @@ fn main() {
         }
     }
 
-    // `edna --printenv` Outputs environment variables as JSON to stdout
+    // `wu --printenv` Outputs environment variables as JSON to stdout
     if args.printenv {
         util::shell_env::print_env();
         return;
@@ -1173,7 +1173,7 @@ pub(crate) async fn restore_or_create_workspace(
         // If the user cancelled a failed remote connection at startup,
         // open_remote_project returns Ok but removes the window, so error_count
         // stays 0 and the toast fallback above does not trigger. Without this
-        // check, Edna would exit silently.
+        // check, Wu would exit silently.
         if cx.update(|cx| cx.windows().is_empty()) {
             cx.update(|cx| {
                 workspace::open_new(
@@ -1328,7 +1328,7 @@ fn stdout_is_a_pty() -> bool {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "edna", disable_version_flag = true, max_term_width = 100)]
+#[command(name = "wu", disable_version_flag = true, max_term_width = 100)]
 struct Args {
     /// A sequence of space-separated paths or urls that you want to open.
     ///
@@ -1353,7 +1353,7 @@ struct Args {
     user_data_dir: Option<String>,
 
     /// The username and WSL distribution to use when opening paths. If not specified,
-    /// Edna will attempt to open the paths directly.
+    /// Wu will attempt to open the paths directly.
     ///
     /// The username is optional, and if not specified, the default user for the distribution
     /// will be used.
@@ -1372,7 +1372,7 @@ struct Args {
     /// Prints system specs.
     ///
     /// Useful for submitting issues on GitHub when encountering a bug that
-    /// prevents Edna from starting, so you can't run `zed: copy system specs to
+    /// prevents Wu from starting, so you can't run `zed: copy system specs to
     /// clipboard`
     #[arg(long)]
     system_specs: bool,
@@ -1390,7 +1390,7 @@ struct Args {
     dock_action: Option<usize>,
 
     /// Used for SSH/Git password authentication, to remove the need for netcat as a dependency,
-    /// by having Edna act like netcat communicating over a Unix socket.
+    /// by having Wu act like netcat communicating over a Unix socket.
     #[arg(long)]
     #[cfg(not(target_os = "windows"))]
     #[arg(hide = true)]
@@ -1408,7 +1408,7 @@ struct Args {
     #[arg(long, hide = true)]
     record_etw_trace: bool,
 
-    /// The PID of the Edna process to trace for heap analysis.
+    /// The PID of the Wu process to trace for heap analysis.
     #[cfg(target_os = "windows")]
     #[arg(long, hide = true, allow_hyphen_values = true)]
     etw_zed_pid: Option<i64>,
@@ -1418,7 +1418,7 @@ struct Args {
     #[arg(long, hide = true)]
     etw_output: Option<PathBuf>,
 
-    /// Unix socket path for IPC with the parent Edna process.
+    /// Unix socket path for IPC with the parent Wu process.
     #[cfg(target_os = "windows")]
     #[arg(long, hide = true)]
     etw_socket: Option<String>,

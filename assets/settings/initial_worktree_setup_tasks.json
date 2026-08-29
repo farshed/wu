@@ -1,7 +1,7 @@
 // Worktree setup tasks, stored in this project's tasks.json.
 // See https://zed.dev/docs/tasks#hooks for the full Tasks Hooks documentation.
 //
-// Tasks with the `create_worktree` hook run automatically right after Edna
+// Tasks with the `create_worktree` hook run automatically right after Wu
 // creates a new git worktree. Use them to get a fresh worktree ready to work
 // in — for example, installing dependencies or copying files that git doesn't
 // track (like `.env`) from the original repository.

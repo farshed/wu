@@ -306,7 +306,7 @@ impl ExtensionCard {
                             move |_, cx| {
                                 Tooltip::simple(
                                     format!(
-                                        "v{version} is not compatible with this version of Edna."
+                                        "v{version} is not compatible with this version of Wu."
                                     ),
                                     cx,
                                 )

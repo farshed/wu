@@ -58,16 +58,16 @@ linux() {
     db_suffix="stable"
     case "$channel" in
       stable)
-        appid="me.farshed.Edna"
+        appid="me.farshed.Wu"
         db_suffix="stable"
         ;;
       dev)
-        appid="me.farshed.Edna-Dev"
+        appid="me.farshed.Wu-Dev"
         db_suffix="dev"
         ;;
       *)
         echo "Unknown release channel: ${channel}. Using stable app ID."
-        appid="me.farshed.Edna"
+        appid="me.farshed.Wu"
         db_suffix="stable"
         ;;
     esac
@@ -76,7 +76,7 @@ linux() {
     rm -rf "$HOME/.local/zed$suffix.app"
 
     # Remove the binary symlink
-    rm -f "$HOME/.local/bin/edna"
+    rm -f "$HOME/.local/bin/wu"
 
     # Remove the .desktop file
     rm -f "$HOME/.local/share/applications/${appid}.desktop"
@@ -97,14 +97,14 @@ linux() {
 }
 
 macos() {
-    app="Edna.app"
+    app="Wu.app"
     db_suffix="stable"
-    app_id="me.farshed.Edna"
+    app_id="me.farshed.Wu"
     case "$channel" in
       dev)
-        app="Edna Dev.app"
+        app="Wu Dev.app"
         db_suffix="dev"
-        app_id="me.farshed.Edna-Dev"
+        app_id="me.farshed.Wu-Dev"
         ;;
     esac
 
@@ -114,7 +114,7 @@ macos() {
     fi
 
     # Remove the binary symlink
-    rm -f "$HOME/.local/bin/edna"
+    rm -f "$HOME/.local/bin/wu"
 
     # Remove the database directory for this channel
     rm -rf "$HOME/Library/Application Support/Zed/db/0-$db_suffix"

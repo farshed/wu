@@ -26,8 +26,6 @@ enum CliCommand {
     SetupWebrtc(tasks::setup_webrtc::SetupWebrtcArgs),
     /// Builds GPUI web examples and serves them.
     WebExamples(tasks::web_examples::WebExamplesArgs),
-    Workflows(tasks::workflows::GenerateWorkflowArgs),
-    CheckWorkflows(tasks::workflow_checks::WorkflowValidationArgs),
 }
 
 fn main() -> Result<()> {
@@ -43,7 +41,5 @@ fn main() -> Result<()> {
         CliCommand::WslSandboxTests(args) => tasks::wsl_sandbox_tests::run_wsl_sandbox_tests(args),
         CliCommand::SetupWebrtc(args) => tasks::setup_webrtc::run_setup_webrtc(args),
         CliCommand::WebExamples(args) => tasks::web_examples::run_web_examples(args),
-        CliCommand::Workflows(args) => tasks::workflows::run_workflows(args),
-        CliCommand::CheckWorkflows(args) => tasks::workflow_checks::validate(args),
     }
 }

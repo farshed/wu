@@ -482,7 +482,7 @@ impl LineWrapper {
         // the next line. `/` and `?` stay break opportunities so long paths
         // and URLs (`a/b`, `foo?b=2`) can wrap.
         matches!(c, '!' | ')' | ']' | '}' | '"' | '”' | '»' | '…') ||
-        // `⋯` character is special used in Edna, to keep this at the end of the line.
+        // `⋯` character is special used in Wu, to keep this at the end of the line.
         matches!(c, '⋯') ||
 
         // Non-breaking glue characters

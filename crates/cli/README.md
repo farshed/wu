@@ -11,5 +11,5 @@ cargo build -p zed
 And then building and running the `cli` crate with the following parameters:
 
 ```
- cargo run -p cli -- --zed ./target/debug/edna.exe
+ cargo run -p cli -- --zed ./target/debug/wu.exe
 ```

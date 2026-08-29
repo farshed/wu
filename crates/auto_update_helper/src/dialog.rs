@@ -40,7 +40,7 @@ struct DialogInfo {
 
 pub(crate) fn create_dialog_window(receiver: Receiver<Result<()>>) -> Result<HWND> {
     unsafe {
-        let class_name = windows::core::w!("Edna-Auto-Updater-Dialog-Class");
+        let class_name = windows::core::w!("Wu-Auto-Updater-Dialog-Class");
         let module = GetModuleHandleW(None).context("unable to get module handle")?;
         let handle = LoadImageW(
             Some(module.into()),
@@ -72,7 +72,7 @@ pub(crate) fn create_dialog_window(receiver: Receiver<Result<()>>) -> Result<HWN
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST,
             class_name,
-            windows::core::w!("Edna"),
+            windows::core::w!("Wu"),
             WS_VISIBLE | WS_POPUP | WS_CAPTION,
             rect.right / 2 - width / 2,
             rect.bottom / 2 - height / 2,
@@ -171,7 +171,7 @@ unsafe extern "system" fn wnd_proc(
                 &HSTRING::from(font_name),
             );
             let temp = SelectObject(hdc, font.into());
-            let string = HSTRING::from("Updating Edna...");
+            let string = HSTRING::from("Updating Wu...");
             return_if_failed!(TextOutW(hdc, 20, 15, &string).ok());
             return_if_failed!(DeleteObject(temp).ok());
 
@@ -189,7 +189,7 @@ unsafe extern "system" fn wnd_proc(
                 if let Ok(result) = data.borrow_mut().rx.recv()
                     && let Err(e) = result
                 {
-                    log::error!("Failed to update Edna: {:?}", e);
+                    log::error!("Failed to update Wu: {:?}", e);
                     show_error(format!("Error: {:?}", e));
                 }
             });

@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  script/verify-macos-document-icon /path/to/Edna.app
+  script/verify-macos-document-icon /path/to/Wu.app
 
 Verifies that the given macOS app bundle's Info.plist references a document icon
 named "Document" and that the corresponding icon file exists in the bundle.

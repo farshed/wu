@@ -54,7 +54,7 @@ main() {
 
     "$platform" "$@"
 
-    if [ "$(command -v edna)" = "$HOME/.local/bin/edna" ]; then
+    if [ "$(command -v wu)" = "$HOME/.local/bin/wu" ]; then
         echo "Zed has been installed. Run with 'zed'"
     else
         echo "To run Zed from your terminal, you must add ~/.local/bin to your PATH"
@@ -74,7 +74,7 @@ main() {
                 ;;
         esac
 
-        echo "To run Zed now, '~/.local/bin/edna'"
+        echo "To run Zed now, '~/.local/bin/wu'"
     fi
 }
 
@@ -94,14 +94,14 @@ linux() {
     appid=""
     case "$channel" in
       stable)
-        appid="me.farshed.Edna"
+        appid="me.farshed.Wu"
         ;;
       dev)
-        appid="me.farshed.Edna-Dev"
+        appid="me.farshed.Wu-Dev"
         ;;
       *)
         echo "Unknown release channel: ${channel}. Using stable app ID."
-        appid="me.farshed.Edna"
+        appid="me.farshed.Wu"
         ;;
     esac
 
@@ -110,7 +110,7 @@ linux() {
     mkdir -p "$HOME/.local/zed$suffix.app"
     tar -xzf "$temp/zed-linux-$arch.tar.gz" -C "$HOME/.local/"
 
-    zed_editor="$HOME/.local/zed$suffix.app/libexec/edna-editor"
+    zed_editor="$HOME/.local/zed$suffix.app/libexec/wu-editor"
     if [ -f "$zed_editor" ] && command -v ldd >/dev/null 2>&1; then
         missing="$(ldd "$zed_editor" 2>/dev/null | sed -n 's/^[[:space:]]*\(.*\) => not found$/\1/p')"
         if [ -n "$missing" ]; then
@@ -124,11 +124,11 @@ linux() {
     mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications"
 
     # Link the binary
-    if [ -f "$HOME/.local/zed$suffix.app/bin/edna" ]; then
-        ln -sf "$HOME/.local/zed$suffix.app/bin/edna" "$HOME/.local/bin/edna"
+    if [ -f "$HOME/.local/zed$suffix.app/bin/wu" ]; then
+        ln -sf "$HOME/.local/zed$suffix.app/bin/wu" "$HOME/.local/bin/wu"
     else
         # support for versions before 0.139.x.
-        ln -sf "$HOME/.local/zed$suffix.app/bin/cli" "$HOME/.local/bin/edna"
+        ln -sf "$HOME/.local/zed$suffix.app/bin/cli" "$HOME/.local/bin/wu"
     fi
 
     # Copy .desktop file
@@ -141,7 +141,7 @@ linux() {
         cp "$src_dir/zed$suffix.desktop" "${desktop_file_path}"
     fi
     sed -i "s|Icon=zed|Icon=$HOME/.local/zed$suffix.app/share/icons/hicolor/512x512/apps/zed.png|g" "${desktop_file_path}"
-    sed -i "s|Exec=edna|Exec=$HOME/.local/zed$suffix.app/bin/edna|g" "${desktop_file_path}"
+    sed -i "s|Exec=wu|Exec=$HOME/.local/zed$suffix.app/bin/wu|g" "${desktop_file_path}"
 }
 
 macos() {
@@ -159,7 +159,7 @@ macos() {
 
     mkdir -p "$HOME/.local/bin"
     # Link the binary
-    ln -sf "/Applications/$app/Contents/MacOS/cli" "$HOME/.local/bin/edna"
+    ln -sf "/Applications/$app/Contents/MacOS/cli" "$HOME/.local/bin/wu"
 }
 
 main "$@"

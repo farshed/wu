@@ -5,7 +5,7 @@ set -euxo pipefail
 if [[ $# -gt 0 ]]; then
   echo "
   Usage: ${0##*/}
-  Builds and installs edna onto your system into ~/.local, making it available as ~/.local/bin/edna.
+  Builds and installs wu onto your system into ~/.local, making it available as ~/.local/bin/wu.
 
   Before running this you should ensure you have all the build dependencies installed with `./script/linux`.
   "

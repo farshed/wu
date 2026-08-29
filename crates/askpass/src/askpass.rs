@@ -596,7 +596,7 @@ if {gpg_program} "$@" < "$payload" > "$signature" 2> "$status"; then
     exit 0
 fi
 
-# Stage 3: gpg cannot obtain the passphrase on its own. Ask Edna for it, then
+# Stage 3: gpg cannot obtain the passphrase on its own. Ask Wu for it, then
 # hand it to gpg on fd 3 using loopback mode so no pinentry/terminal is
 # required.
 passphrase=$(printf '%s\0' {prompt} | {askpass_program} --askpass={askpass_socket} 2>/dev/null)

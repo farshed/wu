@@ -11,7 +11,7 @@
     </developer>
     <description>
         <p>
-            Productive coding starts with a tool that stays out of your way. Edna blends the power of an IDE with the speed of a lightweight editor for productivity you can feel under your fingertips.
+            Productive coding starts with a tool that stays out of your way. Wu blends the power of an IDE with the speed of a lightweight editor for productivity you can feel under your fingertips.
         </p>
         <p>Features:</p>
         <ul>
@@ -53,11 +53,11 @@
 
     <screenshots>
         <screenshot type="default">
-            <caption>Edna with a large project open, showing language server and gitblame support</caption>
+            <caption>Wu with a large project open, showing language server and gitblame support</caption>
             <image>https://zed.dev/img/flatpak/flatpak-1.png</image>
         </screenshot>
         <screenshot>
-            <caption>Edna with a file open and a channel message thread in the right sidebar</caption>
+            <caption>Wu with a file open and a channel message thread in the right sidebar</caption>
             <image>https://zed.dev/img/flatpak/flatpak-2.png</image>
         </screenshot>
         <screenshot>
@@ -65,7 +65,7 @@
             <image>https://zed.dev/img/flatpak/flatpak-3.png</image>
         </screenshot>
         <screenshot>
-            <caption>Edna's extension list</caption>
+            <caption>Wu's extension list</caption>
             <image>https://zed.dev/img/flatpak/flatpak-4.png</image>
         </screenshot>
         <screenshot>
