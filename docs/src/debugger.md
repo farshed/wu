@@ -186,7 +186,7 @@ The settings for the debugger are grouped under the `debugger` key in `settings.
 ### Dock
 
 - Description: The position of the debug panel in the UI.
-- Default: `bottom`
+- Default: `left`
 - Setting: debugger.dock
 
 **Options**
@@ -197,7 +197,7 @@ The settings for the debugger are grouped under the `debugger` key in `settings.
 
 ```json [settings]
 "debugger": {
-  "dock": "bottom"
+  "dock": "left"
 },
 ```
 

@@ -5561,7 +5561,7 @@ Visit AI Quick Start under the AI section to learn more about AI setup.
   "debugger": {
     "stepping_granularity": "line",
     "save_breakpoints": true,
-    "dock": "bottom",
+    "dock": "left",
     "button": true
   }
 }

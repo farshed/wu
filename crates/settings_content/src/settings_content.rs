@@ -504,7 +504,7 @@ pub struct DebuggerSettingsContent {
     pub format_dap_log_messages: Option<bool>,
     /// The dock position of the debug panel
     ///
-    /// Default: Bottom
+    /// Default: Left
     pub dock: Option<DockPosition>,
 }
 
