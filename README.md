@@ -5,11 +5,13 @@
 
 Edna is a fast, simple code editor. It is a specialized distribution of [Zed](https://github.com/zed-industries/zed), trimmed down to the essentials: editing, terminal, git, debugging, and extensions.
 
+## Docs
+
+[docs/index.html](./docs/index.html) explains how Edna differs from Zed. For everything else, use the [Zed docs](https://zed.dev/docs).
+
 ## Building
 
-- macOS: see [docs/src/development/macos.md](./docs/src/development/macos.md)
-- Linux: see [docs/src/development/linux.md](./docs/src/development/linux.md)
-- Windows: see [docs/src/development/windows.md](./docs/src/development/windows.md)
+Same as Zed: see the [Zed development docs](https://zed.dev/docs/development) for macOS, Linux, and Windows. Run `cargo run` to start a dev build.
 
 Edna uses Zed's extension registry, so existing Zed extensions work as-is. Project settings live in `.zed/` like they do in Zed.
 
