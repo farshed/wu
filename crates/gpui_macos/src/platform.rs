@@ -1033,6 +1033,18 @@ impl Platform for MacPlatform {
             let menu = self.create_menu_bar(&menus, NSWindow::delegate(app), actions, keymap);
             drop(state);
             app.setMainMenu_(menu);
+            // When running outside an app bundle, AppKit replaces the application
+            // menu's title with the process name. Setting it again after the
+            // menu is installed makes the configured name stick.
+            if let Some(application_menu) = menus.first() {
+                let application_menu_item: id = msg_send![menu, itemAtIndex: 0];
+                if application_menu_item != nil {
+                    let submenu: id = msg_send![application_menu_item, submenu];
+                    if submenu != nil {
+                        let _: () = msg_send![submenu, setTitle: ns_string(&application_menu.name)];
+                    }
+                }
+            }
         }
         self.0.lock().menus = Some(menus.into_iter().map(|menu| menu.owned()).collect());
     }

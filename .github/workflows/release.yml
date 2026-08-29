@@ -45,4 +45,4 @@ jobs:
         with:
           files: |
             target/${{ matrix.target }}/release/Wu-${{ matrix.arch }}.dmg
-            target/zed-remote-server-macos-${{ matrix.arch }}.gz
+            target/wu-remote-server-macos-${{ matrix.arch }}.gz

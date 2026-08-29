@@ -352,7 +352,7 @@ impl Component for DropdownMenu {
                     menu.entry("Contact…", None, |_, _| {})
                         .entry("Passwords…", None, |_, _| {})
                 })
-                .submenu_with_icon("Predict", IconName::ZedPredict, |menu, _, _| {
+                .submenu_with_icon("Predict", IconName::Sparkle, |menu, _, _| {
                     menu.entry("Everywhere", None, |_, _| {})
                         .entry("At Cursor", None, |_, _| {})
                         .entry("Over Here", None, |_, _| {})

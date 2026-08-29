@@ -196,7 +196,7 @@ struct GitHubReleaseAsset {
 fn github_asset_name(asset: &str, os: &str, arch: &str) -> Result<String> {
     match (asset, os) {
         ("zed", "macos") => Ok(format!("Wu-{arch}.dmg")),
-        ("zed-remote-server", _) => Ok(format!("zed-remote-server-{os}-{arch}.gz")),
+        ("wu-remote-server", _) => Ok(format!("wu-remote-server-{os}-{arch}.gz")),
         _ => anyhow::bail!("no release asset for {asset} on {os}"),
     }
 }
@@ -611,7 +611,7 @@ impl AutoUpdater {
             &this,
             release_channel,
             version,
-            "zed-remote-server",
+            "wu-remote-server",
             os,
             arch,
             cx,
@@ -628,7 +628,7 @@ impl AutoUpdater {
 
         if smol::fs::metadata(&version_path).await.is_err() {
             log::info!(
-                "downloading zed-remote-server {os} {arch} version {}",
+                "downloading wu-remote-server {os} {arch} version {}",
                 release.version
             );
             set_status("Downloading remote server", cx);
@@ -663,7 +663,7 @@ impl AutoUpdater {
         })?;
 
         let release =
-            Self::get_release_asset(&this, channel, version, "zed-remote-server", os, arch, cx)
+            Self::get_release_asset(&this, channel, version, "wu-remote-server", os, arch, cx)
                 .await?;
 
         Ok(Some(release.url))

@@ -453,9 +453,9 @@ impl<T: ButtonBuilder, const COLS: usize, const ROWS: usize> Component
                         ToggleButtonGroup::single_row(
                             "single_row_test_icon",
                             [
-                                ToggleButtonWithIcon::new("First", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Second", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Third", IconName::AiZed, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("First", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Second", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Third", IconName::Star, |_, _, _| {}),
                             ],
                         )
                         .selected_index(1)
@@ -484,14 +484,14 @@ impl<T: ButtonBuilder, const COLS: usize, const ROWS: usize> Component
                         ToggleButtonGroup::two_rows(
                             "multiple_row_test_icons",
                             [
-                                ToggleButtonWithIcon::new("First", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Second", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Third", IconName::AiZed, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("First", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Second", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Third", IconName::Star, |_, _, _| {}),
                             ],
                             [
-                                ToggleButtonWithIcon::new("Fourth", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Fifth", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Sixth", IconName::AiZed, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Fourth", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Fifth", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Sixth", IconName::Star, |_, _, _| {}),
                             ],
                         )
                         .selected_index(3)
@@ -521,9 +521,9 @@ impl<T: ButtonBuilder, const COLS: usize, const ROWS: usize> Component
                         ToggleButtonGroup::single_row(
                             "single_row_test_icon_outlined",
                             [
-                                ToggleButtonWithIcon::new("First", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Second", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Third", IconName::AiZed, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("First", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Second", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Third", IconName::Star, |_, _, _| {}),
                             ],
                         )
                         .selected_index(1)
@@ -554,14 +554,14 @@ impl<T: ButtonBuilder, const COLS: usize, const ROWS: usize> Component
                         ToggleButtonGroup::two_rows(
                             "multiple_row_test",
                             [
-                                ToggleButtonWithIcon::new("First", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Second", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Third", IconName::AiZed, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("First", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Second", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Third", IconName::Star, |_, _, _| {}),
                             ],
                             [
-                                ToggleButtonWithIcon::new("Fourth", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Fifth", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Sixth", IconName::AiZed, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Fourth", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Fifth", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Sixth", IconName::Star, |_, _, _| {}),
                             ],
                         )
                         .selected_index(3)
@@ -592,9 +592,9 @@ impl<T: ButtonBuilder, const COLS: usize, const ROWS: usize> Component
                         ToggleButtonGroup::single_row(
                             "single_row_test_icon_outlined",
                             [
-                                ToggleButtonWithIcon::new("First", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Second", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Third", IconName::AiZed, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("First", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Second", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Third", IconName::Star, |_, _, _| {}),
                             ],
                         )
                         .selected_index(1)
@@ -626,14 +626,14 @@ impl<T: ButtonBuilder, const COLS: usize, const ROWS: usize> Component
                         ToggleButtonGroup::two_rows(
                             "multiple_row_test",
                             [
-                                ToggleButtonWithIcon::new("First", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Second", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Third", IconName::AiZed, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("First", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Second", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Third", IconName::Star, |_, _, _| {}),
                             ],
                             [
-                                ToggleButtonWithIcon::new("Fourth", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Fifth", IconName::AiZed, |_, _, _| {}),
-                                ToggleButtonWithIcon::new("Sixth", IconName::AiZed, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Fourth", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Fifth", IconName::Star, |_, _, _| {}),
+                                ToggleButtonWithIcon::new("Sixth", IconName::Star, |_, _, _| {}),
                             ],
                         )
                         .selected_index(3)
