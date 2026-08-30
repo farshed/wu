@@ -86,8 +86,7 @@ function PrepareForBundle {
 }
 
 function GenerateLicenses {
-    # generate-licenses is a bash script; Git for Windows ships bash.
-    bash "$workspace/script/generate-licenses"
+    . $PSScriptRoot/generate-licenses.ps1
 }
 
 function BuildWuAndItsFriends {
