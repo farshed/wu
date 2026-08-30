@@ -247,13 +247,15 @@ async fn deserialize_pane_group(
 
             let pane = panel
                 .update_in(cx, |terminal_panel, window, cx| {
-                    new_terminal_pane(
+                    let pane = new_terminal_pane(
                         workspace.clone(),
                         project.clone(),
                         terminal_panel.active_pane.read(cx).is_zoomed(),
                         window,
                         cx,
-                    )
+                    );
+                    terminal_panel.apply_tab_bar_buttons(&pane, cx);
+                    pane
                 })
                 .log_err()?;
             let active_item = serialized_pane.active_item;

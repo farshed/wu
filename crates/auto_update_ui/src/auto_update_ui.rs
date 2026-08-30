@@ -1,25 +1,19 @@
 use std::sync::Arc;
 
 use auto_update::{AutoUpdater, release_notes_url};
-use editor::{Editor, MultiBuffer};
 use gpui::{
-    App, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, TaskExt, Window, actions,
+    App, DismissEvent, EventEmitter, FocusHandle, Focusable, TaskExt, Window, actions,
     prelude::*,
 };
-use markdown_preview::markdown_preview_view::{MarkdownPreviewMode, MarkdownPreviewView};
-use release_channel::{AppVersion, ReleaseChannel};
+use release_channel::ReleaseChannel;
 use semver::Version;
-use serde::Deserialize;
-use smol::io::AsyncReadExt;
 use ui::{AnnouncementToast, ListBulletItem, prelude::*};
-use util::{ResultExt as _, maybe};
 use workspace::{
     Workspace,
     notifications::{
         Notification, NotificationId, SuppressEvent, show_app_notification,
         simple_message_notification::MessageNotification,
     },
-    workspace_error::{ErrorAction, ErrorSeverity, WorkspaceError},
 };
 use wu_actions::ShowUpdateNotification;
 
@@ -47,134 +41,14 @@ pub fn init(cx: &mut App) {
     .detach();
 }
 
-#[derive(Deserialize)]
-struct ReleaseNotesBody {
-    title: String,
-    release_notes: String,
-}
-
-fn notify_release_notes_failed_to_show(
-    workspace: &mut Workspace,
+fn view_release_notes_locally(
+    _workspace: &mut Workspace,
     _window: &mut Window,
     cx: &mut Context<Workspace>,
 ) {
-    let url = release_notes_url(cx);
-
-    struct ReleaseNotesError {
-        url: Option<String>,
+    if let Some(url) = release_notes_url(cx) {
+        cx.open_url(&url);
     }
-
-    impl WorkspaceError for ReleaseNotesError {
-        fn primary_message(&self) -> SharedString {
-            "Couldn't load release notes".into()
-        }
-        fn severity(&self) -> ErrorSeverity {
-            ErrorSeverity::Error
-        }
-        fn primary_action(&self) -> ErrorAction {
-            self.url
-                .clone()
-                .map(|url| ErrorAction::link("View in Browser", url))
-                .unwrap_or_else(ErrorAction::dismiss)
-        }
-    }
-
-    workspace.show_error(ReleaseNotesError { url }, cx);
-}
-
-fn view_release_notes_locally(
-    workspace: &mut Workspace,
-    window: &mut Window,
-    cx: &mut Context<Workspace>,
-) {
-    let release_channel = ReleaseChannel::global(cx);
-
-    if matches!(release_channel, ReleaseChannel::Dev) {
-        if let Some(url) = release_notes_url(cx) {
-            cx.open_url(&url);
-        }
-        return;
-    }
-
-    let version = AppVersion::global(cx).to_string();
-
-    let client = client::Client::global(cx).http_client();
-    let url = client.build_url(&format!(
-        "/api/release_notes/v2/{}/{}",
-        release_channel.dev_name(),
-        version
-    ));
-
-    let markdown = workspace
-        .app_state()
-        .languages
-        .language_for_name("Markdown");
-
-    cx.spawn_in(window, async move |workspace, cx| {
-        let markdown = markdown.await.log_err();
-        let response = client.get(&url, Default::default(), true).await;
-        let Some(mut response) = response.log_err() else {
-            workspace
-                .update_in(cx, notify_release_notes_failed_to_show)
-                .log_err();
-            return;
-        };
-
-        let mut body = Vec::new();
-        response.body_mut().read_to_end(&mut body).await.ok();
-
-        let body: serde_json::Result<ReleaseNotesBody> = serde_json::from_slice(body.as_slice());
-
-        let res: Option<()> = maybe!(async {
-            let body = body.ok()?;
-            let project = workspace
-                .read_with(cx, |workspace, _| workspace.project().clone())
-                .ok()?;
-            let (language_registry, buffer) = project.update(cx, |project, cx| {
-                (
-                    project.languages().clone(),
-                    project.create_buffer(markdown, false, cx),
-                )
-            });
-            let buffer = buffer.await.ok()?;
-            buffer.update(cx, |buffer, cx| {
-                buffer.edit([(0..0, body.release_notes)], None, cx)
-            });
-
-            let buffer = cx.new(|cx| MultiBuffer::singleton(buffer, cx).with_title(body.title));
-
-            let ws_handle = workspace.clone();
-            workspace
-                .update_in(cx, |workspace, window, cx| {
-                    let editor =
-                        cx.new(|cx| Editor::for_multibuffer(buffer, Some(project), window, cx));
-                    let markdown_preview: Entity<MarkdownPreviewView> = MarkdownPreviewView::new(
-                        MarkdownPreviewMode::Default,
-                        editor,
-                        ws_handle,
-                        language_registry,
-                        window,
-                        cx,
-                    );
-                    workspace.add_item_to_active_pane(
-                        Box::new(markdown_preview),
-                        None,
-                        true,
-                        window,
-                        cx,
-                    );
-                    cx.notify();
-                })
-                .ok()
-        })
-        .await;
-        if res.is_none() {
-            workspace
-                .update_in(cx, notify_release_notes_failed_to_show)
-                .log_err();
-        }
-    })
-    .detach();
 }
 
 #[derive(Clone)]
