@@ -26,7 +26,7 @@ Wu is built on the [Zed](https://github.com/zed-industries/zed) engine, so it in
 
 ## Installing on macOS
 
-Wu is not signed with an Apple Developer certificate, so macOS will block it the first time you open it. This is a one-time step.
+Wu is not signed with an Apple Developer certificate, so macOS will block it the first time you open it.
 
 1. Open the `.dmg` and drag Wu into your Applications folder.
 2. Open Terminal and run:
