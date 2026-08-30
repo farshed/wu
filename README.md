@@ -5,16 +5,18 @@
   <p><a href="https://github.com/farshed/wu/releases/latest"><strong>Download</strong></a></p>
 </div>
 
-Wu (from [wu wei](https://en.wikipedia.org/wiki/Wu_wei)) is a code editor based off [Zed](https://github.com/zed-industries/zed) that aims to be a native alternative to VSCode.
+---
+
+Wu is a code editor for people who want the speed of a native app and the familiarity of VS Code. The name comes from [wu wei](https://en.wikipedia.org/wiki/Wu_wei): effortless action. The editor should do its job and stay out of the way.
+
+Wu is built on the [Zed](https://github.com/zed-industries/zed) engine, so it inherits Zed's editor core, GPU rendering, and language tooling, then strips out everything that isn't editing.
 
 ## Features
 
-1. Fast and fully native.
-2. Base memory use is ~28% lower than Zed.
-3. No built-in AI features. You bring your own harness.
-2. Wu drops Zed's built-in collaboration, telemetry, dev_container, and Vim features.
-3. Lightweight. Idle memory use is ~27% lower than Zed.
-4. Better defaults to make it look and feel like VSCode.
+- **Native and fast.** Written in Rust, rendered on the GPU. No Electron or webviews. Opens instantly and stays responsive on large files.
+- **Lighter.** Base memory use is about 28% lower than Zed.
+- **No built-in AI features.** Bring whichever agent or harness you already use.
+- **Feels like VS Code out of the box.** Layout, panels, and defaults are tuned so you don't have to relearn your editor.
 
 ## Docs
 
@@ -22,7 +24,7 @@ See [docs](https://wu.farshed.me).
 
 ## Building
 
-See [Zed development docs](https://zed.dev/docs/development) for building from source.
+Wu builds the same way Zed does. See the [Zed development docs](https://zed.dev/docs/development).
 
 ## Licensing
 
