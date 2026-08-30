@@ -103,10 +103,6 @@ pub struct TitleBarSettingsContent {
     ///
     /// Default: true
     pub show_project_items: Option<bool>,
-    /// Whether to show the user menu button in the title bar.
-    ///
-    /// Default: true
-    pub show_user_menu: Option<bool>,
     /// Whether to show the menus in the title bar.
     ///
     /// Default: false

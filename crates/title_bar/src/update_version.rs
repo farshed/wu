@@ -62,10 +62,6 @@ impl UpdateVersion {
         cx.notify()
     }
 
-    pub fn show_update_in_menu_bar(&self) -> bool {
-        self.is_dismissed() && self.status.is_updated()
-    }
-
     fn is_dismissed(&self) -> bool {
         self.dismissed_status.as_ref() == Some(&self.status)
     }

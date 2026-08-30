@@ -3805,7 +3805,7 @@ impl SettingsWindow {
                 window.remove_window();
             }
             SettingsUiFile::Project((worktree_id, path)) => {
-                let settings_path = path.join(paths::local_settings_file_relative_path());
+                let settings_path = project_settings_file_path(*worktree_id, &path, cx);
                 let app_state = workspace::AppState::global(cx);
 
                 let Some((workspace_window, worktree, corresponding_workspace)) = app_state
@@ -3839,7 +3839,7 @@ impl SettingsWindow {
                 } else {
                     Some(worktree.update(cx, |tree, cx| {
                         tree.create_entry(
-                            settings_path.clone().into(),
+                            settings_path.clone(),
                             false,
                             Some(initial_project_settings_content().as_bytes().to_vec()),
                             cx,
@@ -4262,12 +4262,12 @@ fn update_settings_file(
 ) -> Result<()> {
     match file {
         SettingsUiFile::Project((worktree_id, rel_path)) => {
-            let rel_path = rel_path.join(paths::local_settings_file_relative_path());
+            let rel_path = project_settings_file_path(worktree_id, &rel_path, cx);
             let Some(settings_window) = window.root::<SettingsWindow>().flatten() else {
                 anyhow::bail!("No settings window found");
             };
 
-            update_project_setting_file(worktree_id, rel_path.into(), update, settings_window, cx)
+            update_project_setting_file(worktree_id, rel_path, update, settings_window, cx)
         }
         SettingsUiFile::User => {
             // todo(settings_ui) error?
@@ -4393,6 +4393,39 @@ impl ProjectSettingsUpdateQueue {
             .context("Failed to save settings file")?;
 
         Ok(())
+    }
+}
+
+/// Uses `.wu/settings.json`, falling back to an existing `.zed/settings.json`.
+fn project_settings_file_path(
+    worktree_id: WorktreeId,
+    project_dir: &RelPath,
+    cx: &App,
+) -> Arc<RelPath> {
+    let settings_path = project_dir.join(paths::local_settings_file_relative_path());
+    let legacy_settings_path =
+        project_dir.join(paths::legacy_local_settings_file_relative_path());
+    let worktree = workspace::AppState::global(cx)
+        .workspace_store
+        .read(cx)
+        .workspaces()
+        .filter_map(|workspace| workspace.upgrade())
+        .find_map(|workspace| {
+            workspace
+                .read(cx)
+                .project()
+                .read(cx)
+                .worktree_for_id(worktree_id, cx)
+        });
+    let use_legacy = worktree.is_some_and(|worktree| {
+        let worktree = worktree.read(cx);
+        worktree.entry_for_path(&settings_path).is_none()
+            && worktree.entry_for_path(&legacy_settings_path).is_some()
+    });
+    if use_legacy {
+        legacy_settings_path.into()
+    } else {
+        settings_path.into()
     }
 }
 

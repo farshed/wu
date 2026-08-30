@@ -7,8 +7,10 @@ use git::repository::DEFAULT_WORKTREE_DIRECTORY;
 use gpui::{AsyncApp, BorrowAppContext, Context, Entity, EventEmitter, Subscription, Task};
 use lsp::{DEFAULT_LSP_REQUEST_TIMEOUT_SECS, LanguageServerName};
 use paths::{
-    EDITORCONFIG_NAME, debug_task_file_name, local_debug_file_relative_path,
-    local_settings_file_relative_path, local_tasks_file_relative_path,
+    EDITORCONFIG_NAME, debug_task_file_name, legacy_local_debug_file_relative_path,
+    legacy_local_settings_file_relative_path, legacy_local_tasks_file_relative_path,
+    local_debug_file_relative_path, local_settings_file_relative_path,
+    local_tasks_file_relative_path,
     local_vscode_launch_file_relative_path, local_vscode_tasks_file_relative_path, task_file_name,
 };
 use rpc::{
@@ -978,63 +980,93 @@ impl SettingsObserver {
             return;
         };
 
+        struct LocalSettingsFile {
+            path: &'static RelPath,
+            legacy_path: Option<&'static RelPath>,
+            kind: LocalSettingsKind,
+            // How many trailing path components to strip to get the directory
+            // the settings are keyed by.
+            directory_depth: usize,
+        }
+        let local_settings_files = [
+            LocalSettingsFile {
+                path: local_settings_file_relative_path(),
+                legacy_path: Some(legacy_local_settings_file_relative_path()),
+                kind: LocalSettingsKind::Settings,
+                directory_depth: local_settings_file_relative_path().components().count(),
+            },
+            LocalSettingsFile {
+                path: local_tasks_file_relative_path(),
+                legacy_path: Some(legacy_local_tasks_file_relative_path()),
+                kind: LocalSettingsKind::Tasks,
+                directory_depth: 1,
+            },
+            LocalSettingsFile {
+                path: local_vscode_tasks_file_relative_path(),
+                legacy_path: None,
+                kind: LocalSettingsKind::Tasks,
+                directory_depth: 1,
+            },
+            LocalSettingsFile {
+                path: local_debug_file_relative_path(),
+                legacy_path: Some(legacy_local_debug_file_relative_path()),
+                kind: LocalSettingsKind::Debug,
+                directory_depth: 1,
+            },
+            LocalSettingsFile {
+                path: local_vscode_launch_file_relative_path(),
+                legacy_path: None,
+                kind: LocalSettingsKind::Debug,
+                directory_depth: 1,
+            },
+        ];
+        fn strip_components(path: &RelPath, count: usize) -> Option<Arc<RelPath>> {
+            path.ancestors().nth(count).map(Arc::from)
+        }
+
+        let snapshot = worktree.read(cx).snapshot();
         let mut settings_contents = Vec::new();
         for (path, _, change) in changes.iter() {
-            let (settings_dir, kind) = if path.ends_with(local_settings_file_relative_path()) {
-                let settings_dir = path
-                    .ancestors()
-                    .nth(local_settings_file_relative_path().components().count())
-                    .unwrap()
-                    .into();
-                (settings_dir, LocalSettingsKind::Settings)
-            } else if path.ends_with(local_tasks_file_relative_path()) {
-                let settings_dir = path
-                    .ancestors()
-                    .nth(
-                        local_tasks_file_relative_path()
-                            .components()
-                            .count()
-                            .saturating_sub(1),
-                    )
-                    .unwrap()
-                    .into();
-                (settings_dir, LocalSettingsKind::Tasks)
-            } else if path.ends_with(local_vscode_tasks_file_relative_path()) {
-                let settings_dir = path
-                    .ancestors()
-                    .nth(
-                        local_vscode_tasks_file_relative_path()
-                            .components()
-                            .count()
-                            .saturating_sub(1),
-                    )
-                    .unwrap()
-                    .into();
-                (settings_dir, LocalSettingsKind::Tasks)
-            } else if path.ends_with(local_debug_file_relative_path()) {
-                let settings_dir = path
-                    .ancestors()
-                    .nth(
-                        local_debug_file_relative_path()
-                            .components()
-                            .count()
-                            .saturating_sub(1),
-                    )
-                    .unwrap()
-                    .into();
-                (settings_dir, LocalSettingsKind::Debug)
-            } else if path.ends_with(local_vscode_launch_file_relative_path()) {
-                let settings_dir = path
-                    .ancestors()
-                    .nth(
-                        local_vscode_tasks_file_relative_path()
-                            .components()
-                            .count()
-                            .saturating_sub(1),
-                    )
-                    .unwrap()
-                    .into();
-                (settings_dir, LocalSettingsKind::Debug)
+            let mut load_path = path.clone();
+            let mut removed = change == &PathChange::Removed;
+            let (settings_dir, kind) = if let Some(file) =
+                local_settings_files.iter().find(|file| path.ends_with(file.path))
+            {
+                // A removed `.wu` file falls back to its `.zed` counterpart when one exists.
+                if removed && let Some(legacy_path) = file.legacy_path {
+                    let Some(project_dir) =
+                        strip_components(path, file.path.components().count())
+                    else {
+                        continue;
+                    };
+                    let legacy_file_path: Arc<RelPath> = project_dir.join(legacy_path).into();
+                    if snapshot.entry_for_path(&legacy_file_path).is_some() {
+                        load_path = legacy_file_path;
+                        removed = false;
+                    }
+                }
+                let Some(settings_dir) = strip_components(&load_path, file.directory_depth)
+                else {
+                    continue;
+                };
+                (settings_dir, file.kind)
+            } else if let Some((file, legacy_path)) = local_settings_files.iter().find_map(|file| {
+                file.legacy_path
+                    .filter(|legacy_path| path.ends_with(legacy_path))
+                    .map(|legacy_path| (file, legacy_path))
+            }) {
+                // A `.zed` file is only used when there is no `.wu` counterpart.
+                let Some(project_dir) = strip_components(path, legacy_path.components().count())
+                else {
+                    continue;
+                };
+                if snapshot.entry_for_path(&project_dir.join(file.path)).is_some() {
+                    continue;
+                }
+                let Some(settings_dir) = strip_components(path, file.directory_depth) else {
+                    continue;
+                };
+                (settings_dir, file.kind)
             } else if path.ends_with(RelPath::from_unix_str(EDITORCONFIG_NAME).unwrap()) {
                 let Some(settings_dir) = path.parent().map(Arc::from) else {
                     continue;
@@ -1061,9 +1093,8 @@ impl SettingsObserver {
                 continue;
             };
 
-            let removed = change == &PathChange::Removed;
             let fs = fs.clone();
-            let abs_path = worktree.read(cx).absolutize(path);
+            let abs_path = worktree.read(cx).absolutize(&load_path);
             settings_contents.push(async move {
                 (
                     settings_dir,

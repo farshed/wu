@@ -44,7 +44,7 @@ impl std::fmt::Display for MissingDependencyError {
 }
 
 impl std::error::Error for MissingDependencyError {}
-const POLL_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+const POLL_INTERVAL: Duration = Duration::from_secs(12 * 60 * 60);
 const REMOTE_SERVER_CACHE_LIMIT: usize = 5;
 
 #[cfg(target_os = "linux")]

@@ -18,7 +18,7 @@ use crate::application_menu::{
 };
 
 use gpui::{
-    Action, Anchor, AnyElement, App, Context, Element, Entity, Focusable, InteractiveElement,
+    Action, AnyElement, App, Context, Entity, Focusable, InteractiveElement,
     IntoElement, MouseButton, ParentElement, Render, Styled, Subscription, WeakEntity, Window,
     actions, div,
 };
@@ -33,7 +33,7 @@ use settings::Settings as _;
 use theme::ActiveTheme;
 use title_bar_settings::TitleBarSettings;
 use ui::{
-    ButtonLike, ContextMenu, IconButton, IconWithIndicator, Indicator, PopoverMenu, TintColor,
+    ButtonLike, IconButton, IconWithIndicator, Indicator, PopoverMenu, TintColor,
     Tooltip, prelude::*, utils::platform_title_bar_height,
 };
 use update_version::UpdateVersion;
@@ -298,9 +298,6 @@ impl Render for TitleBar {
                         }),
                 )
                 .child(self.update_version.clone())
-                .when(TitleBarSettings::get_global(cx).show_user_menu, |this| {
-                    this.child(self.render_user_menu_button(cx))
-                })
                 .into_any_element(),
         );
 
@@ -875,58 +872,5 @@ impl TitleBar {
                 .children(branch_picker)
                 .into_any_element(),
         )
-    }
-
-    pub fn render_user_menu_button(&mut self, cx: &mut Context<Self>) -> impl Element {
-        let show_update_button = self.update_version.read(cx).show_update_in_menu_bar();
-
-        let trigger = ButtonLike::new("user-menu")
-            .aria_label("User menu")
-            .tab_index(0isize)
-            .child(Icon::new(IconName::ChevronDown).size(IconSize::Small));
-
-        PopoverMenu::new("user-menu")
-            .trigger(trigger)
-            .menu(move |window, cx| {
-                ContextMenu::build(window, cx, |menu, _, _cx| {
-                    menu.when(show_update_button, |this| {
-                        this.custom_entry(
-                            move |_window, _cx| {
-                                h_flex()
-                                    .w_full()
-                                    .gap_1()
-                                    .justify_between()
-                                    .child(Label::new("Restart to update Wu").color(Color::Accent))
-                                    .child(
-                                        Icon::new(IconName::Download)
-                                            .size(IconSize::Small)
-                                            .color(Color::Accent),
-                                    )
-                                    .into_any_element()
-                            },
-                            move |_, cx| {
-                                workspace::reload(cx);
-                            },
-                        )
-                        .separator()
-                    })
-                    .action("Settings", zed_actions::OpenSettings.boxed_clone())
-                    .action("Keymap", Box::new(zed_actions::OpenKeymap))
-                    .action(
-                        "Themes…",
-                        zed_actions::theme_selector::Toggle::default().boxed_clone(),
-                    )
-                    .action(
-                        "Icon Themes…",
-                        zed_actions::icon_theme_selector::Toggle::default().boxed_clone(),
-                    )
-                    .action(
-                        "Extensions",
-                        zed_actions::Extensions::default().boxed_clone(),
-                    )
-                })
-                .into()
-            })
-            .anchor(Anchor::TopRight)
     }
 }

@@ -4,10 +4,12 @@ Wu (from [wu wei](https://en.wikipedia.org/wiki/Wu_wei)) is a code editor based 
 
 ## Features
 
-1. No built-in AI features. You bring your own harness.
+1. Fast and fully native.
+2. Base memory use is ~28% lower than Zed.
+3. No built-in AI features. You bring your own harness.
 2. Wu drops Zed's built-in collaboration, telemetry, dev_container, and Vim features.
-3. Lightweight. Wu's idle memory use is ~27% lower than Zed's.
-4. Better defaults for smoother transition from VSCode.
+3. Lightweight. Idle memory use is ~27% lower than Zed.
+4. Better defaults to make it look and feel like VSCode.
 
 ## Docs
 

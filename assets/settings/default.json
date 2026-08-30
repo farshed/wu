@@ -540,8 +540,6 @@
     "show_project_items": true,
     // Whether to show onboarding banners in the titlebar.
     "show_onboarding_banner": true,
-    // Whether to show the user menu in the titlebar.
-    "show_user_menu": true,
     // Whether to show the menus in the titlebar.
     "show_menus": false,
     // The layout of window control buttons in the title bar (Linux only).

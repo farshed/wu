@@ -216,7 +216,7 @@ impl Component for AlertModal {
                             )
                             .child(
                                 "Untrusted workspaces are opened in Restricted Mode to protect your system.
-Review .zed/settings.json for any extensions or commands configured by this project.",
+Review .wu/settings.json for any extensions or commands configured by this project.",
                             )
                             .child(
                                 v_flex()

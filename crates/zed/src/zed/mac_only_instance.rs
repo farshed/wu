@@ -23,12 +23,14 @@ fn address() -> SocketAddr {
     // interleaving the ports between different users and different release channels.
     //
     // On macOS user IDs start at 501 and on Linux they start at 1000. The first user
-    // on a Mac with ID 501 running a dev channel build will use port 44238, and the
-    // second user with ID 502 will use port 44239, and so on. The stable channel
-    // uses the next block of ports (44438 for user 501, 44439 for user 502, ...).
+    // on a Mac with ID 501 running a dev channel build will use port 46238, and the
+    // second user with ID 502 will use port 46239, and so on. The stable channel
+    // uses the next block of ports (46438 for user 501, 46439 for user 502, ...).
+    // Wu uses a different port range than Zed so both apps can run side by side
+    // without answering each other's single-instance handshake.
     let port = match *release_channel::RELEASE_CHANNEL {
-        ReleaseChannel::Dev => 43737,
-        ReleaseChannel::Stable => 43737 + (2 * USER_BLOCK),
+        ReleaseChannel::Dev => 45737,
+        ReleaseChannel::Stable => 45737 + (2 * USER_BLOCK),
     };
     let mut user_port = port;
     let mut sys = System::new_all();
@@ -68,8 +70,8 @@ fn get_uid_as_u32(uid: &sysinfo::Uid) -> u32 {
 
 fn instance_handshake() -> &'static str {
     match *release_channel::RELEASE_CHANNEL {
-        ReleaseChannel::Dev => "Zed Editor Dev Instance Running",
-        ReleaseChannel::Stable => "Zed Editor Stable Instance Running",
+        ReleaseChannel::Dev => "Wu Editor Dev Instance Running",
+        ReleaseChannel::Stable => "Wu Editor Stable Instance Running",
     }
 }
 

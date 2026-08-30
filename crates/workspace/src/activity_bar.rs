@@ -6,7 +6,10 @@ use gpui::{
 };
 use settings::SettingsStore;
 use std::sync::Arc;
-use ui::{ButtonSize, IconButton, IconName, IconSize, Tooltip, prelude::*, right_click_menu};
+use ui::{
+    ButtonSize, ContextMenu, IconButton, IconName, IconSize, PopoverMenu, Tooltip, prelude::*,
+    right_click_menu,
+};
 use util::ResultExt as _;
 
 pub const ACTIVITY_BAR_WIDTH: Pixels = px(48.);
@@ -216,6 +219,43 @@ impl Render for ActivityBar {
             buttons.push(self.render_entry(entry, window, cx));
         }
         bar.children(buttons)
+            .child(div().flex_1())
+            .child(self.render_settings_menu())
+    }
+}
+
+impl ActivityBar {
+    fn render_settings_menu(&self) -> impl IntoElement {
+        PopoverMenu::new("activity-bar-settings-menu")
+            .trigger_with_tooltip(
+                IconButton::new("activity-bar-settings", IconName::Settings)
+                    .size(ButtonSize::Large)
+                    .icon_size(IconSize::Custom(rems_from_px(22_f32)))
+                    .tab_index(0isize)
+                    .aria_label("Manage"),
+                Tooltip::text("Manage"),
+            )
+            .menu(|window, cx| {
+                ContextMenu::build(window, cx, |menu, _, _| {
+                    menu.action("Settings", zed_actions::OpenSettings.boxed_clone())
+                        .action("Keymap", Box::new(zed_actions::OpenKeymap))
+                        .action(
+                            "Themes…",
+                            zed_actions::theme_selector::Toggle::default().boxed_clone(),
+                        )
+                        .action(
+                            "Icon Themes…",
+                            zed_actions::icon_theme_selector::Toggle::default().boxed_clone(),
+                        )
+                        .action(
+                            "Extensions",
+                            zed_actions::Extensions::default().boxed_clone(),
+                        )
+                })
+                .into()
+            })
+            .anchor(Anchor::BottomLeft)
+            .attach(Anchor::BottomRight)
     }
 }
 

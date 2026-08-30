@@ -47,8 +47,9 @@ use onboarding::multibuffer_hint::MultibufferHint;
 pub use open_listener::*;
 use outline_panel::OutlinePanel;
 use paths::{
-    local_debug_file_relative_path, local_settings_file_relative_path,
-    local_tasks_file_relative_path,
+    legacy_local_debug_file_relative_path, legacy_local_settings_file_relative_path,
+    legacy_local_tasks_file_relative_path, local_debug_file_relative_path,
+    local_settings_file_relative_path, local_tasks_file_relative_path,
 };
 use project::{
     DirectoryLister, ProjectItem,
@@ -1998,6 +1999,7 @@ fn open_project_settings_file(
     if let Some(task) = open_local_file(
         workspace,
         local_settings_file_relative_path(),
+        Some(legacy_local_settings_file_relative_path()),
         initial_project_settings_content(),
         window,
         cx,
@@ -2015,6 +2017,7 @@ fn open_project_tasks_file(
     if let Some(task) = open_local_file(
         workspace,
         local_tasks_file_relative_path(),
+        Some(legacy_local_tasks_file_relative_path()),
         initial_tasks_content(),
         window,
         cx,
@@ -2044,6 +2047,7 @@ fn open_worktree_setup_tasks_file(
     let Some(open_task) = open_local_file(
         workspace,
         local_tasks_file_relative_path(),
+        Some(legacy_local_tasks_file_relative_path()),
         settings::initial_worktree_setup_tasks_content(),
         window,
         cx,
@@ -2081,6 +2085,7 @@ fn open_project_debug_tasks_file(
     if let Some(task) = open_local_file(
         workspace,
         local_debug_file_relative_path(),
+        Some(legacy_local_debug_file_relative_path()),
         initial_local_debug_tasks_content(),
         window,
         cx,
@@ -2092,6 +2097,7 @@ fn open_project_debug_tasks_file(
 fn open_local_file(
     workspace: &mut Workspace,
     settings_relative_path: &'static RelPath,
+    legacy_settings_relative_path: Option<&'static RelPath>,
     initial_contents: Cow<'static, str>,
     window: &mut Window,
     cx: &mut Context<Workspace>,
@@ -2104,20 +2110,30 @@ fn open_local_file(
     if let Some(worktree) = worktree {
         let tree_id = worktree.read(cx).id();
         Some(cx.spawn_in(window, async move |workspace, cx| {
+            let fs = project.read_with(cx, |project, _| project.fs().clone());
             // Check if the file actually exists on disk (even if it's excluded from worktree)
-            let file_exists = {
-                let full_path = worktree.read_with(cx, |tree, _| {
-                    tree.abs_path().join(settings_relative_path.as_std_path())
-                });
-
-                let fs = project.read_with(cx, |project, _| project.fs().clone());
-
-                fs.metadata(&full_path)
-                    .await
-                    .ok()
-                    .flatten()
-                    .is_some_and(|metadata| !metadata.is_dir && !metadata.is_fifo)
+            let file_exists_on_disk = |relative_path: &'static RelPath| {
+                let fs = fs.clone();
+                let full_path = worktree
+                    .read_with(cx, |tree, _| tree.abs_path().join(relative_path.as_std_path()));
+                async move {
+                    fs.metadata(&full_path)
+                        .await
+                        .ok()
+                        .flatten()
+                        .is_some_and(|metadata| !metadata.is_dir && !metadata.is_fifo)
+                }
             };
+
+            let mut settings_relative_path = settings_relative_path;
+            let mut file_exists = file_exists_on_disk(settings_relative_path).await;
+            // Fall back to the legacy `.zed` file when there is no `.wu` one yet.
+            if !file_exists && let Some(legacy_path) = legacy_settings_relative_path {
+                if file_exists_on_disk(legacy_path).await {
+                    settings_relative_path = legacy_path;
+                    file_exists = true;
+                }
+            }
 
             if !file_exists {
                 if let Some(dir_path) = settings_relative_path.parent()
