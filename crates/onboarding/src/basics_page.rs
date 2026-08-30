@@ -16,12 +16,11 @@ use crate::{
     theme_preview::{ThemePreviewStyle, ThemePreviewTile},
 };
 
-const LIGHT_THEMES: [&str; 3] = ["One Light", "Ayu Light", "Gruvbox Light"];
-const DARK_THEMES: [&str; 3] = ["One Dark", "Ayu Dark", "Gruvbox Dark"];
-const FAMILY_NAMES: [SharedString; 3] = [
+const LIGHT_THEMES: [&str; 2] = ["Catppuccin Latte", "One Light"];
+const DARK_THEMES: [&str; 2] = ["Catppuccin Mocha", "One Dark"];
+const FAMILY_NAMES: [SharedString; 2] = [
+    SharedString::new_static("Catppuccin"),
     SharedString::new_static("One"),
-    SharedString::new_static("Ayu"),
-    SharedString::new_static("Gruvbox"),
 ];
 
 fn get_theme_family_themes(theme_name: &str) -> Option<(&'static str, &'static str)> {
@@ -87,7 +86,7 @@ fn render_theme_section(tab_index: &mut isize, cx: &mut App) -> impl IntoElement
         tab_index: &mut isize,
         theme_selection: &ThemeSelection,
         cx: &mut App,
-    ) -> [impl IntoElement; 3] {
+    ) -> [impl IntoElement; 2] {
         let system_appearance = SystemAppearance::global(cx);
         let theme_registry = ThemeRegistry::global(cx);
 
@@ -112,7 +111,7 @@ fn render_theme_section(tab_index: &mut isize, cx: &mut App) -> impl IntoElement
 
         let themes = theme_names.map(|theme| theme_registry.get(theme).unwrap());
 
-        [0, 1, 2].map(|index| {
+        [0, 1].map(|index| {
             let theme = &themes[index];
             let is_selected = theme.name == current_theme_name;
             let name = theme.name.clone();

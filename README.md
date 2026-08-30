@@ -18,6 +18,12 @@ Wu is built on the [Zed](https://github.com/zed-industries/zed) engine, so it in
 - **No built-in AI features.** Bring whichever agent or harness you already use.
 - **Feels like VS Code out of the box.** Layout, panels, and defaults are tuned so you don't have to relearn your editor.
 
+---
+
+![Wu screenshot dark](assets/images/screenshot-dark.png)
+
+![Wu screenshot light](assets/images/screenshot-light.png)
+
 ## Docs
 
 See [docs](https://wu.farshed.me).
