@@ -72,7 +72,7 @@ document_icon_path="${app_path}/Contents/Resources/Document.icns"
 if [[ ! -f "${document_icon_path}" ]]; then
   echo "Verification failed for: ${app_path}" >&2
   echo "Expected document icon to exist: ${document_icon_path}" >&2
-  echo "Tip: The bundle script should copy crates/zed/resources/Document.icns into Contents/Resources/Document.icns." >&2
+  echo "Tip: The bundle script should copy crates/wu/resources/Document.icns into Contents/Resources/Document.icns." >&2
   exit 1
 fi
 

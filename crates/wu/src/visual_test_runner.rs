@@ -25,10 +25,10 @@
 //! ## Usage
 //!
 //! Run the visual tests:
-//!   cargo run -p zed --bin zed_visual_test_runner --features visual-tests
+//!   cargo run -p wu --bin wu_visual_test_runner --features visual-tests
 //!
 //! Update baseline images (when UI intentionally changes):
-//!   UPDATE_BASELINE=1 cargo run -p zed --bin zed_visual_test_runner --features visual-tests
+//!   UPDATE_BASELINE=1 cargo run -p wu --bin wu_visual_test_runner --features visual-tests
 //!
 //! ## Environment Variables
 //!
@@ -45,7 +45,7 @@ fn main() {
 #[cfg(target_os = "macos")]
 fn main() {
     // Set ZED_STATELESS early to prevent file system access to real config directories
-    // This must be done before any code accesses zed_env_vars::ZED_STATELESS
+    // This must be done before any code accesses wu_env_vars::ZED_STATELESS
     // SAFETY: We're at the start of main(), before any threads are spawned
     unsafe {
         std::env::set_var("ZED_STATELESS", "1");
@@ -110,7 +110,7 @@ use {
     },
     util::ResultExt as _,
     workspace::{AppState, MultiWorkspace, Workspace},
-    zed_actions::OpenSettingsAt,
+    wu_actions::OpenSettingsAt,
 };
 
 // All macOS-specific constants grouped together
@@ -119,7 +119,7 @@ mod constants {
     use std::time::Duration;
 
     /// Baseline images are stored relative to this file
-    pub const BASELINE_DIR: &str = "crates/zed/test_fixtures/visual_tests";
+    pub const BASELINE_DIR: &str = "crates/wu/test_fixtures/visual_tests";
 
     /// Threshold for image comparison (0.0 to 1.0)
     /// Images must match at least this percentage to pass

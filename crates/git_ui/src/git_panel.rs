@@ -94,7 +94,7 @@ use workspace::{
     dock::{DockPosition, Panel, PanelEvent},
     notifications::{DetachAndPromptErr, NotificationId, NotifyTaskExt},
 };
-use zed_actions::{
+use wu_actions::{
     DecreaseBufferFontSize, IncreaseBufferFontSize, ResetBufferFontSize,
     git_panel::ToggleFocus,
     workspace::{CopyPath, CopyRelativePath},
@@ -336,7 +336,7 @@ fn git_panel_context_menu(
                 )
             })
             .action_disabled_when(!has_stash_items, "Stash Pop", StashPop.boxed_clone())
-            .action("View Stash", zed_actions::git::ViewStash.boxed_clone())
+            .action("View Stash", wu_actions::git::ViewStash.boxed_clone())
             .when(include_copy_paths, |context_menu| {
                 context_menu
                     .separator()
@@ -4956,7 +4956,7 @@ impl GitPanel {
                         // button is pressed.
                         this.action("Create Pull Request", move |window, cx| {
                             window
-                                .dispatch_action(Box::new(zed_actions::git::CreatePullRequest), cx);
+                                .dispatch_action(Box::new(wu_actions::git::CreatePullRequest), cx);
                         })
                     }
                     (Toast, false) => this,
@@ -5576,10 +5576,10 @@ impl GitPanel {
                                     .h_full()
                                     .flex_grow_1()
                                     .cursor_text()
-                                    .on_action(|&zed_actions::editor::MoveUp, _, cx| {
+                                    .on_action(|&wu_actions::editor::MoveUp, _, cx| {
                                         cx.stop_propagation();
                                     })
-                                    .on_action(|&zed_actions::editor::MoveDown, _, cx| {
+                                    .on_action(|&wu_actions::editor::MoveDown, _, cx| {
                                         cx.stop_propagation();
                                     })
                                     .child(EditorElement::new(
@@ -8218,7 +8218,7 @@ impl RenderOnce for PanelRepoFooter {
             .label_size(LabelSize::Small)
             .truncate(true)
             .on_click(|_, window, cx| {
-                window.dispatch_action(zed_actions::git::Switch.boxed_clone(), cx);
+                window.dispatch_action(wu_actions::git::Switch.boxed_clone(), cx);
             });
 
         let branch_selector = PopoverMenu::new("popover-button")
@@ -8229,7 +8229,7 @@ impl RenderOnce for PanelRepoFooter {
             })
             .trigger_with_tooltip(
                 branch_selector_button,
-                Tooltip::for_action_title("Switch Branch", &zed_actions::git::Switch),
+                Tooltip::for_action_title("Switch Branch", &wu_actions::git::Switch),
             )
             .anchor(Anchor::BottomLeft)
             .offset(gpui::Point {

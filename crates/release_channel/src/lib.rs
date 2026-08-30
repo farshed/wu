@@ -30,7 +30,7 @@ fn compile_time_release_channel_name() -> String {
 
 #[cfg(not(__do_not_set_zed_release_channel))]
 fn compile_time_release_channel_name() -> String {
-    include_str!("../../zed/RELEASE_CHANNEL").trim().to_string()
+    include_str!("../../wu/RELEASE_CHANNEL").trim().to_string()
 }
 
 #[doc(hidden)]

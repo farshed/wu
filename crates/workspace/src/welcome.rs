@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use settings::{DefaultOpenBehavior, Settings};
 use ui::{ButtonLike, Divider, DividerColor, KeyBinding, prelude::*};
 use util::ResultExt;
-use zed_actions::{Extensions, OpenKeymap, OpenOnboarding, OpenSettings, command_palette};
+use wu_actions::{Extensions, OpenKeymap, OpenOnboarding, OpenSettings, command_palette};
 
 #[derive(PartialEq, Clone, Debug, Deserialize, Serialize, JsonSchema, Action)]
 #[action(namespace = welcome)]
@@ -316,7 +316,7 @@ impl WelcomePage {
                         })
                         .log_err();
                 } else {
-                    use zed_actions::OpenRecent;
+                    use wu_actions::OpenRecent;
                     window.dispatch_action(OpenRecent::default().boxed_clone(), cx);
                 }
             }

@@ -8,7 +8,7 @@ use ui::{HighlightedLabel, ListItem, ListItemSpacing, prelude::*};
 use workspace::{ModalView, Workspace};
 
 pub fn init(cx: &mut App) {
-    cx.on_action(|_: &zed_actions::settings_profile_selector::Toggle, cx| {
+    cx.on_action(|_: &wu_actions::settings_profile_selector::Toggle, cx| {
         workspace::with_active_or_new_workspace(cx, |workspace, window, cx| {
             toggle_settings_profile_selector(workspace, window, cx);
         });
@@ -293,7 +293,7 @@ mod tests {
     use settings::Settings;
     use theme_settings::ThemeSettings;
     use workspace::{self, AppState, MultiWorkspace};
-    use zed_actions::settings_profile_selector;
+    use wu_actions::settings_profile_selector;
 
     async fn init_test(
         user_settings_json: serde_json::Value,

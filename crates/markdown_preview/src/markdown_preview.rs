@@ -4,7 +4,7 @@ use workspace::Workspace;
 pub mod markdown_preview_settings;
 pub mod markdown_preview_view;
 
-pub use zed_actions::preview::markdown::{OpenPreview, OpenPreviewToTheSide};
+pub use wu_actions::preview::markdown::{OpenPreview, OpenPreviewToTheSide};
 
 use crate::markdown_preview_view::MarkdownPreviewView;
 

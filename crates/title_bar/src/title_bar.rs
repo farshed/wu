@@ -40,7 +40,7 @@ use update_version::UpdateVersion;
 use util::ResultExt;
 use workspace::{AccessibleMode, MultiWorkspace, ToggleWorktreeSecurity, Workspace};
 
-use zed_actions::OpenRemote;
+use wu_actions::OpenRemote;
 
 pub use onboarding_banner::restore_banner;
 
@@ -680,7 +680,7 @@ impl TitleBar {
                     .selected_style(ButtonStyle::Tinted(TintColor::Accent))
                     .when(!is_project_selected, |s| s.color(Color::Muted)),
                 move |_window, cx| {
-                    Tooltip::for_action("Recent Projects", &zed_actions::OpenRecent::default(), cx)
+                    Tooltip::for_action("Recent Projects", &wu_actions::OpenRecent::default(), cx)
                 },
             )
             .anchor(gpui::Anchor::TopLeft)
@@ -784,7 +784,7 @@ impl TitleBar {
                     move |_window, cx| {
                         Tooltip::with_meta(
                             "Worktree",
-                            Some(&zed_actions::git::Worktree),
+                            Some(&wu_actions::git::Worktree),
                             format!("Currently In Use: {}", worktree_label),
                             cx,
                         )
@@ -842,7 +842,7 @@ impl TitleBar {
                         };
                         Tooltip::with_meta(
                             "Branch & Stash",
-                            Some(&zed_actions::git::Branch),
+                            Some(&wu_actions::git::Branch),
                             meta,
                             cx,
                         )

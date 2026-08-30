@@ -55,7 +55,7 @@ use workspace::{
 use workspace::{
     Pane, TabBarSettings, WorkspaceSettings, item::ProjectItemKind, searchable::SearchOptions,
 };
-use zed_actions::preview::{
+use wu_actions::preview::{
     markdown::OpenPreview as OpenMarkdownPreview, svg::OpenPreview as OpenSvgPreview,
 };
 

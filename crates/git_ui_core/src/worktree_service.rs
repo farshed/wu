@@ -21,7 +21,7 @@ use ui::prelude::*;
 use workspace::{
     MultiWorkspace, OpenMode, PreviousWorkspaceState, ToastView, Workspace, dock::DockPosition,
 };
-use zed_actions::NewWorktreeBranchTarget;
+use wu_actions::NewWorktreeBranchTarget;
 
 use git::repository::{FetchOptions, Remote};
 
@@ -268,7 +268,7 @@ impl Render for WorktreeFetchFailedToast {
                         workspace.update(cx, |workspace, cx| {
                             let task = create_worktree_workspace_inner(
                                 workspace,
-                                &zed_actions::CreateWorktree {
+                                &wu_actions::CreateWorktree {
                                     worktree_name: worktree_name.clone(),
                                     branch_target: branch_target.clone(),
                                 },
@@ -687,7 +687,7 @@ fn maybe_propagate_worktree_trust(
 /// workspace (e.g., the `create_thread` agent tool spawns a thread in it).
 pub fn handle_create_worktree(
     workspace: &mut Workspace,
-    action: &zed_actions::CreateWorktree,
+    action: &wu_actions::CreateWorktree,
     window: &mut gpui::Window,
     fallback_focused_dock: Option<DockPosition>,
     cx: &mut gpui::Context<Workspace>,
@@ -735,7 +735,7 @@ pub struct CreatedWorktreeWorkspace {
 /// background rather than yanking the user away from what they're doing.
 pub fn create_worktree_workspace(
     workspace: &mut Workspace,
-    action: &zed_actions::CreateWorktree,
+    action: &wu_actions::CreateWorktree,
     window: &mut gpui::Window,
     fallback_focused_dock: Option<DockPosition>,
     cx: &mut gpui::Context<Workspace>,
@@ -754,7 +754,7 @@ pub fn create_worktree_workspace(
 
 fn create_worktree_workspace_inner(
     workspace: &mut Workspace,
-    action: &zed_actions::CreateWorktree,
+    action: &wu_actions::CreateWorktree,
     window: &mut gpui::Window,
     fallback_focused_dock: Option<DockPosition>,
     remote_branch_fetch_mode: RemoteBranchFetchMode,
@@ -891,7 +891,7 @@ fn create_worktree_workspace_inner(
 
 pub fn handle_switch_worktree(
     workspace: &mut Workspace,
-    action: &zed_actions::SwitchWorktree,
+    action: &wu_actions::SwitchWorktree,
     window: &mut gpui::Window,
     fallback_focused_dock: Option<DockPosition>,
     cx: &mut gpui::Context<Workspace>,
@@ -1529,7 +1529,7 @@ mod tests {
         main_workspace.update_in(cx, |workspace, window, cx| {
             handle_create_worktree(
                 workspace,
-                &zed_actions::CreateWorktree {
+                &wu_actions::CreateWorktree {
                     worktree_name: Some("feature".to_string()),
                     branch_target: NewWorktreeBranchTarget::CurrentBranch,
                 },
@@ -1568,7 +1568,7 @@ mod tests {
         active_workspace.update_in(cx, |workspace, window, cx| {
             handle_switch_worktree(
                 workspace,
-                &zed_actions::SwitchWorktree {
+                &wu_actions::SwitchWorktree {
                     path: main_project_root.clone(),
                     display_name: "project".to_string(),
                 },
@@ -1663,7 +1663,7 @@ mod tests {
         main_workspace.update_in(cx, |workspace, window, cx| {
             handle_create_worktree(
                 workspace,
-                &zed_actions::CreateWorktree {
+                &wu_actions::CreateWorktree {
                     worktree_name: Some("feature".to_string()),
                     branch_target: NewWorktreeBranchTarget::CurrentBranch,
                 },

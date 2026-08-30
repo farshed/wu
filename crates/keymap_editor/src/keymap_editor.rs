@@ -44,7 +44,7 @@ use workspace::{
 };
 
 pub use ui_components::*;
-use zed_actions::{ChangeKeybinding, OpenKeymap};
+use wu_actions::{ChangeKeybinding, OpenKeymap};
 
 use crate::{
     action_completion_provider::ActionCompletionProvider,
@@ -2007,12 +2007,12 @@ impl Render for KeymapEditor {
                                     .child(
                                         Button::new("edit-in-json", "Edit in JSON")
                                             .key_binding(
-                                                ui::KeyBinding::for_action_in(&zed_actions::OpenKeymapFile, &focus_handle, cx)
+                                                ui::KeyBinding::for_action_in(&wu_actions::OpenKeymapFile, &focus_handle, cx)
                                                     .map(|kb| kb.size(rems_from_px(10_f32))),
                                             )
                                             .on_click(|_, window, cx| {
                                                 window.dispatch_action(
-                                                    zed_actions::OpenKeymapFile.boxed_clone(),
+                                                    wu_actions::OpenKeymapFile.boxed_clone(),
                                                     cx,
                                                 );
                                             })
@@ -4284,7 +4284,7 @@ mod tests {
 
     #[test]
     fn binding_is_unbound_by_unbind_respects_precedence() {
-        let binding = gpui::KeyBinding::new("tab", zed_actions::OpenKeymap, None);
+        let binding = gpui::KeyBinding::new("tab", wu_actions::OpenKeymap, None);
         let unbind =
             gpui::KeyBinding::new("tab", gpui::Unbind(binding.action().name().into()), None);
 

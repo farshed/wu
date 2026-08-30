@@ -3,7 +3,7 @@ use workspace::Workspace;
 
 pub mod svg_preview_view;
 
-pub use zed_actions::preview::svg::{OpenPreview, OpenPreviewToTheSide};
+pub use wu_actions::preview::svg::{OpenPreview, OpenPreviewToTheSide};
 
 actions!(
     svg,

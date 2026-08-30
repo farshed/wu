@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use gpui::{Action, SharedString};
 use ui::{IconName, IconPosition};
-use zed_actions::OpenBrowser;
+use wu_actions::OpenBrowser;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorSeverity {

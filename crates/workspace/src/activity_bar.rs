@@ -237,19 +237,19 @@ impl ActivityBar {
             )
             .menu(|window, cx| {
                 ContextMenu::build(window, cx, |menu, _, _| {
-                    menu.action("Settings", zed_actions::OpenSettings.boxed_clone())
-                        .action("Keymap", Box::new(zed_actions::OpenKeymap))
+                    menu.action("Settings", wu_actions::OpenSettings.boxed_clone())
+                        .action("Keymap", Box::new(wu_actions::OpenKeymap))
                         .action(
                             "Themes…",
-                            zed_actions::theme_selector::Toggle::default().boxed_clone(),
+                            wu_actions::theme_selector::Toggle::default().boxed_clone(),
                         )
                         .action(
                             "Icon Themes…",
-                            zed_actions::icon_theme_selector::Toggle::default().boxed_clone(),
+                            wu_actions::icon_theme_selector::Toggle::default().boxed_clone(),
                         )
                         .action(
                             "Extensions",
-                            zed_actions::Extensions::default().boxed_clone(),
+                            wu_actions::Extensions::default().boxed_clone(),
                         )
                 })
                 .into()

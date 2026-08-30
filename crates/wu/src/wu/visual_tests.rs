@@ -22,10 +22,10 @@
 //! To run visual tests:
 //! ```bash
 //! # Run all visual tests (requires macOS, may need Screen Recording permission)
-//! cargo test -p zed visual_tests -- --ignored --test-threads=1
+//! cargo test -p wu visual_tests -- --ignored --test-threads=1
 //!
 //! # Update baselines when UI intentionally changes
-//! UPDATE_BASELINES=1 cargo test -p zed visual_tests -- --ignored --test-threads=1
+//! UPDATE_BASELINES=1 cargo test -p wu visual_tests -- --ignored --test-threads=1
 //! ```
 //!
 //! ## Screenshot Output

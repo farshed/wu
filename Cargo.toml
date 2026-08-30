@@ -158,9 +158,9 @@ members = [
     "crates/workspace",
     "crates/worktree",
     "crates/worktree_benchmarks",
-    "crates/zed",
-    "crates/zed_actions",
-    "crates/zed_env_vars",
+    "crates/wu",
+    "crates/wu_actions",
+    "crates/wu_env_vars",
     "crates/zlog",
     "crates/zlog_settings",
     "crates/ztracing",
@@ -182,7 +182,7 @@ members = [
     "tooling/perf",
     "tooling/xtask",
 ]
-default-members = ["crates/zed"]
+default-members = ["crates/wu"]
 
 [workspace.package]
 publish = false
@@ -341,8 +341,8 @@ util_macros = { path = "crates/util_macros" }
 watch = { path = "crates/watch" }
 workspace = { path = "crates/workspace" }
 worktree = { path = "crates/worktree" }
-zed_actions = { path = "crates/zed_actions" }
-zed_env_vars = { path = "crates/zed_env_vars" }
+wu_actions = { path = "crates/wu_actions" }
+wu_env_vars = { path = "crates/wu_env_vars" }
 zlog = { path = "crates/zlog" }
 zlog_settings = { path = "crates/zlog_settings" }
 ztracing = { path = "crates/ztracing" }
@@ -869,7 +869,7 @@ snippets_ui = { codegen-units = 1 }
 theme_selector = { codegen-units = 1 }
 time_format = { codegen-units = 1 }
 ui_input = { codegen-units = 1 }
-zed_actions = { codegen-units = 1 }
+wu_actions = { codegen-units = 1 }
 
 [profile.release]
 debug = "limited"

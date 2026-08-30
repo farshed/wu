@@ -11,7 +11,7 @@ if [[ $# -gt 0 ]]; then
   "
   exit 1
 fi
-export ZED_CHANNEL=$(<crates/zed/RELEASE_CHANNEL)
+export ZED_CHANNEL=$(<crates/wu/RELEASE_CHANNEL)
 export ZED_UPDATE_EXPLANATION="You need to fetch and rebuild zed in $(pwd)"
 script/bundle-linux
 

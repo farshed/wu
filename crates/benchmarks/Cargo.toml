@@ -35,7 +35,7 @@ theme = { workspace = true, features = ["test-support"] }
 theme_settings.workspace = true
 ui.workspace = true
 util = { workspace = true, features = ["test-support"] }
-zed_actions.workspace = true
+wu_actions.workspace = true
 
 [package.metadata.cargo-shear]
 ignored = ["gpui_platform"]

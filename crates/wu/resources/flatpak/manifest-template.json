@@ -52,7 +52,7 @@
         },
         {
           "type": "dir",
-          "path": "./crates/zed/resources"
+          "path": "./crates/wu/resources"
         }
       ]
     }

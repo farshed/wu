@@ -8,7 +8,7 @@ use workspace::AppState;
 use crate::div_inspector::DivInspector;
 
 pub fn init(app_state: Arc<AppState>, cx: &mut App) {
-    cx.on_action(|_: &zed_actions::dev::ToggleInspector, cx| {
+    cx.on_action(|_: &wu_actions::dev::ToggleInspector, cx| {
         let Some(active_window) = cx
             .active_window()
             .context("no active window to toggle inspector")

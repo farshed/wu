@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{LazyLock, atomic::Ordering};
 use util::{ResultExt, maybe};
-use zed_env_vars::ZED_STATELESS;
+use wu_env_vars::ZED_STATELESS;
 
 /// A migration registered via `static_connection!` and collected at link time.
 pub struct DomainMigration {

@@ -45,7 +45,7 @@ done
 
 export ZED_BUNDLE=true
 
-channel=$(<crates/zed/RELEASE_CHANNEL)
+channel=$(<crates/wu/RELEASE_CHANNEL)
 target_dir="${CARGO_TARGET_DIR:-target}"
 
 version="$(script/get-crate-version zed)"
@@ -83,7 +83,7 @@ if [[ "$(uname -m)" == "aarch64" ]]; then
 else
     export RUSTFLAGS="${RUSTFLAGS:-} -C link-args=-Wl,--disable-new-dtags,-rpath,\$ORIGIN/../lib"
 fi
-cargo build --release --target "${target_triple}" --package zed --package cli
+cargo build --release --target "${target_triple}" --package wu --package cli
 # Build remote_server in separate invocation to prevent feature unification from other crates
 # from influencing dynamic libraries required by it.
 if [[ "$remote_server_triple" == "$musl_triple" ]]; then
@@ -104,7 +104,7 @@ else
         # .eh_frame data for stack unwinding. see https://github.com/getsentry/symbolic/issues/783
         for attempt in 1 2 3; do
             echo "Attempting sentry upload (attempt $attempt/3)..."
-            if sentry-cli debug-files upload --include-sources --wait -p zed -o zed-dev \
+            if sentry-cli debug-files upload --include-sources --wait -p wu -o zed-dev \
                 "${target_dir}/${target_triple}"/release/wu \
                 "${target_dir}/${remote_server_triple}"/release/remote_server; then
                 echo "Sentry upload successful on attempt $attempt"
@@ -172,9 +172,9 @@ cp $(find_libs) "${zed_dir}/lib"
 
 # Icons
 mkdir -p "${zed_dir}/share/icons/hicolor/512x512/apps"
-cp "crates/zed/resources/app-icon$suffix.png" "${zed_dir}/share/icons/hicolor/512x512/apps/zed.png"
+cp "crates/wu/resources/app-icon$suffix.png" "${zed_dir}/share/icons/hicolor/512x512/apps/zed.png"
 mkdir -p "${zed_dir}/share/icons/hicolor/1024x1024/apps"
-cp "crates/zed/resources/app-icon$suffix@2x.png" "${zed_dir}/share/icons/hicolor/1024x1024/apps/zed.png"
+cp "crates/wu/resources/app-icon$suffix@2x.png" "${zed_dir}/share/icons/hicolor/1024x1024/apps/zed.png"
 
 # .desktop
 export DO_STARTUP_NOTIFY="true"
@@ -190,7 +190,7 @@ else
 fi
 
 mkdir -p "${zed_dir}/share/applications"
-envsubst < "crates/zed/resources/zed.desktop.in" > "${zed_dir}/share/applications/$APP_ID.desktop"
+envsubst < "crates/wu/resources/zed.desktop.in" > "${zed_dir}/share/applications/$APP_ID.desktop"
 chmod +x "${zed_dir}/share/applications/$APP_ID.desktop"
 
 # Copy generated licenses so they'll end up in archive too

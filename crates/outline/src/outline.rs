@@ -17,7 +17,7 @@ use workspace::{DismissDecision, ModalView};
 
 pub fn init(cx: &mut App) {
     cx.observe_new(OutlineView::register).detach();
-    zed_actions::outline::TOGGLE_OUTLINE
+    wu_actions::outline::TOGGLE_OUTLINE
         .set(|view, window, cx| {
             let Ok(editor) = view.downcast::<Editor>() else {
                 return;
@@ -30,7 +30,7 @@ pub fn init(cx: &mut App) {
 
 pub fn toggle(
     editor: Entity<Editor>,
-    _: &zed_actions::outline::ToggleOutline,
+    _: &wu_actions::outline::ToggleOutline,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -141,7 +141,7 @@ impl Render for OutlineView {
         v_flex()
             .on_action(cx.listener(
                 |_this: &mut OutlineView,
-                 _: &zed_actions::outline::ToggleOutline,
+                 _: &wu_actions::outline::ToggleOutline,
                  _window: &mut Window,
                  cx: &mut Context<OutlineView>| {
                     // When outline::Toggle is triggered while the outline is open, dismiss it
@@ -941,7 +941,7 @@ mod tests {
         workspace: &Entity<Workspace>,
         cx: &mut VisualTestContext,
     ) -> Entity<Picker<OutlineViewDelegate>> {
-        cx.dispatch_action(zed_actions::outline::ToggleOutline);
+        cx.dispatch_action(wu_actions::outline::ToggleOutline);
         cx.executor().advance_clock(Duration::from_millis(200));
         workspace.update(cx, |workspace, cx| {
             workspace

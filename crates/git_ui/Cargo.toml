@@ -65,7 +65,7 @@ util.workspace = true
 watch.workspace = true
 workspace.workspace = true
 git_ui_core.workspace = true
-zed_actions.workspace = true
+wu_actions.workspace = true
 ztracing.workspace = true
 
 [dev-dependencies]

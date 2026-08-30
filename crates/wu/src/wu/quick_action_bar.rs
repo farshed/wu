@@ -24,7 +24,7 @@ use workspace::item::ItemBufferKind;
 use workspace::{
     ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView, Workspace, item::ItemHandle,
 };
-use zed_actions::outline::ToggleOutline;
+use wu_actions::outline::ToggleOutline;
 
 const MAX_CODE_ACTION_MENU_LINES: u32 = 16;
 

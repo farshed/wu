@@ -32,7 +32,7 @@ use project::{
 
 use settings::{SeedQuerySetting, Settings};
 use std::{any::TypeId, sync::Arc};
-use zed_actions::{outline::ToggleOutline, workspace::CopyPath, workspace::CopyRelativePath};
+use wu_actions::{outline::ToggleOutline, workspace::CopyPath, workspace::CopyRelativePath};
 
 use ui::{BASE_REM_SIZE_IN_PX, IconButtonShape, Tooltip, prelude::*, utils::SearchInputWidth};
 use util::{ResultExt, paths::PathMatcher};
@@ -50,7 +50,7 @@ use registrar::{ForDeployed, ForDismissed, SearchActionsRegistrar};
 
 const MAX_BUFFER_SEARCH_HISTORY_SIZE: usize = 50;
 
-pub use zed_actions::buffer_search::{
+pub use wu_actions::buffer_search::{
     Deploy, DeployReplace, Dismiss, FocusEditor, UseSelectionForFind,
 };
 

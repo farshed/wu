@@ -80,7 +80,7 @@ use workspace::{
     open_file_permalink,
 };
 use worktree::CreatedEntry;
-use zed_actions::{
+use wu_actions::{
     project_panel::{Toggle, ToggleFocus},
     workspace::OpenWithSystem,
 };
@@ -1187,10 +1187,10 @@ impl ProjectPanel {
                                     .action("Download...", Box::new(DownloadFromRemote))
                             })
                             .separator()
-                            .action("Copy Path", Box::new(zed_actions::workspace::CopyPath))
+                            .action("Copy Path", Box::new(wu_actions::workspace::CopyPath))
                             .action(
                                 "Copy Relative Path",
-                                Box::new(zed_actions::workspace::CopyRelativePath),
+                                Box::new(wu_actions::workspace::CopyRelativePath),
                             )
                             .when(has_git_repo, |menu| {
                                 menu.separator()
@@ -3756,7 +3756,7 @@ impl ProjectPanel {
 
     fn copy_path(
         &mut self,
-        _: &zed_actions::workspace::CopyPath,
+        _: &wu_actions::workspace::CopyPath,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -3784,7 +3784,7 @@ impl ProjectPanel {
 
     fn copy_relative_path(
         &mut self,
-        _: &zed_actions::workspace::CopyRelativePath,
+        _: &wu_actions::workspace::CopyRelativePath,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -3978,7 +3978,7 @@ impl ProjectPanel {
                     None => {
                         // File at root, open search with empty filter
                         window.dispatch_action(
-                            Box::new(zed_actions::search::NewSearchInDirectory::default()),
+                            Box::new(wu_actions::search::NewSearchInDirectory::default()),
                             cx,
                         );
                         return;
@@ -3997,7 +3997,7 @@ impl ProjectPanel {
                 .display(self.project.read(cx).path_style(cx))
                 .into_owned();
             window.dispatch_action(
-                Box::new(zed_actions::search::NewSearchInDirectory { directory }),
+                Box::new(wu_actions::search::NewSearchInDirectory { directory }),
                 cx,
             );
         }

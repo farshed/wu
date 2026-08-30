@@ -42,7 +42,7 @@ ui.workspace = true
 util.workspace = true
 watch.workspace = true
 workspace.workspace = true
-zed_actions.workspace = true
+wu_actions.workspace = true
 zeroize.workspace = true
 ztracing.workspace = true
 

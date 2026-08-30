@@ -1,6 +1,6 @@
 use gpui::TaskExt;
 use workspace::Workspace;
-use zed_actions::remote_debug::{SimulateDisconnect, SimulateTimeout, SimulateTimeoutExhausted};
+use wu_actions::remote_debug::{SimulateDisconnect, SimulateTimeout, SimulateTimeoutExhausted};
 
 pub fn init(cx: &mut gpui::App) {
     cx.observe_new(|workspace: &mut Workspace, _, cx| {

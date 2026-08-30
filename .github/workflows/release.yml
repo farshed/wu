@@ -19,12 +19,12 @@ jobs:
       - name: Install lld
         run: brew install lld
       - name: Use the stable release channel
-        run: echo stable > crates/zed/RELEASE_CHANNEL
+        run: echo stable > crates/wu/RELEASE_CHANNEL
       - name: Check that the tag matches the crate version
         run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/zed/Cargo.toml | head -1)
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/wu/Cargo.toml | head -1)
           if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match crates/zed/Cargo.toml version ${version}"
+            echo "Tag ${GITHUB_REF_NAME} does not match crates/wu/Cargo.toml version ${version}"
             exit 1
           fi
       - name: Bundle

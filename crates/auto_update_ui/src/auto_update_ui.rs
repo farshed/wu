@@ -21,7 +21,7 @@ use workspace::{
     },
     workspace_error::{ErrorAction, ErrorSeverity, WorkspaceError},
 };
-use zed_actions::ShowUpdateNotification;
+use wu_actions::ShowUpdateNotification;
 
 actions!(
     auto_update,

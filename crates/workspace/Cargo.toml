@@ -68,7 +68,7 @@ ui_input.workspace = true
 url.workspace = true
 util.workspace = true
 uuid.workspace = true
-zed_actions.workspace = true
+wu_actions.workspace = true
 
 [dev-dependencies]
 client = { workspace = true, features = ["test-support"] }

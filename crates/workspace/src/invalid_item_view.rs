@@ -6,7 +6,7 @@ use ui::{
     KeyBinding, Label, LabelCommon, LabelSize, ParentElement, Render, SharedString, Styled as _,
     Window, h_flex, v_flex,
 };
-use zed_actions::workspace::OpenWithSystem;
+use wu_actions::workspace::OpenWithSystem;
 
 use crate::Item;
 

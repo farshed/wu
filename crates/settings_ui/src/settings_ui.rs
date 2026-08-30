@@ -43,7 +43,7 @@ use workspace::{
     AppState, MultiWorkspace, OpenOptions, OpenVisible, Workspace, WorkspaceSettings,
     client_side_decorations,
 };
-use zed_actions::{
+use wu_actions::{
     OpenProjectSettings, OpenSettings, OpenSettingsAt, OpenSettingsAtTarget, OpenSettingsPage,
 };
 

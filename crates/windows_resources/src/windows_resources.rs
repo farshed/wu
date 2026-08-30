@@ -38,7 +38,7 @@ fn product_version() -> String {
     format!("{pkg_version}+{metadata}")
 }
 
-const ICON_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../zed/resources/windows");
+const ICON_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../wu/resources/windows");
 const MANIFEST_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/resources/manifest.xml");
 
 pub fn compile(manifest: bool) -> Result<(), Box<dyn std::error::Error>> {

@@ -47,7 +47,7 @@ use workspace::{
     SerializedWorkspaceLocation, Workspace, WorkspaceDb, WorkspaceId,
     notifications::DetachAndPromptErr, with_active_or_new_workspace,
 };
-use zed_actions::{OpenRecent, OpenRemote};
+use wu_actions::{OpenRecent, OpenRemote};
 
 actions!(
     recent_projects,
@@ -283,7 +283,7 @@ pub(crate) fn default_open_in_new_window(cx: &App) -> bool {
 
 pub fn init(cx: &mut App) {
     #[cfg(target_os = "windows")]
-    cx.on_action(|open_wsl: &zed_actions::wsl_actions::OpenFolderInWsl, cx| {
+    cx.on_action(|open_wsl: &wu_actions::wsl_actions::OpenFolderInWsl, cx| {
         let create_new_window = open_wsl
             .create_new_window
             .unwrap_or_else(|| default_open_in_new_window(cx));
@@ -369,7 +369,7 @@ pub fn init(cx: &mut App) {
     });
 
     #[cfg(target_os = "windows")]
-    cx.on_action(|open_wsl: &zed_actions::wsl_actions::OpenWsl, cx| {
+    cx.on_action(|open_wsl: &wu_actions::wsl_actions::OpenWsl, cx| {
         let create_new_window = open_wsl
             .create_new_window
             .unwrap_or_else(|| default_open_in_new_window(cx));

@@ -5,7 +5,7 @@
 You can test your changes to the `cli` crate by first building the main zed binary:
 
 ```
-cargo build -p zed
+cargo build -p wu
 ```
 
 And then building and running the `cli` crate with the following parameters:

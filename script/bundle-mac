@@ -49,7 +49,7 @@ shift $((OPTIND-1))
 
 
 # Get release channel
-pushd crates/zed
+pushd crates/wu
 channel=$(<RELEASE_CHANNEL)
 export ZED_RELEASE_CHANNEL="${channel}"
 popd
@@ -87,13 +87,13 @@ script/generate-licenses
 rustup target add $target_triple
 
 echo "Compiling zed binaries"
-cargo build ${build_flag} --package zed --package cli --target $target_triple
+cargo build ${build_flag} --package wu --package cli --target $target_triple
 # Build remote_server in separate invocation to prevent feature unification from other crates
 # from influencing dynamic libraries required by it.
 cargo build ${build_flag} --package remote_server --target $target_triple
 
 echo "Creating application bundle"
-pushd crates/zed
+pushd crates/wu
 cp Cargo.toml Cargo.toml.backup
 sed \
     -i.backup \
@@ -108,7 +108,7 @@ echo "Bundled ${app_path}"
 
 # DocumentTypes.plist references CFBundleTypeIconFile "Document", so the bundle must contain Document.icns.
 # We use the app icon as a placeholder document icon for now.
-document_icon_source="crates/zed/resources/Document.icns"
+document_icon_source="crates/wu/resources/Document.icns"
 document_icon_target="${app_path}/Contents/Resources/Document.icns"
 if [[ -f "${document_icon_source}" ]]; then
     mkdir -p "$(dirname "${document_icon_target}")"
@@ -195,15 +195,15 @@ function sign_app_binaries() {
     echo "Downloading git binary"
     download_git "${target_triple}" "${app_path}/Contents/MacOS/git"
 
-    cp crates/zed/contents/$channel/embedded.provisionprofile "${app_path}/Contents/"
+    cp crates/wu/contents/$channel/embedded.provisionprofile "${app_path}/Contents/"
 
     if [[ $can_code_sign = true ]]; then
         echo "Code signing binaries"
         # sequence of codesign commands modeled after this example: https://developer.apple.com/forums/thread/701514
         /usr/bin/codesign --deep --force --timestamp --options runtime --sign "$IDENTITY" "${app_path}/Contents/MacOS/cli" -v
         /usr/bin/codesign --deep --force --timestamp --options runtime --sign "$IDENTITY" "${app_path}/Contents/MacOS/git" -v
-        /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/zed/resources/zed.entitlements --sign "$IDENTITY" "${app_path}/Contents/MacOS/zed" -v
-        /usr/bin/codesign --force --timestamp --options runtime --entitlements crates/zed/resources/zed.entitlements --sign "$IDENTITY" "${app_path}" -v
+        /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${app_path}/Contents/MacOS/zed" -v
+        /usr/bin/codesign --force --timestamp --options runtime --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${app_path}" -v
     else
         echo "One or more of the following variables are missing: MACOS_CERTIFICATE, MACOS_CERTIFICATE_PASSWORD, APPLE_NOTARIZATION_KEY, APPLE_NOTARIZATION_KEY_ID, APPLE_NOTARIZATION_ISSUER_ID"
 
@@ -216,7 +216,7 @@ function sign_app_binaries() {
         # - get a signing key for the MQ55VZLNZQ team from Nathan.
         # - create your own signing key, and update references to MQ55VZLNZQ to your own team ID
         # then comment out this line.
-        cat crates/zed/resources/zed.entitlements | sed '/com.apple.developer.associated-domains/,+1d' > "${app_path}/Contents/Resources/zed.entitlements"
+        cat crates/wu/resources/zed.entitlements | sed '/com.apple.developer.associated-domains/,+1d' > "${app_path}/Contents/Resources/zed.entitlements"
 
         codesign --force --deep --entitlements "${app_path}/Contents/Resources/zed.entitlements" --sign ${MACOS_SIGNING_KEY:- -} "${app_path}" -v
     fi
@@ -283,7 +283,7 @@ function sign_binary() {
 
     if [[ $can_code_sign = true ]]; then
         echo "Code signing executable $binary_path"
-        /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/zed/resources/zed.entitlements --sign "$IDENTITY" "${binary_path}" -v
+        /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${binary_path}" -v
     fi
 }
 
@@ -308,7 +308,7 @@ function upload_debug_symbols() {
         # Try uploading up to 3 times
         for attempt in 1 2 3; do
             echo "Sentry upload attempt $attempt..."
-            if sentry-cli debug-files upload --include-sources --wait -p zed -o zed-dev \
+            if sentry-cli debug-files upload --include-sources --wait -p wu -o zed-dev \
                 "target/${target_triple}/${target_dir}/zed.dwarf" \
                 "target/${target_triple}/${target_dir}/remote_server.dwarf"; then
                 break

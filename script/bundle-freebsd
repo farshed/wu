@@ -25,7 +25,7 @@ done
 
 export ZED_BUNDLE=true
 
-channel=$(<crates/zed/RELEASE_CHANNEL)
+channel=$(<crates/wu/RELEASE_CHANNEL)
 target_dir="${CARGO_TARGET_DIR:-target}"
 
 version="$(script/get-crate-version zed)"
@@ -54,7 +54,7 @@ remote_server_triple=${REMOTE_SERVER_TARGET:-"${target_triple}"}
 
 # Build binary in release mode
 export RUSTFLAGS="${RUSTFLAGS:-} -C link-args=-Wl,--disable-new-dtags,-rpath,\$ORIGIN/../lib"
-# cargo build --release --target "${target_triple}" --package zed --package cli
+# cargo build --release --target "${target_triple}" --package wu --package cli
 
 # Build remote_server in separate invocation to prevent feature unification from other crates
 # from influencing dynamic libraries required by it.
@@ -117,9 +117,9 @@ fi
 
 # Icons
 # mkdir -p "${zed_dir}/share/icons/hicolor/512x512/apps"
-# cp "crates/zed/resources/app-icon$suffix.png" "${zed_dir}/share/icons/hicolor/512x512/apps/zed.png"
+# cp "crates/wu/resources/app-icon$suffix.png" "${zed_dir}/share/icons/hicolor/512x512/apps/zed.png"
 # mkdir -p "${zed_dir}/share/icons/hicolor/1024x1024/apps"
-# cp "crates/zed/resources/app-icon$suffix@2x.png" "${zed_dir}/share/icons/hicolor/1024x1024/apps/zed.png"
+# cp "crates/wu/resources/app-icon$suffix@2x.png" "${zed_dir}/share/icons/hicolor/1024x1024/apps/zed.png"
 
 # .desktop
 # export DO_STARTUP_NOTIFY="true"
@@ -137,7 +137,7 @@ fi
 # fi
 
 # mkdir -p "${zed_dir}/share/applications"
-# envsubst <"crates/zed/resources/zed.desktop.in" >"${zed_dir}/share/applications/zed$suffix.desktop"
+# envsubst <"crates/wu/resources/zed.desktop.in" >"${zed_dir}/share/applications/zed$suffix.desktop"
 # chmod +x "${zed_dir}/share/applications/zed$suffix.desktop"
 
 # Copy generated licenses so they'll end up in archive too

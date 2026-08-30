@@ -24,7 +24,7 @@ use workspace::{
     ModalView, OpenMode, Workspace,
     notifications::{DetachAndPromptErr, NotifyTaskExt},
 };
-use zed_actions;
+use wu_actions;
 
 use crate::{
     commit_view::CommitView,
@@ -114,21 +114,21 @@ pub fn init(cx: &mut App) {
         git_picker::register(workspace);
 
         workspace.register_action(
-            |workspace, action: &zed_actions::CreateWorktree, window, cx| {
+            |workspace, action: &wu_actions::CreateWorktree, window, cx| {
                 git_ui_core::worktree_service::handle_create_worktree(
                     workspace, action, window, None, cx,
                 );
             },
         );
         workspace.register_action(
-            |workspace, action: &zed_actions::SwitchWorktree, window, cx| {
+            |workspace, action: &wu_actions::SwitchWorktree, window, cx| {
                 git_ui_core::worktree_service::handle_switch_worktree(
                     workspace, action, window, None, cx,
                 );
             },
         );
 
-        workspace.register_action(|workspace, _: &zed_actions::git::Worktree, window, cx| {
+        workspace.register_action(|workspace, _: &wu_actions::git::Worktree, window, cx| {
             let focused_dock = workspace.focused_dock_position(window, cx);
             let project = workspace.project().clone();
             let workspace_handle = workspace.weak_handle();
@@ -144,7 +144,7 @@ pub fn init(cx: &mut App) {
         });
 
         workspace.register_action(
-            |workspace, action: &zed_actions::OpenWorktreeInNewWindow, window, cx| {
+            |workspace, action: &wu_actions::OpenWorktreeInNewWindow, window, cx| {
                 let path = action.path.clone();
                 let is_remote = !workspace.project().read(cx).is_local();
 
@@ -180,7 +180,7 @@ pub fn init(cx: &mut App) {
             return;
         }
         workspace.register_action(
-            |workspace, _: &zed_actions::git::CreatePullRequest, window, cx| {
+            |workspace, _: &wu_actions::git::CreatePullRequest, window, cx| {
                 if let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) {
                     panel.update(cx, |panel, cx| {
                         panel.create_pull_request(window, cx);

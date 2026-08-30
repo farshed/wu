@@ -20,7 +20,7 @@ use ui::{
 
 use util::{ResultExt, truncate_and_trailoff};
 use workspace::{ModalView, Workspace};
-pub use zed_actions::{Rerun, Spawn};
+pub use wu_actions::{Rerun, Spawn};
 
 /// A modal used to spawn new tasks.
 pub struct TasksModalDelegate {

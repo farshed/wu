@@ -348,7 +348,7 @@ mod tests {
     use text::Point;
     use util::path;
     use workspace::item::{Item, ItemEvent};
-    use zed_actions::editor::MoveDown;
+    use wu_actions::editor::MoveDown;
 
     use crate::{
         Editor, LSP_REQUEST_DEBOUNCE_TIMEOUT,
