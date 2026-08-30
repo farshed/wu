@@ -38,8 +38,6 @@ Wu is not signed with an Apple Developer certificate, so macOS will block it the
 
 If you'd rather not use Terminal: open Wu once (you'll see a "Wu can't be opened" or "Apple could not verify" message), then go to System Settings → Privacy & Security, scroll down, and click Open Anyway next to Wu. Confirm with your password.
 
-You only need to do this once. Auto-updates won't trigger it again.
-
 ## Docs
 
 See [docs](https://wu.farshed.me).
