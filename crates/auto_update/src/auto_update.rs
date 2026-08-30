@@ -196,6 +196,8 @@ struct GitHubReleaseAsset {
 fn github_asset_name(asset: &str, os: &str, arch: &str) -> Result<String> {
     match (asset, os) {
         ("zed", "macos") => Ok(format!("Wu-{arch}.dmg")),
+        ("zed", "linux") => Ok(format!("wu-linux-{arch}.tar.gz")),
+        ("zed", "windows") => Ok(format!("Wu-{arch}.exe")),
         ("wu-remote-server", _) => Ok(format!("wu-remote-server-{os}-{arch}.gz")),
         _ => anyhow::bail!("no release asset for {asset} on {os}"),
     }
@@ -399,7 +401,7 @@ impl InstallerDir {
     async fn new() -> Result<Self> {
         let installer_dir = std::env::current_exe()?
             .parent()
-            .context("No parent dir for Zed.exe")?
+            .context("No parent dir for Wu.exe")?
             .join("updates");
         if smol::fs::metadata(&installer_dir).await.is_ok() {
             smol::fs::remove_dir_all(&installer_dir).await?;
@@ -892,8 +894,8 @@ impl AutoUpdater {
     async fn target_path(installer_dir: &InstallerDir) -> Result<PathBuf> {
         let filename = match OS {
             "macos" => anyhow::Ok("Wu.dmg"),
-            "linux" => Ok("zed.tar.gz"),
-            "windows" => Ok("Zed.exe"),
+            "linux" => Ok("wu.tar.gz"),
+            "windows" => Ok("Wu.exe"),
             unsupported_os => anyhow::bail!("not supported: {unsupported_os}"),
         }?;
 
@@ -1103,7 +1105,7 @@ async fn install_release_linux(
 ) -> Result<Option<PathBuf>> {
     let home_dir = PathBuf::from(env::var("HOME").context("no HOME env var set")?);
 
-    let extracted = temp_dir.path().join("zed");
+    let extracted = temp_dir.path().join("wu");
     fs::create_dir_all(&extracted)
         .await
         .context("failed to create directory into which to extract update")?;
@@ -1131,12 +1133,12 @@ async fn install_release_linux(
     } else {
         String::default()
     };
-    let app_folder_name = format!("zed{}.app", suffix);
+    let app_folder_name = format!("wu{}.app", suffix);
 
     let from = extracted.join(&app_folder_name);
     let mut to = home_dir.join(".local");
 
-    let expected_suffix = format!("{}/libexec/zed-editor", app_folder_name);
+    let expected_suffix = format!("{}/libexec/wu-editor", app_folder_name);
 
     if let Some(prefix) = running_app_path
         .to_str()
@@ -1268,7 +1270,7 @@ async fn cleanup_stale_installer_dirs() {
 async fn cleanup_windows() -> Result<()> {
     let parent = std::env::current_exe()?
         .parent()
-        .context("No parent dir for Zed.exe")?
+        .context("No parent dir for Wu.exe")?
         .to_owned();
 
     // keep in sync with crates/auto_update_helper/src/updater.rs
@@ -1295,7 +1297,7 @@ async fn install_release_windows(downloaded_installer: &Path) -> Result<Option<P
     // deleting the old one, and launching the new binary.
     let helper_path = std::env::current_exe()?
         .parent()
-        .context("No parent dir for Zed.exe")?
+        .context("No parent dir for Wu.exe")?
         .join("tools")
         .join("auto_update_helper.exe");
     Ok(Some(helper_path))

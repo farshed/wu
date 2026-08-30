@@ -14,7 +14,7 @@ Wu is built on the [Zed](https://github.com/zed-industries/zed) engine, so it in
 ## Features
 
 - **Native and fast.** Written in Rust, rendered on the GPU. No Electron or webviews. Opens instantly and stays responsive on large files.
-- **Lighter.** Base memory use is about 28% lower than Zed.
+- **Lightweight.** Base memory use is about 28% lower than even Zed.
 - **No built-in AI features.** Bring whichever agent or harness you already use.
 - **Feels like VS Code out of the box.** Layout, panels, and defaults are tuned so you don't have to relearn your editor.
 
@@ -23,6 +23,22 @@ Wu is built on the [Zed](https://github.com/zed-industries/zed) engine, so it in
 ![Wu screenshot dark](assets/images/screenshot-dark.png)
 
 ![Wu screenshot light](assets/images/screenshot-light.png)
+
+## Installing on macOS
+
+Wu is not signed with an Apple Developer certificate, so macOS will block it the first time you open it. This is a one-time step.
+
+1. Open the `.dmg` and drag Wu into your Applications folder.
+2. Open Terminal and run:
+
+   ```sh
+   xattr -d com.apple.quarantine /Applications/Wu.app
+
+3. Open Wu normally.
+
+If you'd rather not use Terminal: open Wu once (you'll see a "Wu can't be opened" or "Apple could not verify" message), then go to System Settings → Privacy & Security, scroll down, and click Open Anyway next to Wu. Confirm with your password.
+
+You only need to do this once. Auto-updates won't trigger it again.
 
 ## Docs
 

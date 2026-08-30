@@ -9,7 +9,20 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
 jobs:
+  check_version:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check that the tag matches the crate version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/wu/Cargo.toml | head -1)
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match crates/wu/Cargo.toml version ${version}"
+            exit 1
+          fi
+
   bundle_mac:
+    needs: check_version
     runs-on: macos-14
     timeout-minutes: 300
     steps:
@@ -20,18 +33,83 @@ jobs:
         run: brew install lld
       - name: Use the stable release channel
         run: echo stable > crates/wu/RELEASE_CHANNEL
-      - name: Check that the tag matches the crate version
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/wu/Cargo.toml | head -1)
-          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match crates/wu/Cargo.toml version ${version}"
-            exit 1
-          fi
       - name: Bundle
         run: script/bundle-mac aarch64-apple-darwin
-      - name: Upload to the GitHub release
-        uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: macos-aarch64
+          path: |
             target/aarch64-apple-darwin/release/Wu-aarch64.dmg
             target/wu-remote-server-macos-aarch64.gz
+          if-no-files-found: error
+
+  bundle_linux:
+    needs: check_version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 300
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: ./script/linux
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: Use the stable release channel
+        run: echo stable > crates/wu/RELEASE_CHANNEL
+      - name: Bundle
+        run: ./script/bundle-linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            target/release/wu-linux-${{ matrix.arch }}.tar.gz
+            target/wu-remote-server-linux-${{ matrix.arch }}.gz
+          if-no-files-found: error
+
+  bundle_windows:
+    needs: check_version
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: Use the stable release channel
+        run: Set-Content -Path crates/wu/RELEASE_CHANNEL -Value stable -NoNewline
+        shell: pwsh
+      - name: Bundle
+        run: script/bundle-windows.ps1 -Architecture x86_64
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: |
+            target/Wu-x86_64.exe
+            target/wu-remote-server-windows-x86_64.gz
+          if-no-files-found: error
+
+  release:
+    needs: [bundle_mac, bundle_linux, bundle_windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: .github/release/body.md
+          generate_release_notes: true
+          files: artifacts/*

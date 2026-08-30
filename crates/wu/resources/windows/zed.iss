@@ -2,10 +2,10 @@
 AppId={#AppId}
 AppName={#AppName}
 AppVerName={#AppDisplayName}
-AppPublisher=Zed Industries
-AppPublisherURL=https://www.zed.dev/
-AppSupportURL=https://www.zed.dev/
-AppUpdatesURL=https://www.zed.dev/
+AppPublisher=Farshed
+AppPublisherURL=https://github.com/farshed/wu
+AppSupportURL=https://github.com/farshed/wu/issues
+AppUpdatesURL=https://github.com/farshed/wu/releases
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 DisableReadyPage=yes

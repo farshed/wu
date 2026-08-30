@@ -48,7 +48,7 @@ export ZED_BUNDLE=true
 channel=$(<crates/wu/RELEASE_CHANNEL)
 target_dir="${CARGO_TARGET_DIR:-target}"
 
-version="$(script/get-crate-version zed)"
+version="$(script/get-crate-version wu)"
 # Set RELEASE_VERSION so it's compiled into GPUI and it knows about the version.
 export RELEASE_VERSION="${version}"
 
@@ -93,34 +93,6 @@ if [[ "$remote_server_triple" == "$musl_triple" ]]; then
 fi
 cargo build --release --target "${remote_server_triple}" --package remote_server
 
-# Upload debug info to sentry.io
-if ! command -v sentry-cli >/dev/null 2>&1; then
-    echo "sentry-cli not found. skipping sentry upload."
-    echo "install with: 'curl -sL https://sentry.io/get-cli | bash'"
-else
-    if [[ -n "${SENTRY_AUTH_TOKEN:-}" ]]; then
-        echo "Uploading zed debug symbols to sentry..."
-        # note: this uploads the unstripped binary which is needed because it contains
-        # .eh_frame data for stack unwinding. see https://github.com/getsentry/symbolic/issues/783
-        for attempt in 1 2 3; do
-            echo "Attempting sentry upload (attempt $attempt/3)..."
-            if sentry-cli debug-files upload --include-sources --wait -p wu -o zed-dev \
-                "${target_dir}/${target_triple}"/release/wu \
-                "${target_dir}/${remote_server_triple}"/release/remote_server; then
-                echo "Sentry upload successful on attempt $attempt"
-                break
-            else
-                echo "Sentry upload failed on attempt $attempt"
-                if [ $attempt -eq 3 ]; then
-                    echo "All sentry upload attempts failed"
-                fi
-            fi
-        done
-    else
-        echo "missing SENTRY_AUTH_TOKEN. skipping sentry upload."
-    fi
-fi
-
 # Strip debug symbols and save them for upload to DigitalOcean.
 # We use llvm-objcopy because GNU objcopy on older distros (e.g. Ubuntu 20.04)
 # doesn't understand CREL sections produced by newer LLVM.
@@ -145,12 +117,12 @@ fi
 # Move everything that should end up in the final package
 # into a temp directory.
 temp_dir=$(mktemp -d)
-zed_dir="${temp_dir}/zed$suffix.app"
+wu_dir="${temp_dir}/wu$suffix.app"
 
 # Binary
-mkdir -p "${zed_dir}/bin" "${zed_dir}/libexec"
-cp "${target_dir}/${target_triple}/release/wu" "${zed_dir}/libexec/wu-editor"
-cp "${target_dir}/${target_triple}/release/cli" "${zed_dir}/bin/wu"
+mkdir -p "${wu_dir}/bin" "${wu_dir}/libexec"
+cp "${target_dir}/${target_triple}/release/wu" "${wu_dir}/libexec/wu-editor"
+cp "${target_dir}/${target_triple}/release/cli" "${wu_dir}/bin/wu"
 
 # Libs
 # Bundle libstdc++ so older supported systems can run binaries built with our
@@ -166,43 +138,43 @@ find_libs() {
         grep -v '\<\(libglib-2.0.so\|libgobject-2.0.so\|libgio-2.0.so\|libgmodule-2.0.so\|libpcre.so\|libpcre2-8.so\|libmount.so\|libblkid.so\|libselinux.so\|libffi.so\|libresolv.so\|libz.so\)'
 }
 
-mkdir -p "${zed_dir}/lib"
-rm -rf "${zed_dir}/lib/*"
-cp $(find_libs) "${zed_dir}/lib"
+mkdir -p "${wu_dir}/lib"
+rm -rf "${wu_dir}/lib/*"
+cp $(find_libs) "${wu_dir}/lib"
 
 # Icons
-mkdir -p "${zed_dir}/share/icons/hicolor/512x512/apps"
-cp "crates/wu/resources/app-icon$suffix.png" "${zed_dir}/share/icons/hicolor/512x512/apps/zed.png"
-mkdir -p "${zed_dir}/share/icons/hicolor/1024x1024/apps"
-cp "crates/wu/resources/app-icon$suffix@2x.png" "${zed_dir}/share/icons/hicolor/1024x1024/apps/zed.png"
+mkdir -p "${wu_dir}/share/icons/hicolor/512x512/apps"
+cp "crates/wu/resources/app-icon$suffix.png" "${wu_dir}/share/icons/hicolor/512x512/apps/wu.png"
+mkdir -p "${wu_dir}/share/icons/hicolor/1024x1024/apps"
+cp "crates/wu/resources/app-icon$suffix@2x.png" "${wu_dir}/share/icons/hicolor/1024x1024/apps/wu.png"
 
 # .desktop
 export DO_STARTUP_NOTIFY="true"
 export APP_CLI="wu"
-export APP_ICON="zed"
+export APP_ICON="wu"
 export APP_ARGS="%U"
 if [[ "$channel" == "dev" ]]; then
-  export APP_NAME="Zed Devel"
+  export APP_NAME="Wu Dev"
   APP_ID="me.farshed.Wu-Dev"
 else
-  export APP_NAME="Zed"
+  export APP_NAME="Wu"
   APP_ID="me.farshed.Wu"
 fi
 
-mkdir -p "${zed_dir}/share/applications"
-envsubst < "crates/wu/resources/zed.desktop.in" > "${zed_dir}/share/applications/$APP_ID.desktop"
-chmod +x "${zed_dir}/share/applications/$APP_ID.desktop"
+mkdir -p "${wu_dir}/share/applications"
+envsubst < "crates/wu/resources/zed.desktop.in" > "${wu_dir}/share/applications/$APP_ID.desktop"
+chmod +x "${wu_dir}/share/applications/$APP_ID.desktop"
 
 # Copy generated licenses so they'll end up in archive too
-cp "assets/licenses.md" "${zed_dir}/licenses.md"
+cp "assets/licenses.md" "${wu_dir}/licenses.md"
 
 # Create archive out of everything that's in the temp directory
 arch=$(uname -m)
-archive="zed-linux-${arch}.tar.gz"
+archive="wu-linux-${arch}.tar.gz"
 
 rm -rf "${archive}"
-remove_match="zed(-[a-zA-Z0-9]+)?-linux-$(uname -m)\.tar\.gz"
+remove_match="wu(-[a-zA-Z0-9]+)?-linux-$(uname -m)\.tar\.gz"
 ls "${target_dir}/release" | grep -E ${remove_match} | xargs -d "\n" -I {} rm -f "${target_dir}/release/{}" || true
-tar -czvf "${target_dir}/release/$archive" -C ${temp_dir} "zed$suffix.app"
+tar -czvf "${target_dir}/release/$archive" -C ${temp_dir} "wu$suffix.app"
 
 gzip -f --stdout --best "${target_dir}/${remote_server_triple}/release/remote_server" > "${target_dir}/wu-remote-server-linux-${arch}.gz"

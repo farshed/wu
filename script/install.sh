@@ -1,20 +1,24 @@
 #!/usr/bin/env sh
 set -eu
 
-# Downloads a tarball from https://zed.dev/releases and unpacks it
-# into ~/.local/. If you'd prefer to do this manually, instructions are at
-# https://zed.dev/docs/linux.
+# Downloads a Wu release from GitHub and unpacks it into ~/.local/.
 
 main() {
     platform="$(uname -s)"
     arch="$(uname -m)"
     channel="${ZED_CHANNEL:-stable}"
+    repo="farshed/wu"
     ZED_VERSION="${ZED_VERSION:-latest}"
+    if [ "$ZED_VERSION" = "latest" ]; then
+        download_base="https://github.com/$repo/releases/latest/download"
+    else
+        download_base="https://github.com/$repo/releases/download/v$ZED_VERSION"
+    fi
     # Use TMPDIR if available (for environments with non-standard temp directories)
     if [ -n "${TMPDIR:-}" ] && [ -d "${TMPDIR}" ]; then
-        temp="$(mktemp -d "$TMPDIR/zed-XXXXXX")"
+        temp="$(mktemp -d "$TMPDIR/wu-XXXXXX")"
     else
-        temp="$(mktemp -d "/tmp/zed-XXXXXX")"
+        temp="$(mktemp -d "/tmp/wu-XXXXXX")"
     fi
 
     if [ "$platform" = "Darwin" ]; then
@@ -55,9 +59,9 @@ main() {
     "$platform" "$@"
 
     if [ "$(command -v wu)" = "$HOME/.local/bin/wu" ]; then
-        echo "Zed has been installed. Run with 'zed'"
+        echo "Wu has been installed. Run with 'wu'"
     else
-        echo "To run Zed from your terminal, you must add ~/.local/bin to your PATH"
+        echo "To run Wu from your terminal, you must add ~/.local/bin to your PATH"
         echo "Run:"
 
         case "$SHELL" in
@@ -74,16 +78,16 @@ main() {
                 ;;
         esac
 
-        echo "To run Zed now, '~/.local/bin/wu'"
+        echo "To run Wu now, '~/.local/bin/wu'"
     fi
 }
 
 linux() {
     if [ -n "${ZED_BUNDLE_PATH:-}" ]; then
-        cp "$ZED_BUNDLE_PATH" "$temp/zed-linux-$arch.tar.gz"
+        cp "$ZED_BUNDLE_PATH" "$temp/wu-linux-$arch.tar.gz"
     else
-        echo "Downloading Zed version: $ZED_VERSION"
-        curl "https://cloud.zed.dev/releases/$channel/$ZED_VERSION/download?asset=zed&arch=$arch&os=linux&source=install.sh" > "$temp/zed-linux-$arch.tar.gz"
+        echo "Downloading Wu version: $ZED_VERSION"
+        curl "$download_base/wu-linux-$arch.tar.gz" > "$temp/wu-linux-$arch.tar.gz"
     fi
 
     suffix=""
@@ -106,17 +110,17 @@ linux() {
     esac
 
     # Unpack
-    rm -rf "$HOME/.local/zed$suffix.app"
-    mkdir -p "$HOME/.local/zed$suffix.app"
-    tar -xzf "$temp/zed-linux-$arch.tar.gz" -C "$HOME/.local/"
+    rm -rf "$HOME/.local/wu$suffix.app"
+    mkdir -p "$HOME/.local/wu$suffix.app"
+    tar -xzf "$temp/wu-linux-$arch.tar.gz" -C "$HOME/.local/"
 
-    zed_editor="$HOME/.local/zed$suffix.app/libexec/wu-editor"
+    zed_editor="$HOME/.local/wu$suffix.app/libexec/wu-editor"
     if [ -f "$zed_editor" ] && command -v ldd >/dev/null 2>&1; then
         missing="$(ldd "$zed_editor" 2>/dev/null | sed -n 's/^[[:space:]]*\(.*\) => not found$/\1/p')"
         if [ -n "$missing" ]; then
-            echo "Warning: your system is missing libraries that Zed needs:"
+            echo "Warning: your system is missing libraries that Wu needs:"
             echo "$missing" | sed 's/^/    /'
-            echo "Install them with your package manager, or Zed will fail to start."
+            echo "Install them with your package manager, or Wu will fail to start."
         fi
     fi
 
@@ -124,30 +128,20 @@ linux() {
     mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications"
 
     # Link the binary
-    if [ -f "$HOME/.local/zed$suffix.app/bin/wu" ]; then
-        ln -sf "$HOME/.local/zed$suffix.app/bin/wu" "$HOME/.local/bin/wu"
-    else
-        # support for versions before 0.139.x.
-        ln -sf "$HOME/.local/zed$suffix.app/bin/cli" "$HOME/.local/bin/wu"
-    fi
+    ln -sf "$HOME/.local/wu$suffix.app/bin/wu" "$HOME/.local/bin/wu"
 
     # Copy .desktop file
     desktop_file_path="$HOME/.local/share/applications/${appid}.desktop"
-    src_dir="$HOME/.local/zed$suffix.app/share/applications"
-    if [ -f "$src_dir/${appid}.desktop" ]; then
-        cp "$src_dir/${appid}.desktop" "${desktop_file_path}"
-    else
-        # Fallback for older tarballs
-        cp "$src_dir/zed$suffix.desktop" "${desktop_file_path}"
-    fi
-    sed -i "s|Icon=zed|Icon=$HOME/.local/zed$suffix.app/share/icons/hicolor/512x512/apps/zed.png|g" "${desktop_file_path}"
-    sed -i "s|Exec=wu|Exec=$HOME/.local/zed$suffix.app/bin/wu|g" "${desktop_file_path}"
+    src_dir="$HOME/.local/wu$suffix.app/share/applications"
+    cp "$src_dir/${appid}.desktop" "${desktop_file_path}"
+    sed -i "s|Icon=wu|Icon=$HOME/.local/wu$suffix.app/share/icons/hicolor/512x512/apps/wu.png|g" "${desktop_file_path}"
+    sed -i "s|Exec=wu|Exec=$HOME/.local/wu$suffix.app/bin/wu|g" "${desktop_file_path}"
 }
 
 macos() {
-    echo "Downloading Zed version: $ZED_VERSION"
-    curl "https://cloud.zed.dev/releases/$channel/$ZED_VERSION/download?asset=zed&os=macos&arch=$arch&source=install.sh" > "$temp/Zed-$arch.dmg"
-    hdiutil attach -quiet "$temp/Zed-$arch.dmg" -mountpoint "$temp/mount"
+    echo "Downloading Wu version: $ZED_VERSION"
+    curl "$download_base/Wu-$arch.dmg" > "$temp/Wu-$arch.dmg"
+    hdiutil attach -quiet "$temp/Wu-$arch.dmg" -mountpoint "$temp/mount"
     app="$(cd "$temp/mount/"; echo *.app)"
     echo "Installing $app"
     if [ -d "/Applications/$app" ]; then
