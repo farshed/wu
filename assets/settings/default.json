@@ -68,7 +68,7 @@
   // The weight of the UI font in standard CSS units from 100 to 900.
   "ui_font_weight": 400,
   // The default font size for text in the UI
-  "ui_font_size": 16,
+  "ui_font_size": 15,
   // The default font size for the commit editor in the git panel and commit modal.
   "git_commit_buffer_font_size": 12,
   // The default font size for the markdown preview. Falls back to the UI font size if unset.
@@ -779,7 +779,7 @@
     // Where to dock the project panel. Can be 'left' or 'right'.
     "dock": "left",
     // Spacing between worktree entries in the project panel. Can be 'comfortable' or 'standard'.
-    "entry_spacing": "comfortable",
+    "entry_spacing": "standard",
     // Whether to show file icons in the project panel.
     "file_icons": true,
     // What to show for directories in the project panel.

@@ -783,7 +783,7 @@ pub struct ProjectPanelSettingsContent {
     pub dock: Option<DockSide>,
     /// Spacing between worktree entries in the project panel.
     ///
-    /// Default: comfortable
+    /// Default: standard
     pub entry_spacing: Option<ProjectPanelEntrySpacing>,
     /// Whether to show file icons in the project panel.
     ///
@@ -883,9 +883,9 @@ pub struct ProjectPanelSettingsContent {
 #[serde(rename_all = "snake_case")]
 pub enum ProjectPanelEntrySpacing {
     /// Comfortable spacing of entries.
-    #[default]
     Comfortable,
     /// The standard spacing of entries.
+    #[default]
     Standard,
 }
 

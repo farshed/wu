@@ -10,24 +10,13 @@ env:
   CARGO_INCREMENTAL: '0'
 jobs:
   bundle_mac:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-14
-            target: aarch64-apple-darwin
-            arch: aarch64
-          - runner: macos-13
-            target: x86_64-apple-darwin
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
         run: rustup show
       - name: Install lld
-        if: matrix.arch == 'aarch64'
         run: brew install lld
       - name: Use the stable release channel
         run: echo stable > crates/zed/RELEASE_CHANNEL
@@ -39,10 +28,10 @@ jobs:
             exit 1
           fi
       - name: Bundle
-        run: script/bundle-mac ${{ matrix.target }}
+        run: script/bundle-mac aarch64-apple-darwin
       - name: Upload to the GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/${{ matrix.target }}/release/Wu-${{ matrix.arch }}.dmg
-            target/wu-remote-server-macos-${{ matrix.arch }}.gz
+            target/aarch64-apple-darwin/release/Wu-aarch64.dmg
+            target/wu-remote-server-macos-aarch64.gz
