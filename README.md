@@ -1,4 +1,9 @@
-# Wu
+<div align="center">
+  <img src="crates/wu/resources/app-icon.png" alt="Wu" width="128">
+  <h1>Wu</h1>
+  <p>The fast, native code editor that doesn't get in your way.</p>
+  <p><a href="https://github.com/farshed/wu/releases/latest"><strong>Download</strong></a></p>
+</div>
 
 Wu (from [wu wei](https://en.wikipedia.org/wiki/Wu_wei)) is a code editor based off [Zed](https://github.com/zed-industries/zed) that aims to be a native alternative to VSCode.
 

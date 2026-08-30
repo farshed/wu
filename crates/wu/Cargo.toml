@@ -1,5 +1,5 @@
 [package]
-description = "The fast, collaborative code editor."
+description = "The fast, native VSCode alternative."
 edition.workspace = true
 name = "wu"
 version = "1.0.2"
