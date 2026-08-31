@@ -4,7 +4,7 @@
 
 Wu is not signed with an Apple Developer certificate yet, so macOS will block it the first time you open it.
 
-1. Open the `.dmg` and drag Wu into your Applications folder.
+1. Download `Wu-aarch64.dmg`, open it, and drag Wu into your Applications folder.
 2. Open Terminal and run:
 
    ```sh

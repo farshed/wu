@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wu Docs</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa; --fg: #1d1d1b; --muted: #6b6b66; --line: #e4e4df; --accent: #2f6df6; --card: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --fg: #ececea; --muted: #9a9a94; --line: #2b2b29; --accent: #7aa2ff; --card: #1d1d1c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 64px 24px 96px; }
+  h1 { font-size: 2.4rem; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .tagline { color: var(--muted); font-size: 1.1rem; margin: 0 0 40px; }
+  h2 { font-size: 1.25rem; margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--line); }
+  p { margin: 0 0 16px; }
+  ul { margin: 0 0 16px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--line); padding: 1px 5px; border-radius: 4px; }
+  .note { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; margin: 0 0 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 16px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.9rem; }
+  .muted { color: var(--muted); }
+  .back { display: inline-block; margin: 0 0 24px; color: var(--muted); font-size: 0.95rem; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="/">&larr; Wu</a>
+  <h1>Docs</h1>
+  <p class="tagline">Everything Wu does differently from Zed, in one page.</p>
+
+  <div class="note">
+    Wu is built from <a href="https://github.com/zed-industries/zed">Zed</a>'s source. Everything that is not listed on this page works the way it does in Zed, so the
+    <a href="https://zed.dev/docs">Zed documentation</a> is the reference for settings, key bindings, languages, extensions, tasks, debugging, and remote development.
+  </div>
+
+  <h2>What is removed</h2>
+  <ul>
+    <li>AI features: the agent panel, inline assistant, edit predictions, and all language model providers.</li>
+    <li>Collaboration: channels, calls, screen sharing, shared projects, and the sign-in flow that went with them.</li>
+    <li>Telemetry, crash reporting, and hang detection. Wu does not phone home.</li>
+    <li>Vim and Helix modes.</li>
+    <li>Dev containers.</li>
+    <li>The REPL, the journal, and the which-key popup.</li>
+    <li>The settings and keymap migrator for old Zed config formats.</li>
+  </ul>
+  <p class="muted">If a setting or key binding from the Zed docs belongs to one of these features, it has no effect in Wu.</p>
+
+  <h2>What is different</h2>
+  <ul>
+    <li>An activity bar on the side switches between the project, git, outline, search, and debug panels. The debug panel docks on the left by default.</li>
+    <li>The <code>+</code> button in the editor and terminal tab strips sits after the last tab and opens a new file or terminal directly, with no menu.</li>
+    <li><code>Cmd-W</code> / <code>Ctrl-W</code> never closes a side panel. It only closes editor tabs.</li>
+    <li>Icons and the UI use less memory than Zed for the same workload.</li>
+  </ul>
+
+  <h2>Names and paths</h2>
+  <table>
+    <tr><th></th><th>Zed</th><th>Wu</th></tr>
+    <tr><td>Command line</td><td><code>zed</code></td><td><code>wu</code></td></tr>
+    <tr><td>Settings (macOS, Linux)</td><td><code>~/.config/zed</code></td><td><code>~/.config/wu</code></td></tr>
+    <tr><td>Settings (Windows)</td><td><code>%APPDATA%\Zed</code></td><td><code>%APPDATA%\Wu</code></td></tr>
+    <tr><td>App data (macOS)</td><td><code>~/Library/Application Support/Zed</code></td><td><code>~/Library/Application Support/Wu</code></td></tr>
+    <tr><td>Project settings</td><td><code>.zed/</code></td><td><code>.zed/</code> (unchanged)</td></tr>
+    <tr><td>Bundle id</td><td><code>dev.zed.Zed</code></td><td><code>me.farshed.Wu</code></td></tr>
+  </table>
+  <p>Wu and Zed can be installed side by side. They do not share settings, so copy your <code>settings.json</code> and <code>keymap.json</code> over if you want the same setup in both.</p>
+
+  <h2>What is the same</h2>
+  <ul>
+    <li>Extensions come from the Zed extension registry, and every Zed extension works in Wu.</li>
+    <li>Project-level <code>.zed/settings.json</code>, <code>.zed/tasks.json</code>, and <code>.zed/debug.json</code> files work as in Zed.</li>
+    <li>Settings, key bindings, themes, and languages follow the <a href="https://zed.dev/docs">Zed docs</a>.</li>
+  </ul>
+
+  <h2>License</h2>
+  <p>Wu is distributed under the same terms as Zed: GPL-3.0-or-later, with Apache-2.0 components where marked.</p>
+</main>
+</body>
+</html>

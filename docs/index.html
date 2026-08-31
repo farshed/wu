@@ -16,75 +16,39 @@
   body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
   main { max-width: 760px; margin: 0 auto; padding: 64px 24px 96px; }
   h1 { font-size: 2.4rem; margin: 0 0 8px; letter-spacing: -0.02em; }
-  .tagline { color: var(--muted); font-size: 1.1rem; margin: 0 0 40px; }
-  h2 { font-size: 1.25rem; margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--line); }
+  .tagline { color: var(--muted); font-size: 1.1rem; margin: 0 0 32px; }
   p { margin: 0 0 16px; }
   ul { margin: 0 0 16px; padding-left: 22px; }
-  li { margin: 4px 0; }
+  li { margin: 6px 0; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--line); padding: 1px 5px; border-radius: 4px; }
-  .note { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; margin: 0 0 24px; }
-  table { border-collapse: collapse; width: 100%; margin: 0 0 16px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; font-size: 0.9rem; }
-  .muted { color: var(--muted); }
+  .links { margin: 32px 0 0; display: flex; gap: 12px; flex-wrap: wrap; }
+  .links a { display: inline-block; padding: 8px 18px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); font-weight: 600; }
+  .links a.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .links a:hover { text-decoration: none; filter: brightness(1.05); }
 </style>
 </head>
 <body>
 <main>
   <h1>Wu</h1>
-  <p class="tagline">A smaller, simpler distribution of the Zed editor.</p>
+  <p class="tagline">The fast, native code editor that doesn't get in your way.</p>
 
-  <div class="note">
-    Wu is built from <a href="https://github.com/zed-industries/zed">Zed</a>'s source. Everything that is not listed on this page works the way it does in Zed, so the
-    <a href="https://zed.dev/docs">Zed documentation</a> is the reference for settings, key bindings, languages, extensions, tasks, debugging, and remote development.
+  <p>Wu is a code editor for people who want the speed of a native app and the familiarity of VS Code. The name comes from <a href="https://en.wikipedia.org/wiki/Wu_wei">wu wei</a>: effortless action. The editor should do its job and stay out of the way.</p>
+
+  <p>Wu is built on the <a href="https://github.com/zed-industries/zed">Zed</a> engine, so it inherits Zed's editor core, GPU rendering, and language tooling, then strips out everything that isn't editing.</p>
+
+  <ul>
+    <li><strong>Native and fast.</strong> Written in Rust, rendered on the GPU. No Electron or webviews. Opens instantly and stays responsive on large files.</li>
+    <li><strong>Lightweight.</strong> Base memory use is about 28% lower than even Zed.</li>
+    <li><strong>No built-in AI features.</strong> Bring whichever agent or harness you already use.</li>
+    <li><strong>Feels like VS Code out of the box.</strong> Layout, panels, and defaults are tuned so you don't have to relearn your editor.</li>
+  </ul>
+
+  <div class="links">
+    <a class="primary" href="https://github.com/farshed/wu/releases/latest">Download</a>
+    <a href="/doc">Docs</a>
+    <a href="https://github.com/farshed/wu">GitHub</a>
   </div>
-
-  <h2>What Wu is</h2>
-  <p>Wu keeps Zed's editor, terminal, git tools, debugger, language servers, and extensions, and removes the parts that are about AI, collaboration, or Zed's own services. The goal is a fast editor that feels familiar if you come from VS Code, uses less memory, and stays out of your way.</p>
-
-  <h2>What is removed</h2>
-  <ul>
-    <li>AI features: the agent panel, inline assistant, edit predictions, and all language model providers.</li>
-    <li>Collaboration: channels, calls, screen sharing, shared projects, and the sign-in flow that went with them.</li>
-    <li>Telemetry, crash reporting, and hang detection. Wu does not phone home.</li>
-    <li>Vim and Helix modes.</li>
-    <li>Dev containers.</li>
-    <li>The REPL, the journal, and the which-key popup.</li>
-    <li>The settings and keymap migrator for old Zed config formats.</li>
-  </ul>
-  <p class="muted">If a setting or key binding from the Zed docs belongs to one of these features, it has no effect in Wu.</p>
-
-  <h2>What is different</h2>
-  <ul>
-    <li>An activity bar on the side switches between the project, git, outline, search, and debug panels. The debug panel docks on the left by default.</li>
-    <li>The <code>+</code> button in the editor and terminal tab strips sits after the last tab and opens a new file or terminal directly, with no menu.</li>
-    <li><code>Cmd-W</code> / <code>Ctrl-W</code> never closes a side panel. It only closes editor tabs.</li>
-    <li>Icons and the UI use less memory than Zed for the same workload.</li>
-  </ul>
-
-  <h2>Names and paths</h2>
-  <table>
-    <tr><th></th><th>Zed</th><th>Wu</th></tr>
-    <tr><td>Command line</td><td><code>zed</code></td><td><code>wu</code></td></tr>
-    <tr><td>Settings (macOS, Linux)</td><td><code>~/.config/zed</code></td><td><code>~/.config/wu</code></td></tr>
-    <tr><td>Settings (Windows)</td><td><code>%APPDATA%\Zed</code></td><td><code>%APPDATA%\Wu</code></td></tr>
-    <tr><td>App data (macOS)</td><td><code>~/Library/Application Support/Zed</code></td><td><code>~/Library/Application Support/Wu</code></td></tr>
-    <tr><td>Project settings</td><td><code>.zed/</code></td><td><code>.zed/</code> (unchanged)</td></tr>
-    <tr><td>Bundle id</td><td><code>dev.zed.Zed</code></td><td><code>me.farshed.Wu</code></td></tr>
-  </table>
-  <p>Wu and Zed can be installed side by side. They do not share settings, so copy your <code>settings.json</code> and <code>keymap.json</code> over if you want the same setup in both.</p>
-
-  <h2>What is the same</h2>
-  <ul>
-    <li>Extensions come from the Zed extension registry, and every Zed extension works in Wu.</li>
-    <li>Project-level <code>.zed/settings.json</code>, <code>.zed/tasks.json</code>, and <code>.zed/debug.json</code> files work as in Zed.</li>
-    <li>Settings, key bindings, themes, and languages follow the <a href="https://zed.dev/docs">Zed docs</a>.</li>
-  </ul>
-
-  <h2>License</h2>
-  <p>Wu is distributed under the same terms as Zed: GPL-3.0-or-later, with Apache-2.0 components where marked.</p>
 </main>
 </body>
 </html>
