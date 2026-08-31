@@ -379,6 +379,7 @@ fn render_import_settings_section(tab_index: &mut isize, cx: &mut App) -> impl I
         .child(h_flex().gap_1().child(vscode).child(cursor))
 }
 
+#[cfg(target_os = "macos")]
 fn render_install_cli_section(tab_index: &mut isize) -> impl IntoElement {
     *tab_index += 1;
 
@@ -411,14 +412,15 @@ fn render_install_cli_section(tab_index: &mut isize) -> impl IntoElement {
 pub(crate) fn render_basics_page(cx: &mut App) -> impl IntoElement {
     let mut tab_index = 0;
 
-    v_flex()
+    let page = v_flex()
         .id("basics-page")
         .gap_6()
         .child(render_theme_section(&mut tab_index, cx))
         .child(render_base_keymap_section(&mut tab_index, cx))
-        .child(render_import_settings_section(&mut tab_index, cx))
-        .when(cfg!(target_os = "macos"), |this| {
-            this.child(render_install_cli_section(&mut tab_index))
-        })
-        .child(render_worktree_auto_trust_switch(&mut tab_index, cx))
+        .child(render_import_settings_section(&mut tab_index, cx));
+
+    #[cfg(target_os = "macos")]
+    let page = page.child(render_install_cli_section(&mut tab_index));
+
+    page.child(render_worktree_auto_trust_switch(&mut tab_index, cx))
 }
