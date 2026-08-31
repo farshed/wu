@@ -30,6 +30,7 @@
   .downloads { margin: 0; padding: 0; list-style: none; }
   .downloads li { margin: 6px 0; }
   .downloads .muted { color: var(--muted); font-size: 0.92rem; }
+  .screenshot { display: block; width: 100%; margin: 24px 0 0; border: 1px solid var(--line); border-radius: 8px; }
 </style>
 </head>
 <body>
@@ -64,6 +65,11 @@
     <li><a href="https://github.com/farshed/wu/releases/latest/download/Wu-x86_64.exe">Windows (x86_64)</a></li>
   </ul>
   <p class="downloads muted">All releases are on the <a href="https://github.com/farshed/wu/releases" target="_blank">releases page</a>. macOS users: see the release notes for the one-time quarantine step.</p>
+
+  <picture>
+    <source srcset="/screenshot-dark.png" media="(prefers-color-scheme: dark)">
+    <img class="screenshot" src="/screenshot-light.png" alt="Wu editor screenshot">
+  </picture>
 </main>
 </body>
 </html>
