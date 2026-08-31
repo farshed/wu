@@ -13,7 +13,7 @@ Wu is built on the [Zed](https://github.com/zed-industries/zed) engine, so it in
 
 ## Features
 
-- **Native and fast.** Written in Rust, rendered on the GPU. No Electron or webviews. Opens instantly and stays responsive on large files.
+- **Native and fast.** Written in Rust, rendered on the GPU. No Electron or webviews. Opens instantly and stays responsive on large views.
 - **Lightweight.** Base memory use is about 28% lower than even Zed.
 - **No built-in AI features.** Bring whichever agent or harness you already use.
 - **Feels like VS Code out of the box.** Layout, panels, and defaults are tuned so you don't have to relearn your editor.
