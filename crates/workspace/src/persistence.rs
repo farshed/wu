@@ -2174,6 +2174,54 @@ impl WorkspaceDb {
         Ok(workspaces)
     }
 
+    query! {
+        fn workspace_window_by_id_query(workspace_id: WorkspaceId) -> Result<Vec<(String, String, Option<u64>, Option<u64>)>> {
+            SELECT paths, paths_order, window_id, remote_connection_id
+            FROM workspaces
+            WHERE workspace_id = ?1
+        }
+    }
+
+    /// Returns restorable locations for the given workspace ids, preserving
+    /// their order. Used to reopen the workspaces that were open when the app
+    /// restarted (e.g. to apply an update), independently of session ids.
+    pub async fn workspace_locations_by_ids(
+        &self,
+        ids: Vec<WorkspaceId>,
+        fs: &dyn Fs,
+    ) -> Result<Vec<SessionWorkspace>> {
+        let mut workspaces = Vec::new();
+        for workspace_id in ids {
+            for (paths, order, window_id, remote_connection_id) in
+                self.workspace_window_by_id_query(workspace_id)?
+            {
+                let paths = PathList::deserialize(&SerializedPathList { paths, order });
+                let window_id = window_id.map(WindowId::from);
+
+                if let Some(remote_connection_id) = remote_connection_id {
+                    workspaces.push(SessionWorkspace {
+                        workspace_id,
+                        location: SerializedWorkspaceLocation::Remote(
+                            self.remote_connection(RemoteConnectionId(remote_connection_id))?,
+                        ),
+                        paths,
+                        window_id,
+                    });
+                } else if !paths.is_empty()
+                    && Self::all_paths_exist_with_a_directory(paths.paths(), fs).await
+                {
+                    workspaces.push(SessionWorkspace {
+                        workspace_id,
+                        location: SerializedWorkspaceLocation::Local,
+                        paths,
+                        window_id,
+                    });
+                }
+            }
+        }
+        Ok(workspaces)
+    }
+
     fn get_center_pane_group(&self, workspace_id: WorkspaceId) -> Result<SerializedPaneGroup> {
         Ok(self
             .get_pane_group(workspace_id, None)?

@@ -1238,6 +1238,25 @@ pub(crate) async fn restorable_workspace_locations(
         )
     });
 
+    // A restart (e.g. to apply an update) records the ids of the workspaces
+    // that were open. Reopen exactly those, regardless of session bookkeeping.
+    let kvp = cx.update(|cx| db::kvp::KeyValueStore::global(cx));
+    if let Ok(Some(ids_json)) = kvp.read_kvp(workspace::RESTART_WORKSPACE_IDS_KEY) {
+        kvp.delete_kvp(workspace::RESTART_WORKSPACE_IDS_KEY.to_string())
+            .await
+            .log_err();
+        if let Ok(ids) = serde_json::from_str::<Vec<workspace::WorkspaceId>>(&ids_json) {
+            let workspaces = db
+                .workspace_locations_by_ids(ids, app_state.fs.as_ref())
+                .await
+                .log_err()
+                .unwrap_or_default();
+            if !workspaces.is_empty() {
+                return Some(workspaces);
+            }
+        }
+    }
+
     let session_handle = app_state.session.clone();
     let (last_session_id, last_session_window_stack) = cx.update(|cx| {
         let session = session_handle.read(cx);
