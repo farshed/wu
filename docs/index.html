@@ -24,7 +24,9 @@
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
   nav { display: flex; gap: 20px; justify-content: flex-end; margin: 0 0 40px; }
-  .icon { width: 84px; height: 84px; display: block; margin: 0 0 20px; }
+  .brand { display: flex; align-items: center; gap: 14px; margin: 0 0 8px; }
+  .brand h1 { margin: 0; }
+  .icon { width: 52px; height: 52px; display: block; }
   .downloads { margin: 0; padding: 0; list-style: none; }
   .downloads li { margin: 6px 0; }
   .downloads .muted { color: var(--muted); font-size: 0.92rem; }
@@ -37,8 +39,10 @@
     <a href="https://github.com/farshed/wu">GitHub</a>
   </nav>
 
-  <img class="icon" src="/app-icon.png" alt="">
-  <h1>Wu</h1>
+  <div class="brand">
+    <img class="icon" src="/app-icon.png" alt="">
+    <h1>Wu</h1>
+  </div>
   <p class="tagline">The fast, native code editor that doesn't get in your way.</p>
 
   <p>Wu is a code editor for people who want the speed of a native app and the familiarity of VS Code. The name comes from <a href="https://en.wikipedia.org/wiki/Wu_wei">wu wei</a>: effortless action. The editor should do its job and stay out of the way.</p>
