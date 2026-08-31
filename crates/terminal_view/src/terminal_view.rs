@@ -1763,6 +1763,15 @@ impl Item for TerminalView {
         false
     }
 
+    fn confirm_close(&self, cx: &App) -> Option<workspace::item::CloseConfirmation> {
+        self.terminal.read(cx).running_process_name()?;
+        Some(workspace::item::CloseConfirmation {
+            message: "Do you want to terminate running processes in this window?".into(),
+            confirm_button: "Terminate".into(),
+            icon: Some("terminal".into()),
+        })
+    }
+
     fn as_searchable(
         &self,
         handle: &Entity<Self>,

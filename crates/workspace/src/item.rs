@@ -161,6 +161,17 @@ pub enum ItemBufferKind {
     None,
 }
 
+/// A confirmation dialog shown before an item is closed. See
+/// [`Item::confirm_close`].
+#[derive(Debug, Clone)]
+pub struct CloseConfirmation {
+    pub message: SharedString,
+    /// Label of the button that closes the item anyway.
+    pub confirm_button: SharedString,
+    /// SF Symbol name shown as the dialog icon on macOS.
+    pub icon: Option<SharedString>,
+}
+
 pub trait Item: Focusable + EventEmitter<Self::Event> + Render + Sized {
     type Event;
 
@@ -286,6 +297,13 @@ pub trait Item: Focusable + EventEmitter<Self::Event> + Render + Sized {
     }
     fn can_save_as(&self, _: &App) -> bool {
         false
+    }
+    /// If this returns a confirmation, closing the item prompts the user with
+    /// it before the item is removed. Used by items whose close discards
+    /// something other than unsaved file edits, like a terminal with a running
+    /// process.
+    fn confirm_close(&self, _cx: &App) -> Option<CloseConfirmation> {
+        None
     }
 
     fn save(
@@ -521,6 +539,7 @@ pub trait ItemHandle: 'static + Send {
     fn has_conflict(&self, cx: &App) -> bool;
     fn can_save(&self, cx: &App) -> bool;
     fn can_save_as(&self, cx: &App) -> bool;
+    fn confirm_close(&self, cx: &App) -> Option<CloseConfirmation>;
     fn save(
         &self,
         options: SaveOptions,
@@ -972,6 +991,10 @@ impl<T: Item> ItemHandle for Entity<T> {
 
     fn can_save_as(&self, cx: &App) -> bool {
         self.read(cx).can_save_as(cx)
+    }
+
+    fn confirm_close(&self, cx: &App) -> Option<CloseConfirmation> {
+        self.read(cx).confirm_close(cx)
     }
 
     fn save(

@@ -148,6 +148,7 @@ impl PlatformWindow for HeadlessWindow {
         _msg: &str,
         _detail: Option<&str>,
         _answers: &[PromptButton],
+        _icon: Option<&str>,
     ) -> Option<futures::channel::oneshot::Receiver<usize>> {
         // Fall back to GPUI's rendered prompts.
         None

@@ -697,6 +697,7 @@ impl PlatformWindow for WindowsWindow {
         msg: &str,
         detail: Option<&str>,
         answers: &[PromptButton],
+        _icon: Option<&str>,
     ) -> Option<Receiver<usize>> {
         let (done_tx, done_rx) = oneshot::channel();
         let msg = msg.to_string();

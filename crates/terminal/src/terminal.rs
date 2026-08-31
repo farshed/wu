@@ -3090,6 +3090,38 @@ impl Terminal {
         }
     }
 
+    /// The name of the foreground process running in this terminal, if it is
+    /// not the shell itself. Detection relies on the PTY's foreground process
+    /// group, which is unavailable on Windows, so this always returns `None`
+    /// there.
+    pub fn running_process_name(&self) -> Option<String> {
+        let TerminalType::Pty { info, .. } = &self.terminal_type else {
+            return None;
+        };
+        let foreground_pid = info.pid()?;
+        if foreground_pid == info.pid_getter().fallback_pid() {
+            return None;
+        }
+        // The shell is often spawned through a wrapper (`login` on macOS), so
+        // an idle shell's pid can differ from the spawned child's pid and the
+        // comparison above is not enough. Filter out anything that looks like
+        // a shell by name.
+        let name = info
+            .current
+            .read()
+            .as_ref()
+            .map(|process| process.name.clone())?;
+        const SHELLS: &[&str] = &[
+            "sh", "bash", "zsh", "fish", "nu", "csh", "tcsh", "ksh", "dash", "rc", "xonsh",
+            "elvish", "pwsh", "powershell", "cmd", "login",
+        ];
+        let normalized = name.trim_start_matches('-').to_lowercase();
+        if SHELLS.contains(&normalized.as_str()) {
+            return None;
+        }
+        Some(name)
+    }
+
     pub fn task(&self) -> Option<&TaskState> {
         self.task.as_ref()
     }

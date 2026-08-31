@@ -872,12 +872,19 @@ ui_input = { codegen-units = 1 }
 wu_actions = { codegen-units = 1 }
 
 [profile.release]
-debug = "limited"
+debug = 0
 lto = "thin"
-codegen-units = 1
+codegen-units = 16
 
+# Keep single-codegen-unit optimization for the crates where codegen quality
+# shows up in editor performance.
 [profile.release.package]
-wu = { codegen-units = 16 }
+gpui = { codegen-units = 1 }
+editor = { codegen-units = 1 }
+language = { codegen-units = 1 }
+rope = { codegen-units = 1 }
+sum_tree = { codegen-units = 1 }
+text = { codegen-units = 1 }
 
 [profile.release-fast]
 inherits = "release"

@@ -275,6 +275,7 @@ impl PlatformWindow for TestWindow {
         msg: &str,
         detail: Option<&str>,
         answers: &[PromptButton],
+        _icon: Option<&str>,
     ) -> Option<futures::channel::oneshot::Receiver<usize>> {
         Some(
             self.0

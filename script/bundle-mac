@@ -287,45 +287,6 @@ function sign_binary() {
     fi
 }
 
-function upload_debug_symbols() {
-    if [ "$local_install" = true ]; then
-        echo "local install; skipping sentry upload."
-    elif [[ -n "${SENTRY_AUTH_TOKEN:-}" ]]; then
-        echo "Uploading zed debug symbols to sentry..."
-        exe_path="target/${target_triple}/release/Zed"
-        if ! dsymutil --flat "target/${target_triple}/${target_dir}/wu" 2> target/dsymutil.log; then
-            echo "dsymutil failed"
-            cat target/dsymutil.log
-            exit 1
-        fi
-        if ! dsymutil --flat "target/${target_triple}/${target_dir}/remote_server" 2> target/dsymutil.log; then
-            echo "dsymutil failed"
-            cat target/dsymutil.log
-            exit 1
-        fi
-        # note: this uploads the unstripped binary which is needed because it contains
-        # .eh_frame data for stack unwinding. see https://github.com/getsentry/symbolic/issues/783
-        # Try uploading up to 3 times
-        for attempt in 1 2 3; do
-            echo "Sentry upload attempt $attempt..."
-            if sentry-cli debug-files upload --include-sources --wait -p wu -o zed-dev \
-                "target/${target_triple}/${target_dir}/zed.dwarf" \
-                "target/${target_triple}/${target_dir}/remote_server.dwarf"; then
-                break
-            else
-                echo "Sentry upload failed on attempt $attempt"
-                if [ $attempt -eq 3 ]; then
-                    echo "All sentry upload attempts failed"
-                    exit 1
-                fi
-            fi
-        done
-    else
-        echo "missing SENTRY_AUTH_TOKEN. skipping sentry upload."
-    fi
-}
-
-upload_debug_symbols
 
 cp target/${target_triple}/${target_dir}/wu "${app_path}/Contents/MacOS/wu"
 cp target/${target_triple}/${target_dir}/cli "${app_path}/Contents/MacOS/cli"

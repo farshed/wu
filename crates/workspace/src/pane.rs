@@ -2016,6 +2016,28 @@ impl Pane {
             }
 
             for item_to_close in items_to_close {
+                if save_intent == SaveIntent::Close {
+                    let confirmation = cx.update(|_window, cx| item_to_close.confirm_close(cx))?;
+                    if let Some(confirmation) = confirmation {
+                        let answer = pane.update_in(cx, |pane, window, cx| {
+                            if let Some(ix) = pane.index_for_item(item_to_close.as_ref()) {
+                                pane.activate_item(ix, true, true, window, cx);
+                            }
+                            window.prompt_with_icon(
+                                PromptLevel::Warning,
+                                &confirmation.message,
+                                None,
+                                &[confirmation.confirm_button.as_ref(), "Cancel"],
+                                confirmation.icon.as_deref(),
+                                cx,
+                            )
+                        })?;
+                        if !matches!(answer.await, Ok(0)) {
+                            continue;
+                        }
+                    }
+                }
+
                 let mut should_close = true;
                 let mut should_save = true;
                 if save_intent == SaveIntent::Close {
