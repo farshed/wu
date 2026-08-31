@@ -112,4 +112,4 @@ jobs:
         with:
           body_path: .github/release/body.md
           generate_release_notes: true
-          files: artifacts/*
+          files: artifacts/**
