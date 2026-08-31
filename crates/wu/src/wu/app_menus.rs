@@ -303,25 +303,13 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
                 MenuItem::action(
                     "Documentation",
                     super::OpenBrowser {
-                        url: "https://zed.dev/docs".into(),
+                        url: "https://wu.farshed.me/docs".into(),
                     },
                 ),
                 MenuItem::action(
-                    "Zed Repository",
+                    "Wu Repository",
                     super::OpenBrowser {
-                        url: "https://github.com/zed-industries/zed".into(),
-                    },
-                ),
-                MenuItem::action(
-                    "Zed Twitter",
-                    super::OpenBrowser {
-                        url: "https://twitter.com/zeddotdev".into(),
-                    },
-                ),
-                MenuItem::action(
-                    "Join the Team",
-                    super::OpenBrowser {
-                        url: "https://zed.dev/jobs".into(),
+                        url: "https://github.com/farshed/wu".into(),
                     },
                 ),
             ],

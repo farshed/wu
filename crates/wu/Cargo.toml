@@ -232,7 +232,7 @@ identifier = "me.farshed.Wu-Dev"
 name = "Wu Dev"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["wu"]
 
 [package.metadata.bundle-stable]
 icon = ["resources/app-icon@2x.png", "resources/app-icon.png"]
@@ -240,7 +240,7 @@ identifier = "me.farshed.Wu"
 name = "Wu"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["wu"]
 
 [package.metadata.cargo-shear]
 ignored = ["profiling", "tracing"]

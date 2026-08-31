@@ -10,7 +10,7 @@
   },
   {
     // Workaround to avoid falling back to default bindings.
-    // Unbind so Zed ignores these keys and lets emacs handle them.
+    // Unbind so Wu ignores these keys and lets emacs handle them.
     // NOTE: must be declared before the `Editor` override.
     // NOTE: in macos the 'ctrl-x' 'ctrl-p' and 'ctrl-n' rebindings are not needed, since they default to 'cmd'.
     "context": "Editor",
@@ -20,8 +20,8 @@
       // `null` only stops binding resolution in a user keymap, so these use a targeted unbind:
       // `editor::MoveUp`/`MoveDown` propagate when the cursor doesn't move, which at the ends of
       // the buffer would otherwise fall through to these.
-      "ctrl-p": ["zed::Unbind", "file_finder::Toggle"],
-      "ctrl-n": ["zed::Unbind", "workspace::NewFile"],
+      "ctrl-p": ["wu::Unbind", "file_finder::Toggle"],
+      "ctrl-n": ["wu::Unbind", "workspace::NewFile"],
     },
   },
   {
@@ -153,8 +153,8 @@
       "alt-x": "command_palette::Toggle", // execute-extended-command
       "ctrl-x b": "tab_switcher::Toggle", // switch-to-buffer
       "ctrl-x ctrl-b": "tab_switcher::Toggle", // list-buffers
-      // "ctrl-x ctrl-c": "workspace::CloseWindow" // in case you only want to exit the current Zed instance
-      "ctrl-x ctrl-c": "zed::Quit", // save-buffers-kill-terminal
+      // "ctrl-x ctrl-c": "workspace::CloseWindow" // in case you only want to exit the current Wu instance
+      "ctrl-x ctrl-c": "wu::Quit", // save-buffers-kill-terminal
       "ctrl-x 5 0": "workspace::CloseWindow", // delete-frame
       "ctrl-x 5 2": "workspace::NewWindow", // make-frame-command
       "ctrl-x o": "workspace::ActivateNextPane", // other-window
@@ -171,15 +171,15 @@
     },
   },
   {
-    // Workaround to enable using native emacs from the Zed terminal.
-    // Unbind so Zed ignores these keys and lets emacs handle them.
+    // Workaround to enable using native emacs from the Wu terminal.
+    // Unbind so Wu ignores these keys and lets emacs handle them.
     // NOTE:
     //  "terminal::SendKeystroke" only works for a single key stroke (e.g. ctrl-x),
     //  so override with null for compound sequences (e.g. ctrl-x ctrl-c).
     "context": "Terminal",
     "bindings": {
       // If you want to perfect your emacs-in-zed setup, also consider the following.
-      // You may need to enable "option_as_meta" from the Zed settings for "alt-x" to work.
+      // You may need to enable "option_as_meta" from the Wu settings for "alt-x" to work.
       // "alt-x": ["terminal::SendKeystroke", "alt-x"],
       // "ctrl-x": ["terminal::SendKeystroke", "ctrl-x"],
       // "ctrl-n": ["terminal::SendKeystroke", "ctrl-n"],

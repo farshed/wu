@@ -47,7 +47,7 @@ use crate::extension_version_selector::{
 };
 
 actions!(
-    zed,
+    wu,
     [
         /// Installs an extension from a local directory for development.
         InstallDevExtension,
@@ -56,7 +56,7 @@ actions!(
 
 /// Rebuilds an installed dev extension.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, JsonSchema, gpui::Action)]
-#[action(namespace = zed)]
+#[action(namespace = wu)]
 #[serde(deny_unknown_fields)]
 pub struct RebuildDevExtension {
     /// The ID of the dev extension to rebuild.

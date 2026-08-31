@@ -64,7 +64,7 @@ impl SystemWindowTabs {
             was_use_system_window_tabs = use_system_window_tabs;
 
             let tabbing_identifier = if use_system_window_tabs {
-                Some(String::from("zed"))
+                Some(String::from("wu"))
             } else {
                 None
             };

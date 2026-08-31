@@ -1,5 +1,5 @@
 {
-  "$schema": "zed://schemas/settings",
+  "$schema": "wu://schemas/settings",
   // The name of the Wu theme to use for the UI.
   //
   // `mode` is one of:
@@ -11,7 +11,7 @@
     "light": "Catppuccin Latte",
     "dark": "Catppuccin Mocha",
   },
-  "icon_theme": "Zed (Default)",
+  "icon_theme": "Wu (Default)",
   // The name of a base set of key bindings to use.
   // This setting can take the following values:
   //
@@ -520,7 +520,7 @@
   },
   // Whether to allow windows to tab together based on the user’s tabbing preference (macOS only).
   "use_system_window_tabs": false,
-  // Which fullscreen mode the `zed::ToggleFullScreen` action enters (macOS only).
+  // Which fullscreen mode the `wu::ToggleFullScreen` action enters (macOS only).
   //
   // 1. Use macOS's native fullscreen, which moves the window into its own Mission Control space.
   //     "native"
@@ -1466,15 +1466,15 @@
     // When the resolved directory is outside the project root, the
     // project's directory name is automatically appended so that
     // sibling repos don't collide. For example, with the default
-    // "../worktrees" and a project at ~/code/zed, worktrees are
-    // created under ~/code/worktrees/zed/.
+    // "../worktrees" and a project at ~/code/wu, worktrees are
+    // created under ~/code/worktrees/wu/.
     //
     // When the resolved directory is inside the project root, no
     // extra component is added (it's already project-scoped).
     //
     // Examples:
     //   "../worktrees" — ~/code/worktrees/<project>/ (default)
-    //   ".git/zed-worktrees" — <project>/.git/zed-worktrees/
+    //   ".git/wu-worktrees" — <project>/.git/wu-worktrees/
     //   "my-worktrees" — <project>/my-worktrees/
     //
     // Trailing slashes are ignored.
@@ -1566,7 +1566,7 @@
     //    this platform's home directory  (if we can find it)
     //      "working_directory": {
     //        "always": {
-    //          "directory": "~/zed/projects/"
+    //          "directory": "~/wu/projects/"
     //        }
     //      }
     "working_directory": "current_project_directory",
@@ -2240,7 +2240,7 @@
     //   }
     // ]
     //
-    // Default rules are viewable via the "zed: show default semantic token rules" action.
+    // Default rules are viewable via the "wu: show default semantic token rules" action.
     "semantic_token_rules": [],
   },
   // The server to connect to. If the environment variable
@@ -2311,7 +2311,7 @@
   //     // "port": 22, "username": "test", "args": ["-i", "/home/user/.ssh/id_rsa"]
   //     "projects": [
   //       {
-  //         "paths": ["/home/user/code/zed"]
+  //         "paths": ["/home/user/code/wu"]
   //       }
   //     ]
   //   }
@@ -2367,7 +2367,7 @@
   // Configuration for developer-oriented instrumentation tools that can be
   // toggled at runtime.
   "instrumentation": {
-    // Performance profiler, accessed via the `zed: open performance profiler`
+    // Performance profiler, accessed via the `wu: open performance profiler`
     // action. Collects timing data for foreground and background executor
     // tasks. Enabling this may lead to increased memory usage, hence it's
     // disabled by default for regular builds.

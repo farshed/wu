@@ -204,8 +204,8 @@ pub struct SettingsContent {
     /// Default: true
     pub auto_update: Option<bool>,
 
-    /// This base keymap settings adjusts the default keybindings in Zed to be similar
-    /// to other common code editors. By default, Zed's keymap closely follows VSCode's
+    /// This base keymap settings adjusts the default keybindings in Wu to be similar
+    /// to other common code editors. By default, Wu's keymap closely follows VSCode's
     /// keymap, with minor adjustments, this corresponds to the "VSCode" setting.
     ///
     /// Default: VSCode
@@ -258,20 +258,20 @@ pub struct SettingsContent {
     /// Default: off
     pub reduce_motion: Option<ReduceMotionMode>,
 
-    /// The URL of the Zed server to connect to.
+    /// The URL of the Wu server to connect to.
     pub server_url: Option<String>,
 
     /// The URL used as the key for credential storage.
     ///
     /// When set, credentials are stored under this URL instead of `server_url`.
-    /// This allows running multiple Zed instances side by side without them
+    /// This allows running multiple Wu instances side by side without them
     /// overwriting each other's keychain entries.
     pub credentials_url: Option<String>,
 
     /// Configuration for session-related features
     pub session: Option<SessionSettingsContent>,
 
-    /// Configuration of the terminal in Zed.
+    /// Configuration of the terminal in Wu.
     pub terminal: Option<TerminalSettingsContent>,
 
     pub title_bar: Option<TitleBarSettingsContent>,
@@ -289,12 +289,12 @@ pub struct SettingsContent {
 }
 
 /// Configuration for developer-oriented instrumentation tools that collect
-/// diagnostic data about a running Zed instance.
+/// diagnostic data about a running Wu instance.
 #[with_fallible_options]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema, MergeFrom)]
 pub struct InstrumentationSettingsContent {
     /// Configuration for the performance profiler, accessed via the
-    /// `zed: open performance profiler` action.
+    /// `wu: open performance profiler` action.
     pub performance_profiler: Option<PerformanceProfilerSettingsContent>,
 }
 
@@ -392,7 +392,7 @@ pub enum ProfileBase {
     /// Apply profile settings on top of the user's current settings.
     #[default]
     User,
-    /// Apply profile settings on top of Zed's default settings, ignoring user customizations.
+    /// Apply profile settings on top of Wu's default settings, ignoring user customizations.
     Default,
 }
 
@@ -403,7 +403,7 @@ pub struct SettingsProfile {
     /// What base settings to start from before applying this profile's overrides.
     ///
     /// - `user`: Apply on top of user's settings (default)
-    /// - `default`: Apply on top of Zed's default settings, ignoring user customizations
+    /// - `default`: Apply on top of Wu's default settings, ignoring user customizations
     #[serde(default)]
     pub base: ProfileBase,
 
@@ -434,7 +434,7 @@ pub struct ExtensionsSettingsContent {
 
 /// Base key bindings scheme. Base keymaps can be overridden with user keymaps.
 ///
-/// Default: Zed
+/// Default: Wu
 #[derive(
     Copy,
     Clone,
@@ -482,7 +482,7 @@ pub struct DebuggerSettingsContent {
     ///
     /// Default: line
     pub stepping_granularity: Option<SteppingGranularity>,
-    /// Whether the breakpoints should be reused across Zed sessions.
+    /// Whether the breakpoints should be reused across Wu sessions.
     ///
     /// Default: true
     pub save_breakpoints: Option<bool>,
@@ -494,7 +494,7 @@ pub struct DebuggerSettingsContent {
     ///
     /// Default: 2000ms
     pub timeout: Option<u64>,
-    /// Whether to log messages between active debug adapters and Zed
+    /// Whether to log messages between active debug adapters and Wu
     ///
     /// Default: true
     pub log_dap_communications: Option<bool>,
@@ -773,7 +773,7 @@ pub struct FileFinderSettingsContent {
     /// Default: true
     pub skip_focus_for_active_in_search: Option<bool>,
     /// Whether to use gitignored files when searching.
-    /// Only the file Zed had indexed will be used, not necessary all the gitignored files.
+    /// Only the file Wu had indexed will be used, not necessary all the gitignored files.
     ///
     /// Default: Smart
     pub include_ignored: Option<IncludeIgnoredContent>,
@@ -797,7 +797,7 @@ pub struct FileFinderSettingsContent {
 pub enum IncludeIgnoredContent {
     /// Use all gitignored files
     All,
-    /// Use only the files Zed had indexed
+    /// Use only the files Wu had indexed
     Indexed,
     /// Be smart and search for ignored when called from a gitignored worktree
     #[default]

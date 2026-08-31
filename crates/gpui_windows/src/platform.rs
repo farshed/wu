@@ -1478,7 +1478,7 @@ fn handle_gpu_device_lost(
     Ok(())
 }
 
-const PLATFORM_WINDOW_CLASS_NAME: PCWSTR = w!("Zed::PlatformWindow");
+const PLATFORM_WINDOW_CLASS_NAME: PCWSTR = w!("Wu::PlatformWindow");
 
 fn register_platform_window_class() {
     let wc = WNDCLASSW {

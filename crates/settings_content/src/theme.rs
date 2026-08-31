@@ -218,7 +218,7 @@ pub struct ThemeSettingsContent {
     /// The theme to use for the markdown preview.
     /// Falls back to the main editor theme if unset.
     pub markdown_preview_theme: Option<ThemeSelection>,
-    /// The name of the Zed theme to use.
+    /// The name of the Wu theme to use.
     pub theme: Option<ThemeSelection>,
     /// The name of the icon theme to use.
     pub icon_theme: Option<IconThemeSelection>,

@@ -1,23 +1,24 @@
-name: zed
+name: wu
 title: Wu
 base: core24
 version: "$RELEASE_VERSION"
-summary: The editor for what's next
+summary: The editor that doesn't get in your way
 description: |
-  Wu is a modern open-source code editor, built from the ground up in Rust with
-  a GPU-accelerated renderer. We help you build software faster than ever before.
+  Wu is a fast, native code editor built in Rust with a GPU-accelerated
+  renderer. It pairs the speed of a native app with the familiarity of
+  VS Code and stays out of your way.
 grade: stable
 confinement: classic
 compression: lzo
-website: https://zed.dev/
-source-code: https://github.com/zed-industries/zed
-issues: https://github.com/zed-industries/zed/issues
-contact: https://zed.dev/community-links#support-and-feedback
+website: https://wu.farshed.me/
+source-code: https://github.com/farshed/wu
+issues: https://github.com/farshed/wu/issues
+contact: https://github.com/farshed/wu/issues
 
 parts:
-  zed:
+  wu:
     plugin: dump
-    source: "https://github.com/zed-industries/zed/releases/download/v$RELEASE_VERSION/zed-linux-x86_64.tar.gz"
+    source: "https://github.com/farshed/wu/releases/download/v$RELEASE_VERSION/wu-linux-x86_64.tar.gz"
 
     organize:
       # These renames seem to not be necessary, but it's tidier.
@@ -52,7 +53,7 @@ parts:
       - -usr/share/man
 
 apps:
-  zed:
+  wu:
     command: usr/bin/wu
     common-id: me.farshed.Wu
     environment:

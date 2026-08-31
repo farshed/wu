@@ -116,7 +116,7 @@ fn send_args_to_instance(args: &Args) -> anyhow::Result<()> {
 
     let (server, server_name) =
         IpcOneShotServer::<IpcHandshake>::new().context("Handshake before Zed spawn")?;
-    let url = format!("zed-cli://{server_name}");
+    let url = format!("wu-cli://{server_name}");
 
     let request = {
         let mut paths = vec![];
@@ -126,7 +126,7 @@ fn send_args_to_instance(args: &Args) -> anyhow::Result<()> {
             match std::fs::canonicalize(&path) {
                 Ok(path) => paths.push(path.to_string_lossy().into_owned()),
                 Err(error) => {
-                    if path.starts_with("zed://")
+                    if path.starts_with("wu://")
                         || path.starts_with("http://")
                         || path.starts_with("https://")
                         || path.starts_with("file://")

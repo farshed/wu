@@ -379,6 +379,35 @@ fn render_import_settings_section(tab_index: &mut isize, cx: &mut App) -> impl I
         .child(h_flex().gap_1().child(vscode).child(cursor))
 }
 
+fn render_install_cli_section(tab_index: &mut isize) -> impl IntoElement {
+    *tab_index += 1;
+
+    h_flex()
+        .gap_2()
+        .flex_wrap()
+        .justify_between()
+        .child(
+            v_flex()
+                .gap_0p5()
+                .max_w_5_6()
+                .child(Label::new("Terminal Command"))
+                .child(
+                    Label::new("Open files and folders from the terminal with the wu command")
+                        .color(Color::Muted),
+                ),
+        )
+        .child(
+            Button::new("install-cli", "Install CLI")
+                .style(ButtonStyle::OutlinedGhost)
+                .size(ButtonSize::Medium)
+                .label_size(LabelSize::Small)
+                .tab_index(*tab_index - 1)
+                .on_click(|_, window, cx| {
+                    window.dispatch_action(install_cli::InstallCliBinary.boxed_clone(), cx);
+                }),
+        )
+}
+
 pub(crate) fn render_basics_page(cx: &mut App) -> impl IntoElement {
     let mut tab_index = 0;
 
@@ -388,5 +417,8 @@ pub(crate) fn render_basics_page(cx: &mut App) -> impl IntoElement {
         .child(render_theme_section(&mut tab_index, cx))
         .child(render_base_keymap_section(&mut tab_index, cx))
         .child(render_import_settings_section(&mut tab_index, cx))
+        .when(cfg!(target_os = "macos"), |this| {
+            this.child(render_install_cli_section(&mut tab_index))
+        })
         .child(render_worktree_auto_trust_switch(&mut tab_index, cx))
 }

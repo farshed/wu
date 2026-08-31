@@ -73,7 +73,7 @@ fn developer_page() -> SettingsPage {
     items.push(SettingsPageItem::SectionHeader("Instrumentation"));
     items.push(SettingsPageItem::SettingItem(SettingItem {
         title: "Performance Profiler",
-        description: "Collect timing data for foreground and background executor tasks so they can be inspected via `zed: open performance profiler`. May lead to increased memory usage.",
+        description: "Collect timing data for foreground and background executor tasks so they can be inspected via `wu: open performance profiler`. May lead to increased memory usage.",
         field: Box::new(SettingField {
             json_path: Some("instrumentation.performance_profiler.enabled"),
             pick: |settings_content| {

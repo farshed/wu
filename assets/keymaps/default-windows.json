@@ -26,12 +26,12 @@
       "shift-escape": "workspace::ToggleZoom",
       "ctrl-o": "workspace::OpenFiles",
       "ctrl-k ctrl-o": "workspace::Open",
-      "ctrl-=": ["zed::IncreaseBufferFontSize", { "persist": false }],
-      "ctrl-shift-=": ["zed::IncreaseBufferFontSize", { "persist": false }],
-      "ctrl--": ["zed::DecreaseBufferFontSize", { "persist": false }],
-      "ctrl-0": ["zed::ResetBufferFontSize", { "persist": false }],
-      "ctrl-alt-,": "zed::OpenSettingsFile",
-      "ctrl-q": "zed::Quit",
+      "ctrl-=": ["wu::IncreaseBufferFontSize", { "persist": false }],
+      "ctrl-shift-=": ["wu::IncreaseBufferFontSize", { "persist": false }],
+      "ctrl--": ["wu::DecreaseBufferFontSize", { "persist": false }],
+      "ctrl-0": ["wu::ResetBufferFontSize", { "persist": false }],
+      "ctrl-alt-,": "wu::OpenSettingsFile",
+      "ctrl-q": "wu::Quit",
       "f4": "debugger::Start",
       "shift-alt-l": "lsp_tool::ToggleMenu",
       "ctrl-shift-alt-s": "workspace::ToggleWorktreeSecurity",
@@ -385,7 +385,7 @@
       "ctrl-f6": "workspace::FocusNextPart",
       // Change the default action on `menu::Confirm` by setting the parameter
       // "ctrl-alt-o": ["projects::OpenRecent", { "create_new_window": true }],
-      "f11": "zed::ToggleFullScreen",
+      "f11": "wu::ToggleFullScreen",
       "ctrl-r": "projects::OpenRecent",
       // Change to open path modal for existing remote connection by setting the parameter
       // "ctrl-shift-alt-o": ["projects::OpenRemote", { "from_existing_connection": true }],
@@ -400,7 +400,7 @@
       "ctrl-n": "workspace::NewFile",
       "ctrl-shift-n": "workspace::NewWindow",
       "ctrl-`": "terminal_panel::Toggle",
-      "f10": ["app_menu::OpenApplicationMenu", "Zed"],
+      "f10": ["app_menu::OpenApplicationMenu", "Wu"],
       "alt-1": ["workspace::ActivatePane", 0],
       "alt-2": ["workspace::ActivatePane", 1],
       "alt-3": ["workspace::ActivatePane", 2],
@@ -423,7 +423,7 @@
       "ctrl-shift-h": ["pane::DeploySearch", { "replace_enabled": true }],
       "ctrl-shift-t": "pane::ReopenClosedItem",
       "ctrl-k ctrl-p": "workspace::ReopenLastPicker",
-      "ctrl-k ctrl-s": "zed::OpenKeymap",
+      "ctrl-k ctrl-s": "wu::OpenKeymap",
       "ctrl-k ctrl-t": "theme_selector::Toggle",
       "ctrl-k ctrl-shift-t": "theme::ToggleMode",
       "ctrl-alt-super-p": "settings_profile_selector::Toggle",
@@ -451,7 +451,7 @@
       "ctrl-k shift-right": "workspace::SwapPaneRight",
       "ctrl-k shift-up": "workspace::SwapPaneUp",
       "ctrl-k shift-down": "workspace::SwapPaneDown",
-      "ctrl-shift-x": "zed::Extensions",
+      "ctrl-shift-x": "wu::Extensions",
       // All task parameters are captured and unchanged between reruns by default.
       // Use the `"reevaluate_context"` parameter to control this.
       "ctrl-shift-r": ["task::Rerun", { "reevaluate_context": false }],
@@ -946,13 +946,6 @@
     },
   },
   {
-    "context": "ZedPredictModal",
-    "use_key_equivalents": true,
-    "bindings": {
-      "escape": "menu::Cancel",
-    },
-  },
-  {
     "context": "ConfigureContextServerModal > Editor",
     "use_key_equivalents": true,
     "bindings": {
@@ -1021,7 +1014,7 @@
       "ctrl-c": "keymap_editor::CopyAction",
       "ctrl-shift-c": "keymap_editor::CopyContext",
       "ctrl-t": "keymap_editor::ShowMatchingKeybinds",
-      "ctrl-e": "zed::OpenKeymapFile",
+      "ctrl-e": "wu::OpenKeymapFile",
     },
   },
   {
@@ -1053,10 +1046,10 @@
     "context": "Onboarding",
     "use_key_equivalents": true,
     "bindings": {
-      "ctrl-=": ["zed::IncreaseUiFontSize", { "persist": false }],
-      "ctrl-+": ["zed::IncreaseUiFontSize", { "persist": false }],
-      "ctrl--": ["zed::DecreaseUiFontSize", { "persist": false }],
-      "ctrl-0": ["zed::ResetUiFontSize", { "persist": false }],
+      "ctrl-=": ["wu::IncreaseUiFontSize", { "persist": false }],
+      "ctrl-+": ["wu::IncreaseUiFontSize", { "persist": false }],
+      "ctrl--": ["wu::DecreaseUiFontSize", { "persist": false }],
+      "ctrl-0": ["wu::ResetUiFontSize", { "persist": false }],
       "ctrl-enter": "onboarding::Finish",
     },
   },
@@ -1065,10 +1058,10 @@
     "use_key_equivalents": true,
     "bindings": {
       "ctrl-n": "workspace::NewFile",
-      "ctrl-=": ["zed::IncreaseUiFontSize", { "persist": false }],
-      "ctrl-+": ["zed::IncreaseUiFontSize", { "persist": false }],
-      "ctrl--": ["zed::DecreaseUiFontSize", { "persist": false }],
-      "ctrl-0": ["zed::ResetUiFontSize", { "persist": false }],
+      "ctrl-=": ["wu::IncreaseUiFontSize", { "persist": false }],
+      "ctrl-+": ["wu::IncreaseUiFontSize", { "persist": false }],
+      "ctrl--": ["wu::DecreaseUiFontSize", { "persist": false }],
+      "ctrl-0": ["wu::ResetUiFontSize", { "persist": false }],
       "ctrl-1": ["welcome::OpenRecentProject", 0],
       "ctrl-2": ["welcome::OpenRecentProject", 1],
       "ctrl-3": ["welcome::OpenRecentProject", 2],
@@ -1082,7 +1075,7 @@
     "context": "!SettingsWindow",
     "use_key_equivalents": true,
     "bindings": {
-      "ctrl-,": "zed::OpenSettings",
+      "ctrl-,": "wu::OpenSettings",
     },
   },
   {
@@ -1180,7 +1173,7 @@
     "bindings": {
       "ctrl-shift-backspace": "worktree_picker::DeleteWorktree",
       "ctrl-alt-shift-backspace": "worktree_picker::ForceDeleteWorktree",
-      "ctrl-shift-,": "zed::OpenWorktreeSetupTasks",
+      "ctrl-shift-,": "wu::OpenWorktreeSetupTasks",
     },
   },
   {

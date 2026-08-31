@@ -14,13 +14,13 @@
   IgnorableNamespaces="uap uap2 uap3 rescap desktop desktop4 desktop5 desktop6 uap10 com">
   <!-- TODO: Use Zed's signature here. -->
   <Identity
-    Name="ZedIndustries.Zed"
+    Name="Farshed.Wu"
     Publisher="CN=Zed Industries Inc, O=Zed Industries Inc, L=Denver, S=Colorado, C=US"
     Version="1.0.0.0" />
   <Properties>
-    <DisplayName>Zed</DisplayName>
+    <DisplayName>Wu</DisplayName>
 
-    <PublisherDisplayName>Zed Industries</PublisherDisplayName>
+    <PublisherDisplayName>Farshed</PublisherDisplayName>
     <!-- TODO: Use actual icon here. -->
     <Logo>resources\logo_150x150.png</Logo>
     <uap10:AllowExternalContent>true</uap10:AllowExternalContent>

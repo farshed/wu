@@ -1,7 +1,7 @@
 [
   // VS Code for macOS. See: https://code.visualstudio.com/docs/reference/default-keybindings
   //
-  // Zed's default keymap is close to VS Code's, so this overlay only contains
+  // Wu's default keymap is close to VS Code's, so this overlay only contains
   // the bindings where the two diverge.
   {
     "context": "Editor",

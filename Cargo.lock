@@ -7318,6 +7318,7 @@ dependencies = [
  "fs",
  "fuzzy",
  "gpui",
+ "install_cli",
  "menu",
  "notifications",
  "picker",

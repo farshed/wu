@@ -183,12 +183,12 @@ function BuildInstaller {
             $appSetupName = "Wu-$Architecture"
             # Must match `app_identifier()` in crates/release_channel/src/lib.rs plus the "-Instance-Mutex" suffix
             # used by crates/wu/src/wu/windows_only_instance.rs.
-            $appMutex = "Zed-Editor-Stable-Instance-Mutex"
+            $appMutex = "Wu-Editor-Stable-Instance-Mutex"
             $appExeName = "Wu"
             $regValueName = "Wu"
             $appUserId = "Farshed.Wu"
             $appShellNameShort = "W&u"
-            $appAppxFullName = "ZedIndustries.Zed_1.0.0.0_neutral__japxn1gcva8rg"
+            $appAppxFullName = "Farshed.Wu_1.0.0.0_neutral__japxn1gcva8rg"
         }
         "dev" {
             $appId = "{{8357632E-24A4-4F32-BA97-E575B4D1FE5D}"
@@ -196,12 +196,12 @@ function BuildInstaller {
             $appName = "Wu Dev"
             $appDisplayName = "Wu Dev"
             $appSetupName = "Wu-$Architecture"
-            $appMutex = "Zed-Editor-Dev-Instance-Mutex"
+            $appMutex = "Wu-Editor-Dev-Instance-Mutex"
             $appExeName = "Wu"
             $regValueName = "WuDev"
             $appUserId = "Farshed.Wu.Dev"
             $appShellNameShort = "W&u Dev"
-            $appAppxFullName = "ZedIndustries.Zed_1.0.0.0_neutral__japxn1gcva8rg"
+            $appAppxFullName = "Farshed.Wu_1.0.0.0_neutral__japxn1gcva8rg"
         }
         default {
             Write-Error "can't bundle installer for $channel."

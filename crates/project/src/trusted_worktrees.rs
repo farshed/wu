@@ -22,7 +22,7 @@
 //! * "single file worktree"
 //!
 //! After opening an empty Zed it's possible to open just a file, same as after opening a directory in Zed it's possible to open a file outside of this directory.
-//! Usual scenario for both cases is opening Zed's settings.json file via `zed: open settings file` command: that starts a language server for a new file open, which originates from a newly created, single file worktree.
+//! Usual scenario for both cases is opening Zed's settings.json file via `wu: open settings file` command: that starts a language server for a new file open, which originates from a newly created, single file worktree.
 //!
 //! Spawning a language server is potentially dangerous, and Zed needs to restrict that by default.
 //! Each single file worktree requires a separate trust permission, unless a more global level is trusted.

@@ -4,7 +4,7 @@
 // documentation: https://zed.dev/docs/configuring-zed
 //
 // To see all of Wu's default settings without changing your
-// custom settings, run `zed: open default settings` from the
+// custom settings, run `wu: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
   "ui_font_size": 16,

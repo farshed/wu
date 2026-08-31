@@ -10,7 +10,7 @@ const LOGGER: zlog::Logger = zlog::scoped!("json-schema");
 ///
 /// Represents a "JSON language server-specific, non-standardized, extension to the LSP" with which the vscode-json-language-server
 /// can request the contents of a schema that is associated with a uri scheme it does not support.
-/// In our case, we provide the uris for actions on server startup under the `zed://schemas/action/{normalize_action_name}` scheme.
+/// In our case, we provide the uris for actions on server startup under the `wu://schemas/action/{normalize_action_name}` scheme.
 /// We can then respond to this request with the schema content on demand, thereby greatly reducing the total size of the JSON we send to the server on startup
 struct SchemaContentRequest {}
 

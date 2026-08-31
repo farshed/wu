@@ -8367,11 +8367,11 @@ pub async fn apply_restored_multiworkspace_state(
 }
 
 actions!(
-    zed,
+    wu,
     [
-        /// Opens the Zed log file.
+        /// Opens the Wu log file.
         OpenLog,
-        /// Reveals the Zed log file in the system file manager.
+        /// Reveals the Wu log file in the system file manager.
         RevealLogInFileManager
     ]
 );

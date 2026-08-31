@@ -3515,7 +3515,7 @@ async fn load_keybind_context_language(
                 .project()
                 .read(cx)
                 .languages()
-                .language_for_name("Zed Keybind Context")
+                .language_for_name("Wu Keybind Context")
         })
         .context("Failed to load Zed Keybind Context language")
         .log_err();
@@ -3529,7 +3529,7 @@ async fn load_keybind_context_language(
     language.unwrap_or_else(|| {
         Arc::new(Language::new(
             LanguageConfig {
-                name: "Zed Keybind Context".into(),
+                name: "Wu Keybind Context".into(),
                 ..Default::default()
             },
             Some(tree_sitter_rust::LANGUAGE.into()),
@@ -4017,12 +4017,12 @@ mod tests {
         let keymap_content = r#"[
     {
         "bindings": {
-            "alt-cmd-shift-c": "zed::OpenKeymap"
+            "alt-cmd-shift-c": "wu::OpenKeymap"
         }
     },
     {
         "bindings": {
-            "alt-cmd-shift-c": "zed::OpenKeymap"
+            "alt-cmd-shift-c": "wu::OpenKeymap"
         }
     }
 ]"#;
@@ -4030,7 +4030,7 @@ mod tests {
         let cx = &mut cx;
 
         let rows = keymap_editor.read_with(cx, |editor, _| {
-            visible_rows_for_action(editor, "zed::OpenKeymap")
+            visible_rows_for_action(editor, "wu::OpenKeymap")
         });
         assert_eq!(
             rows.len(),
@@ -4056,7 +4056,7 @@ mod tests {
         cx.run_until_parked();
 
         let rows = keymap_editor.read_with(cx, |editor, _| {
-            visible_rows_for_action(editor, "zed::OpenKeymap")
+            visible_rows_for_action(editor, "wu::OpenKeymap")
         });
         assert_eq!(rows.len(), 1, "expected one row remaining after deletion");
     }

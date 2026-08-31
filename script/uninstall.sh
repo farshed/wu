@@ -1,27 +1,27 @@
 #!/usr/bin/env sh
 set -eu
 
-# Uninstalls Zed that was installed using the install.sh script
+# Uninstalls Wu that was installed using the install.sh script
 
 check_remaining_installations() {
     platform="$(uname -s)"
     if [ "$platform" = "Darwin" ]; then
-        # Check for any Zed variants in /Applications
-        remaining=$(ls -d /Applications/Zed*.app 2>/dev/null | wc -l)
+        # Check for any Wu variants in /Applications
+        remaining=$(ls -d /Applications/Wu*.app 2>/dev/null | wc -l)
         [ "$remaining" -eq 0 ]
     else
-        # Check for any Zed variants in ~/.local
-        remaining=$(ls -d "$HOME/.local/zed"*.app 2>/dev/null | wc -l)
+        # Check for any Wu variants in ~/.local
+        remaining=$(ls -d "$HOME/.local/wu"*.app 2>/dev/null | wc -l)
         [ "$remaining" -eq 0 ]
     fi
 }
 
 prompt_remove_preferences() {
-    printf "Do you want to keep your Zed preferences? [Y/n] "
+    printf "Do you want to keep your Wu preferences? [Y/n] "
     read -r response
     case "$response" in
         [nN]|[nN][oO])
-            rm -rf "$HOME/.config/zed"
+            rm -rf "$HOME/.config/wu"
             echo "Preferences removed."
             ;;
         *)
@@ -45,7 +45,7 @@ main() {
 
     "$platform"
 
-    echo "Zed has been uninstalled"
+    echo "Wu has been uninstalled"
 }
 
 linux() {
@@ -73,7 +73,7 @@ linux() {
     esac
 
     # Remove the app directory
-    rm -rf "$HOME/.local/zed$suffix.app"
+    rm -rf "$HOME/.local/wu$suffix.app"
 
     # Remove the binary symlink
     rm -f "$HOME/.local/bin/wu"
@@ -82,18 +82,18 @@ linux() {
     rm -f "$HOME/.local/share/applications/${appid}.desktop"
 
     # Remove the database directory for this channel
-    rm -rf "$HOME/.local/share/zed/db/0-$db_suffix"
+    rm -rf "$HOME/.local/share/wu/db/0-$db_suffix"
 
     # Remove socket file
-    rm -f "$HOME/.local/share/zed/zed-$db_suffix.sock"
+    rm -f "$HOME/.local/share/wu/wu-$db_suffix.sock"
 
-    # Remove the entire Zed directory if no installations remain
+    # Remove the entire Wu directory if no installations remain
     if check_remaining_installations; then
-        rm -rf "$HOME/.local/share/zed"
+        rm -rf "$HOME/.local/share/wu"
         prompt_remove_preferences
     fi
 
-    rm -rf $HOME/.zed_server
+    rm -rf "$HOME/.wu_server"
 }
 
 macos() {
@@ -117,7 +117,7 @@ macos() {
     rm -f "$HOME/.local/bin/wu"
 
     # Remove the database directory for this channel
-    rm -rf "$HOME/Library/Application Support/Zed/db/0-$db_suffix"
+    rm -rf "$HOME/Library/Application Support/Wu/db/0-$db_suffix"
 
     # Remove app-specific files and directories
     rm -rf "$HOME/Library/Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.ApplicationRecentDocuments/$app_id.sfl"*
@@ -126,15 +126,15 @@ macos() {
     rm -rf "$HOME/Library/Preferences/$app_id.plist"
     rm -rf "$HOME/Library/Saved Application State/$app_id.savedState"
 
-    # Remove the entire Zed directory if no installations remain
+    # Remove the entire Wu directory if no installations remain
     if check_remaining_installations; then
-        rm -rf "$HOME/Library/Application Support/Zed"
-        rm -rf "$HOME/Library/Logs/Zed"
+        rm -rf "$HOME/Library/Application Support/Wu"
+        rm -rf "$HOME/Library/Logs/Wu"
 
         prompt_remove_preferences
     fi
 
-    rm -rf $HOME/.zed_server
+    rm -rf "$HOME/.wu_server"
 }
 
 main "$@"

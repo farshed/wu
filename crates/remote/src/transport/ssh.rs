@@ -641,7 +641,7 @@ impl SshRemoteConnection {
         let destination = connection_options.ssh_destination();
 
         let temp_dir = tempfile::Builder::new()
-            .prefix("zed-ssh-session")
+            .prefix("wu-ssh-session")
             .tempdir()?;
 
         // On non-Windows, check if the user already has an active ControlMaster
@@ -2206,9 +2206,9 @@ mod tests {
         assert_eq!(
             sftp_put_command(
                 "/tmp/Zed Repro/remote_server",
-                ".zed_server/downloaded server",
+                ".wu_server/downloaded server",
             ),
-            "put \"/tmp/Zed Repro/remote_server\" \".zed_server/downloaded server\"\n"
+            "put \"/tmp/Zed Repro/remote_server\" \".wu_server/downloaded server\"\n"
         );
     }
 
@@ -2217,9 +2217,9 @@ mod tests {
         assert_eq!(
             sftp_put_command(
                 r#"/tmp/Zed "Nightly"/remote_server"#,
-                ".zed_server/remote_server",
+                ".wu_server/remote_server",
             ),
-            "put \"/tmp/Zed \\\"Nightly\\\"/remote_server\" \".zed_server/remote_server\"\n"
+            "put \"/tmp/Zed \\\"Nightly\\\"/remote_server\" \".wu_server/remote_server\"\n"
         );
     }
 
@@ -2236,9 +2236,9 @@ mod tests {
         assert_eq!(
             sftp_put_command(
                 r"/tmp/zed\server/remote_server",
-                ".zed_server/remote_server",
+                ".wu_server/remote_server",
             ),
-            "put \"/tmp/zed\\\\server/remote_server\" \".zed_server/remote_server\"\n"
+            "put \"/tmp/zed\\\\server/remote_server\" \".wu_server/remote_server\"\n"
         );
     }
 
@@ -2247,9 +2247,9 @@ mod tests {
         assert_eq!(
             sftp_put_command(
                 r"C:\Users\Smit\Zed Repro\remote_server",
-                ".zed_server/remote_server",
+                ".wu_server/remote_server",
             ),
-            "put \"C:\\\\Users\\\\Smit\\\\Zed Repro\\\\remote_server\" \".zed_server/remote_server\"\n"
+            "put \"C:\\\\Users\\\\Smit\\\\Zed Repro\\\\remote_server\" \".wu_server/remote_server\"\n"
         );
     }
 

@@ -4,11 +4,11 @@ use gpui::{AsyncApp, actions};
 actions!(
     cli,
     [
-        /// Registers the zed:// URL scheme handler.
-        RegisterZedScheme
+        /// Registers the wu:// URL scheme handler.
+        RegisterWuScheme
     ]
 );
 
-pub async fn register_zed_scheme(cx: &AsyncApp) -> anyhow::Result<()> {
+pub async fn register_wu_scheme(cx: &AsyncApp) -> anyhow::Result<()> {
     cx.update(|cx| cx.register_url_scheme(ZED_URL_SCHEME)).await
 }
