@@ -14,22 +14,30 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 64px 24px 96px; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 24px 96px; }
   h1 { font-size: 2.4rem; margin: 0 0 8px; letter-spacing: -0.02em; }
+  h2 { font-size: 1.25rem; margin: 40px 0 12px; }
   .tagline { color: var(--muted); font-size: 1.1rem; margin: 0 0 32px; }
   p { margin: 0 0 16px; }
   ul { margin: 0 0 16px; padding-left: 22px; }
   li { margin: 6px 0; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  .links { margin: 32px 0 0; display: flex; gap: 12px; flex-wrap: wrap; }
-  .links a { display: inline-block; padding: 8px 18px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); font-weight: 600; }
-  .links a.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .links a:hover { text-decoration: none; filter: brightness(1.05); }
+  nav { display: flex; gap: 20px; justify-content: flex-end; margin: 0 0 40px; }
+  .icon { width: 84px; height: 84px; display: block; margin: 0 0 20px; }
+  .downloads { margin: 0; padding: 0; list-style: none; }
+  .downloads li { margin: 6px 0; }
+  .downloads .muted { color: var(--muted); font-size: 0.92rem; }
 </style>
 </head>
 <body>
 <main>
+  <nav>
+    <a href="/doc">Docs</a>
+    <a href="https://github.com/farshed/wu">GitHub</a>
+  </nav>
+
+  <img class="icon" src="/app-icon.png" alt="">
   <h1>Wu</h1>
   <p class="tagline">The fast, native code editor that doesn't get in your way.</p>
 
@@ -44,11 +52,14 @@
     <li><strong>Feels like VS Code out of the box.</strong> Layout, panels, and defaults are tuned so you don't have to relearn your editor.</li>
   </ul>
 
-  <div class="links">
-    <a class="primary" href="https://github.com/farshed/wu/releases/latest">Download</a>
-    <a href="/doc">Docs</a>
-    <a href="https://github.com/farshed/wu">GitHub</a>
-  </div>
+  <h2>Download</h2>
+  <ul class="downloads">
+    <li><a href="https://github.com/farshed/wu/releases/latest/download/Wu-aarch64.dmg">macOS (Apple Silicon)</a></li>
+    <li><a href="https://github.com/farshed/wu/releases/latest/download/wu-linux-x86_64.tar.gz">Linux (x86_64)</a></li>
+    <li><a href="https://github.com/farshed/wu/releases/latest/download/wu-linux-aarch64.tar.gz">Linux (aarch64)</a></li>
+    <li><a href="https://github.com/farshed/wu/releases/latest/download/Wu-x86_64.exe">Windows (x86_64)</a></li>
+  </ul>
+  <p class="downloads muted">All releases are on the <a href="https://github.com/farshed/wu/releases">releases page</a>. macOS users: see the release notes for the one-time quarantine step.</p>
 </main>
 </body>
 </html>
