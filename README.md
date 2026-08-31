@@ -9,7 +9,7 @@
 
 Wu is a code editor for people who want the speed of a native app and the familiarity of VS Code. The name comes from [wu wei](https://en.wikipedia.org/wiki/Wu_wei): effortless action. The editor should do its job and stay out of the way.
 
-Wu is built on the [Zed](https://github.com/zed-industries/zed) engine, so it inherits Zed's editor core, GPU rendering, and language tooling, then strips out everything that isn't editing.
+Wu is a fork of [Zed](https://github.com/zed-industries/zed), created by Zed Industries. It inherits Zed's editor core, GPU rendering, and language tooling, then strips out everything that isn't editing.
 
 ## Features
 
@@ -69,3 +69,9 @@ Wu builds the same way Zed does. See the [Zed development docs](https://zed.dev/
 ## Licensing
 
 Wu is licensed under GPL-3.0-or-later with Apache-2.0 components where marked. See [LICENSE-GPL](./LICENSE-GPL) and [LICENSE-APACHE](./LICENSE-APACHE).
+
+Wu is a derivative work of [Zed](https://github.com/zed-industries/zed), copyright Zed Industries, Inc., used under the same licenses. Wu is not affiliated with or endorsed by Zed Industries.
+
+## Acknowledgements
+
+Thanks to the Zed team for building an excellent editor and releasing it as open source. Wu would not exist without their work.
