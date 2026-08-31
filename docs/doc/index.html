@@ -36,28 +36,26 @@
 <main>
   <a class="back" href="/">&larr; Wu</a>
   <h1>Docs</h1>
-  <p class="tagline">Everything Wu does differently from Zed, in one page.</p>
 
   <div class="note">
-    Wu is built from <a href="https://github.com/zed-industries/zed">Zed</a>'s source. Everything that is not listed on this page works the way it does in Zed, so the
+    Wu is a fork of <a href="https://github.com/zed-industries/zed">Zed</a>. Everything that is not listed on this page works the way it does in Zed, so the
     <a href="https://zed.dev/docs">Zed documentation</a> is the reference for settings, key bindings, languages, extensions, tasks, debugging, and remote development.
   </div>
 
   <h2>What is removed</h2>
   <ul>
-    <li>AI features: the agent panel, inline assistant, edit predictions, and all language model providers.</li>
+    <li>AI features: the agent panel, inline assistant, edit predictions, and language model providers.</li>
     <li>Collaboration: channels, calls, screen sharing, shared projects, and the sign-in flow that went with them.</li>
     <li>Telemetry, crash reporting, and hang detection. Wu does not phone home.</li>
     <li>Vim and Helix modes.</li>
     <li>Dev containers.</li>
-    <li>The REPL, the journal, and the which-key popup.</li>
-    <li>The settings and keymap migrator for old Zed config formats.</li>
+    <li>The REPL and the journal.</li>
   </ul>
   <p class="muted">If a setting or key binding from the Zed docs belongs to one of these features, it has no effect in Wu.</p>
 
   <h2>What is different</h2>
   <ul>
-    <li>An activity bar on the side switches between the project, git, outline, search, and debug panels. The debug panel docks on the left by default.</li>
+    <li>An activity bar on the side switches between the project, git, outline, search, and debug panels. The panels dock on the left by default.</li>
     <li>The <code>+</code> button in the editor and terminal tab strips sits after the last tab and opens a new file or terminal directly, with no menu.</li>
     <li><code>Cmd-W</code> / <code>Ctrl-W</code> never closes a side panel. It only closes editor tabs.</li>
     <li>Icons and the UI use less memory than Zed for the same workload.</li>
@@ -70,15 +68,13 @@
     <tr><td>Settings (macOS, Linux)</td><td><code>~/.config/zed</code></td><td><code>~/.config/wu</code></td></tr>
     <tr><td>Settings (Windows)</td><td><code>%APPDATA%\Zed</code></td><td><code>%APPDATA%\Wu</code></td></tr>
     <tr><td>App data (macOS)</td><td><code>~/Library/Application Support/Zed</code></td><td><code>~/Library/Application Support/Wu</code></td></tr>
-    <tr><td>Project settings</td><td><code>.zed/</code></td><td><code>.zed/</code> (unchanged)</td></tr>
-    <tr><td>Bundle id</td><td><code>dev.zed.Zed</code></td><td><code>me.farshed.Wu</code></td></tr>
+    <tr><td>Project settings</td><td><code>.zed/</code></td><td><code>.wu/</code></td></tr>
   </table>
   <p>Wu and Zed can be installed side by side. They do not share settings, so copy your <code>settings.json</code> and <code>keymap.json</code> over if you want the same setup in both.</p>
 
   <h2>What is the same</h2>
   <ul>
     <li>Extensions come from the Zed extension registry, and every Zed extension works in Wu.</li>
-    <li>Project-level <code>.zed/settings.json</code>, <code>.zed/tasks.json</code>, and <code>.zed/debug.json</code> files work as in Zed.</li>
     <li>Settings, key bindings, themes, and languages follow the <a href="https://zed.dev/docs">Zed docs</a>.</li>
   </ul>
 
