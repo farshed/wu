@@ -623,7 +623,7 @@ pub struct GitPanelSettingsContent {
 
     /// Whether to show a badge on the git panel icon with the count of uncommitted changes.
     ///
-    /// Default: false
+    /// Default: true
     pub show_count_badge: Option<bool>,
 
     /// Whether the git panel should open on startup.

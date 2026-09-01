@@ -1,5 +1,5 @@
-use crate::dock::{Dock, PanelHandle, activate_panel_button, panel_button_context_menu};
 use crate::Workspace;
+use crate::dock::{Dock, PanelHandle, activate_panel_button, panel_button_context_menu};
 use gpui::{
     Action, Anchor, App, Context, Entity, FocusHandle, Focusable as _, IntoElement, ParentElement,
     Pixels, Render, SharedString, Styled, Subscription, WeakEntity, Window, px,
@@ -7,8 +7,8 @@ use gpui::{
 use settings::SettingsStore;
 use std::sync::Arc;
 use ui::{
-    ButtonSize, ContextMenu, IconButton, IconName, IconSize, PopoverMenu, Tooltip, prelude::*,
-    right_click_menu,
+    ButtonSize, ContextMenu, CountBadge, IconButton, IconName, IconSize, PopoverMenu, Tooltip,
+    prelude::*, right_click_menu,
 };
 use util::ResultExt as _;
 
@@ -16,12 +16,7 @@ pub const ACTIVITY_BAR_WIDTH: Pixels = px(48.);
 
 /// Entries are shown in this order by `Panel::panel_key()`. Panels not listed here
 /// come after, in dock order (left dock first, then right dock).
-const PREFERRED_ORDER: [&str; 4] = [
-    "ProjectPanel",
-    "GitPanel",
-    "OutlinePanel",
-    "DebugPanel",
-];
+const PREFERRED_ORDER: [&str; 4] = ["ProjectPanel", "GitPanel", "OutlinePanel", "DebugPanel"];
 
 /// A vertical bar on the left edge of the window with one button per left or right
 /// dock panel, like the activity bar in VS Code.
@@ -158,6 +153,11 @@ impl ActivityBar {
                 icon, icon_tooltip, ..
             } => (*icon, *icon_tooltip),
         };
+        let badge_count = match &entry {
+            ActivityBarEntry::Panel { panel, .. } => panel
+                .icon_label(window, cx)
+                .and_then(|label| label.parse::<usize>().ok()),
+        };
 
         let button = move |is_menu_open: bool| {
             let action = action.boxed_clone();
@@ -173,9 +173,7 @@ impl ActivityBar {
                 .aria_label(icon_tooltip)
                 .on_click({
                     let action = action.boxed_clone();
-                    move |_, window, cx| {
-                        activate_panel_button(&focus_handle, &*action, window, cx)
-                    }
+                    move |_, window, cx| activate_panel_button(&focus_handle, &*action, window, cx)
                 })
                 .when(!is_menu_open, |this| {
                     this.tooltip(move |_window, cx| {
@@ -193,7 +191,14 @@ impl ActivityBar {
                     })
                     .anchor(Anchor::TopLeft)
                     .attach(Anchor::TopRight)
-                    .trigger(move |is_menu_open, _window, _cx| button(is_menu_open))
+                    .trigger(move |is_menu_open, _window, _cx| {
+                        div()
+                            .relative()
+                            .child(button(is_menu_open))
+                            .when_some(badge_count, |this, count| {
+                                this.child(CountBadge::new(count))
+                            })
+                    })
                     .into_any_element()
             }
         }
@@ -349,9 +354,8 @@ mod tests {
         let (multi_workspace, cx) = cx.add_window_view(|window, cx| {
             crate::MultiWorkspace::test_new(project.clone(), window, cx)
         });
-        let workspace = multi_workspace.read_with(cx, |multi_workspace, _| {
-            multi_workspace.workspace().clone()
-        });
+        let workspace =
+            multi_workspace.read_with(cx, |multi_workspace, _| multi_workspace.workspace().clone());
 
         workspace.update_in(cx, |workspace, window, cx| {
             let outline_panel = cx.new(|cx| IconPanel::<0> {

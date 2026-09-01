@@ -1277,15 +1277,13 @@ impl GitRepository for FakeGitRepository {
                 git::repository::DiffStatType::HeadToWorktree => state
                     .head_contents
                     .keys()
-                    .chain(
-                        worktree_files
-                            .keys()
-                            .filter(|path| state.index_contents.contains_key(*path)),
-                    )
+                    .chain(worktree_files.keys())
                     .collect(),
-                git::repository::DiffStatType::IndexToWorktree => {
-                    state.index_contents.keys().collect()
-                }
+                git::repository::DiffStatType::IndexToWorktree => state
+                    .index_contents
+                    .keys()
+                    .chain(worktree_files.keys())
+                    .collect(),
             };
             for path in all_paths {
                 if !matches_prefixes(path, &path_prefixes) {

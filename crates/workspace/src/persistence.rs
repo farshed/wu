@@ -1910,13 +1910,12 @@ impl WorkspaceDb {
         &self,
         id: RemoteConnectionId,
     ) -> Result<RemoteConnectionOptions> {
-        let (kind, host, port, user, distro) = self
-            .select_row_bound(sql!(
-                SELECT kind, host, port, user, distro
-                FROM remote_connections
-                WHERE id = ?
-            ))?(id.0)?
-            .context("no such remote connection")?;
+        let (kind, host, port, user, distro) = self.select_row_bound(sql!(
+            SELECT kind, host, port, user, distro
+            FROM remote_connections
+            WHERE id = ?
+        ))?(id.0)?
+        .context("no such remote connection")?;
         Self::remote_connection_from_row(kind, host, port, user, distro)
             .context("invalid remote_connection row")
     }

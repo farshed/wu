@@ -2510,17 +2510,26 @@ impl GitRepository for RealGitRepository {
     ) -> BoxFuture<'static, Result<crate::status::GitDiffStat>> {
         let path_prefixes = path_prefixes.to_vec();
         let git_binary = self.git_binary_in_worktree();
+        let working_directory = self.working_directory();
 
         self.executor
             .spawn(async move {
                 let git_binary = git_binary?;
                 let mut args: Vec<String> =
                     vec!["diff".into(), "--numstat".into(), "--no-renames".into()];
-                match diff {
-                    DiffStatType::HeadToIndex => args.extend(["--cached".into(), "HEAD".into()]),
-                    DiffStatType::HeadToWorktree => args.push("HEAD".into()),
-                    DiffStatType::IndexToWorktree => {}
-                }
+                // `git diff` never reports untracked files, so worktree-side
+                // diffs list them separately and count their lines as added.
+                let include_untracked = match diff {
+                    DiffStatType::HeadToIndex => {
+                        args.extend(["--cached".into(), "HEAD".into()]);
+                        false
+                    }
+                    DiffStatType::HeadToWorktree => {
+                        args.push("HEAD".into());
+                        true
+                    }
+                    DiffStatType::IndexToWorktree => true,
+                };
                 if !path_prefixes.is_empty() {
                     args.push("--".into());
                     args.extend(
@@ -2530,7 +2539,59 @@ impl GitRepository for RealGitRepository {
                     );
                 }
                 let output = git_binary.run(&args).await?;
-                Ok(crate::status::parse_numstat(&output))
+                let mut stat = crate::status::parse_numstat(&output);
+
+                if include_untracked {
+                    let working_directory = working_directory?;
+                    let mut args: Vec<String> = vec![
+                        "ls-files".into(),
+                        "--others".into(),
+                        "--exclude-standard".into(),
+                        "-z".into(),
+                    ];
+                    if !path_prefixes.is_empty() {
+                        args.push("--".into());
+                        args.extend(
+                            path_prefixes
+                                .iter()
+                                .map(|p| p.as_std_path().to_string_lossy().into_owned()),
+                        );
+                    }
+                    let output = git_binary.run(&args).await?;
+                    let mut entries = stat.entries.to_vec();
+                    for path in output.split('\0').filter(|path| !path.is_empty()) {
+                        let Ok(repo_path) = RepoPath::new(path) else {
+                            continue;
+                        };
+                        let absolute_path = working_directory.join(repo_path.as_std_path());
+                        let Ok(contents) = smol::fs::read(&absolute_path).await else {
+                            continue;
+                        };
+                        // Match `git diff --numstat`, which reports no line
+                        // counts for binary files.
+                        if contents.iter().take(8000).any(|&byte| byte == 0) {
+                            continue;
+                        }
+                        let mut added = contents.iter().filter(|&&byte| byte == b'\n').count();
+                        if contents.last().is_some_and(|&byte| byte != b'\n') {
+                            added += 1;
+                        }
+                        entries.push((
+                            repo_path,
+                            crate::status::DiffStat {
+                                added: added.min(u32::MAX as usize) as u32,
+                                deleted: 0,
+                            },
+                        ));
+                    }
+                    entries.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+                    entries.dedup_by(|(a, _), (b, _)| a == b);
+                    stat = crate::status::GitDiffStat {
+                        entries: entries.into(),
+                    };
+                }
+
+                Ok(stat)
             })
             .boxed()
     }

@@ -1009,8 +1009,8 @@
     "starts_open": false,
     // Whether to show a badge on the git panel icon with the count of uncommitted changes.
     //
-    // Default: false
-    "show_count_badge": false,
+    // Default: true
+    "show_count_badge": true,
     "scrollbar": {
       // When to show the scrollbar in the git panel.
       //

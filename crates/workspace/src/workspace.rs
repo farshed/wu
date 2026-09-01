@@ -8615,8 +8615,7 @@ pub enum WorkspaceMatching {
     MatchSubdirectory,
 }
 
-#[derive(Clone)]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct OpenOptions {
     pub visible: Option<OpenVisible>,
     pub focus: Option<bool>,

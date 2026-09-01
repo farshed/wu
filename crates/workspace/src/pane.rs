@@ -1,7 +1,6 @@
 use crate::{
-    CloseWindow, NewFile, OpenInTerminal, OpenOptions,
-    OpenTerminal, OpenVisible, SplitDirection, ToggleZoom,
-    Workspace, WorkspaceItemBuilder, ZoomIn, ZoomOut,
+    CloseWindow, NewFile, OpenInTerminal, OpenOptions, OpenTerminal, OpenVisible, SplitDirection,
+    ToggleZoom, Workspace, WorkspaceItemBuilder, ZoomIn, ZoomOut,
     focus_follows_mouse::FocusFollowsMouse as _,
     invalid_item_view::InvalidItemView,
     item::{
@@ -3424,9 +3423,7 @@ impl Pane {
                                     menu.when_some(reveal_path, |menu, reveal_path| {
                                         menu.separator().entry(
                                             ui::utils::reveal_in_file_manager_label(is_remote),
-                                            Some(Box::new(
-                                                wu_actions::editor::RevealInFileManager,
-                                            )),
+                                            Some(Box::new(wu_actions::editor::RevealInFileManager)),
                                             window.handler_for(&pane, move |pane, _, cx| {
                                                 if let Some(project) = pane.project.upgrade() {
                                                     project.update(cx, |project, cx| {
@@ -3658,7 +3655,12 @@ impl Pane {
                             .border_color(cx.theme().colors().border)
                     })
             }))
-            .child(self.render_unpinned_tabs_container(unpinned_tabs, trailing_button, tab_count, cx));
+            .child(self.render_unpinned_tabs_container(
+                unpinned_tabs,
+                trailing_button,
+                tab_count,
+                cx,
+            ));
         tab_bar.into_any_element()
     }
 
@@ -4170,10 +4172,7 @@ impl Pane {
 
                 if project.is_via_remote_server() {
                     if !project.is_via_wsl(cx) {
-                        workspace.show_error(
-                            "Cannot drop local files on a remote SSH project",
-                            cx,
-                        );
+                        workspace.show_error("Cannot drop local files on a remote SSH project", cx);
                         return (true, false);
                     }
                     return (false, true);
