@@ -67,10 +67,15 @@ git fetch --depth=1 --no-tags upstream \
   "$(ref_for "$base"):refs/upstream/base" \
   "$(ref_for "$target"):refs/upstream/target"
 
-base_time=$(git log -1 --format=%ct refs/upstream/base)
-target_time=$(git log -1 --format=%ct refs/upstream/target)
-if (( target_time < base_time )); then
-  echo "$target is older than the last synced point ($base); nothing to sync."
+# Stable branches fork from main before their tag commit is made, so commit
+# dates cannot order them against a main snapshot; Zed's own crate version can.
+zed_version() {
+  git show "$1:crates/zed/Cargo.toml" | sed -nE 's/^version = "([^"]+)"/\1/p' | head -1
+}
+base_version=$(zed_version refs/upstream/base)
+target_version=$(zed_version refs/upstream/target)
+if [[ "$(printf '%s\n%s\n' "$base_version" "$target_version" | sort -V | head -1)" != "$base_version" ]]; then
+  echo "$target (Zed $target_version) predates the last synced point ($base, Zed $base_version); nothing to sync."
   git update-ref -d refs/upstream/base
   git update-ref -d refs/upstream/target
   exit 0
