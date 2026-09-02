@@ -55,4 +55,5 @@ xcuserdata/
 .local*
 /inno
 
-video/
+/video
+/notes
