@@ -14,7 +14,7 @@ Wu is a fork of [Zed](https://github.com/zed-industries/zed). It inherits Zed's 
 ## Features
 
 - **Native and fast.** Written in Rust, rendered on the GPU. No Electron or webviews. Opens instantly and stays responsive on large views.
-- **Lightweight.** Base memory use is about 28% lower than even Zed.
+- **Lightweight.** Base memory use is lower than even Zed.
 - **No built-in AI features.** Bring whichever agent or harness you already use.
 - **Feels like VS Code out of the box.** Layout, panels, and defaults are tuned so you don't have to relearn your editor.
 
@@ -34,9 +34,7 @@ Download the installer for your platform [here](https://github.com/farshed/wu/re
 
 ### macOS (Apple Silicon)
 
-Wu is not signed with an Apple Developer certificate yet, so macOS will block it the first time you open it.
-
-1. Download `Wu-aarch64.dmg`, open it, and drag Wu into your Applications folder.
+1. Download `Wu-aarch64.dmg`, open it, and drag Wu into your Applications folder. Wu is not signed with an Apple Developer certificate yet, so macOS will block it the first time you open it.
 2. Open Terminal and run:
 
    ```sh

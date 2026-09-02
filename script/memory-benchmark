@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+# Measures the base physical memory footprint (what Activity Monitor's "Memory"
+# column shows) of Wu and Zed on macOS.
+#
+# Each run launches the app with a fresh, throwaway --user-data-dir so nothing
+# is restored and no user state is touched, waits for it to settle on its empty
+# welcome window, sums the footprint of the app process and all of its
+# descendants, then quits it. Runs alternate between the two apps and the
+# median per app is reported.
+#
+# Usage: script/memory-benchmark
+#   RUNS=5 SETTLE_SECONDS=30 script/memory-benchmark   # override defaults
+#   WU_BIN=... ZED_BIN=... script/memory-benchmark     # override app paths
+
+set -euo pipefail
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "This benchmark uses macOS's footprint(1) and only runs on macOS." >&2
+  exit 1
+fi
+
+RUNS=${RUNS:-3}
+SETTLE_SECONDS=${SETTLE_SECONDS:-20}
+WU_BIN=${WU_BIN:-/Applications/Wu.app/Contents/MacOS/wu}
+ZED_BIN=${ZED_BIN:-/Applications/Zed.app/Contents/MacOS/zed}
+
+for binary in "$WU_BIN" "$ZED_BIN"; do
+  if [[ ! -x "$binary" ]]; then
+    echo "Not found or not executable: $binary" >&2
+    exit 1
+  fi
+done
+
+descendant_pids() {
+  local pid=$1
+  echo "$pid"
+  local child
+  for child in $(pgrep -P "$pid" 2>/dev/null); do
+    descendant_pids "$child"
+  done
+}
+
+footprint_kb() {
+  local pid=$1
+  local line value unit
+  line=$(footprint -p "$pid" 2>/dev/null | grep -m1 'Footprint:') || return 1
+  value=$(echo "$line" | sed -E 's/.*Footprint: ([0-9.]+) ([KMG]B).*/\1/')
+  unit=$(echo "$line" | sed -E 's/.*Footprint: ([0-9.]+) ([KMG]B).*/\2/')
+  case "$unit" in
+    KB) awk -v v="$value" 'BEGIN { printf "%d", v }' ;;
+    MB) awk -v v="$value" 'BEGIN { printf "%d", v * 1024 }' ;;
+    GB) awk -v v="$value" 'BEGIN { printf "%d", v * 1024 * 1024 }' ;;
+    *) return 1 ;;
+  esac
+}
+
+measure_once() {
+  local binary=$1
+  local data_dir total pid p kb
+  data_dir=$(mktemp -d)
+
+  # ZED_STATELESS skips the single-instance handshake so the benchmark can run
+  # while a normal instance of either app is open.
+  ZED_STATELESS=1 "$binary" --user-data-dir "$data_dir" ${OPEN_PATH:+"$OPEN_PATH"} >/dev/null 2>&1 &
+  pid=$!
+  sleep "$SETTLE_SECONDS"
+
+  total=0
+  for p in $(descendant_pids "$pid"); do
+    if kb=$(footprint_kb "$p"); then
+      total=$((total + kb))
+    fi
+  done
+
+  for p in $(descendant_pids "$pid" | sort -r); do
+    kill "$p" 2>/dev/null || true
+  done
+  wait "$pid" 2>/dev/null || true
+  rm -rf "$data_dir"
+
+  echo "$total"
+}
+
+median() {
+  printf '%s\n' "$@" | sort -n | awk '{ values[NR] = $1 } END {
+    if (NR % 2) { print values[(NR + 1) / 2] }
+    else { print int((values[NR / 2] + values[NR / 2 + 1]) / 2) }
+  }'
+}
+
+wu_samples=()
+zed_samples=()
+for ((run = 1; run <= RUNS; run++)); do
+  echo "Run $run/$RUNS: Wu..." >&2
+  wu_samples+=("$(measure_once "$WU_BIN")")
+  echo "Run $run/$RUNS: Zed..." >&2
+  zed_samples+=("$(measure_once "$ZED_BIN")")
+done
+
+wu_median=$(median "${wu_samples[@]}")
+zed_median=$(median "${zed_samples[@]}")
+
+to_mb() {
+  awk -v kb="$1" 'BEGIN { printf "%.0f", kb / 1024 }'
+}
+
+echo
+echo "Samples (KB):"
+echo "  Wu:  ${wu_samples[*]}"
+echo "  Zed: ${zed_samples[*]}"
+echo
+echo "Median base memory footprint:"
+echo "  Wu:  $(to_mb "$wu_median") MB"
+echo "  Zed: $(to_mb "$zed_median") MB"
+
+if [[ "$zed_median" -gt 0 ]]; then
+  awk -v wu="$wu_median" -v zed="$zed_median" 'BEGIN {
+    printf "  Wu uses %.0f%% less memory than Zed\n", (1 - wu / zed) * 100
+  }'
+fi
