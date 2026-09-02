@@ -1,0 +1,70 @@
+name: Upstream sync
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find newest unsynced Zed stable tag
+        id: tag
+        run: |
+          synced=$(tr -d '[:space:]' < UPSTREAM_VERSION)
+          tag=$(git ls-remote --tags --refs https://github.com/zed-industries/zed.git 'v*' \
+            | awk '{ print $2 }' | sed 's|refs/tags/||' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "$tag" == "$synced" ]]; then
+            echo "Already synced to $tag."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --heads origin "sync/$tag" >/dev/null; then
+            echo "Branch sync/$tag already exists."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync
+        id: sync
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "sync/${{ steps.tag.outputs.tag }}"
+          set +e
+          script/upstream-sync "${{ steps.tag.outputs.tag }}" | tee sync.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if (( status > 2 )); then exit "$status"; fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          git push origin "sync/${{ steps.tag.outputs.tag }}"
+
+      - name: Open pull request
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          if [[ "${{ steps.sync.outputs.status }}" == "0" ]]; then
+            title="Sync Zed $tag"
+            intro="The upstream changes applied cleanly. Build and test locally before merging."
+          else
+            title="Sync Zed $tag (needs resolution)"
+            intro="Some files were committed with conflict markers. Check out this branch, resolve them, amend, and push."
+          fi
+          gh pr create \
+            --base main \
+            --head "sync/$tag" \
+            --title "$title" \
+            --body "$(printf '%s\n\n```\n%s\n```\n\nRelease Notes:\n\n- N/A' "$intro" "$(cat sync.log)")"

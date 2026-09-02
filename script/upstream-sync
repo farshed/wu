@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+
+# Applies the changes Zed made between the last synced point and a newer Zed
+# tag onto the current branch, as one ordinary commit.
+#
+# No Zed history enters this repository. The two upstream points are fetched
+# at depth 1 only for their trees, and `git merge-tree` runs a three-way merge
+# with base = last synced point (UPSTREAM_VERSION), ours = HEAD, theirs = the
+# new tag. The result is committed with HEAD as its only parent.
+#
+# Files Wu removed on purpose stay removed: upstream edits to files that no
+# longer exist here, and additions under dropped paths, are discarded and
+# listed. Anything else that conflicts is committed with conflict markers so
+# it can be resolved on the branch.
+#
+# Usage: script/upstream-sync v1.19.0
+#        script/upstream-sync <zed-commit-sha>
+
+set -euo pipefail
+
+target=${1:?usage: script/upstream-sync <zed-tag-or-sha>}
+
+UPSTREAM_URL=https://github.com/zed-industries/zed.git
+VERSION_FILE=UPSTREAM_VERSION
+
+# Upstream changes under these paths are discarded. Whole crates that do not
+# exist in HEAD are dropped too, except the ones in REVIEW_PREFIXES.
+DROPPED_PREFIXES=(
+  .agents/ .cloudflare/ .factory/ .github/ .wezel/ .zed/
+  assets/prompts/ assets/sounds/ ci/ docs/ extensions/ legal/ nix/ tooling/
+  crates/extension_api/wit/
+  Dockerfile compose.yml Procfile default.nix flake.lock flake.nix shell.nix
+  livekit.yaml lychee.toml renovate.json REVIEWERS.conl
+  GEMINI.md CONTRIBUTING.md CODE_OF_CONDUCT.md .mailmap .git-blame-ignore-revs
+)
+# crates/zed became crates/wu. Rename detection maps most edits across, but
+# files Wu rewrote fall through here and need a human to port or discard them.
+REVIEW_PREFIXES=(crates/zed/)
+# Always keep Wu's version of these.
+PINNED_FILES=(crates/wu/RELEASE_CHANNEL)
+
+git_version=$(git version | sed -E 's/git version ([0-9]+\.[0-9]+).*/\1/')
+if [[ "$(printf '%s\n2.38\n' "$git_version" | sort -V | head -1)" != "2.38" ]]; then
+  echo "git 2.38 or newer is required (found $git_version)." >&2
+  exit 1
+fi
+
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  echo "Working tree has uncommitted changes; commit or stash them first." >&2
+  exit 1
+fi
+
+base=$(tr -d '[:space:]' < "$VERSION_FILE")
+if [[ "$base" == "$target" ]]; then
+  echo "$target is already synced."
+  exit 0
+fi
+
+ref_for() {
+  if [[ "$1" =~ ^v[0-9] ]]; then echo "refs/tags/$1"; else echo "$1"; fi
+}
+
+if ! git remote get-url upstream >/dev/null 2>&1; then
+  git remote add upstream "$UPSTREAM_URL"
+fi
+git fetch --depth=1 --no-tags upstream \
+  "$(ref_for "$base"):refs/upstream/base" \
+  "$(ref_for "$target"):refs/upstream/target"
+
+base_time=$(git log -1 --format=%ct refs/upstream/base)
+target_time=$(git log -1 --format=%ct refs/upstream/target)
+if (( target_time < base_time )); then
+  echo "$target is older than the last synced point ($base); refusing to sync backwards." >&2
+  exit 1
+fi
+
+# Synthetic commits give merge-tree the intended merge base without any
+# upstream history being reachable from HEAD.
+ours=$(git commit-tree "HEAD^{tree}" -p refs/upstream/base -m "ours")
+theirs=$(git commit-tree "refs/upstream/target^{tree}" -p refs/upstream/base -m "theirs")
+
+set +e
+merge_output=$(git merge-tree --write-tree --name-only "$ours" "$theirs")
+merge_status=$?
+set -e
+if (( merge_status > 1 )); then
+  echo "$merge_output" >&2
+  exit 1
+fi
+
+merged_tree=$(echo "$merge_output" | head -1)
+conflicts=()
+if (( merge_status == 1 )); then
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && break
+    conflicts+=("$line")
+  done < <(echo "$merge_output" | tail -n +2)
+fi
+
+in_head() { git cat-file -e "HEAD:$1" 2>/dev/null; }
+has_prefix() {
+  local path=$1; shift
+  local prefix
+  for prefix in "$@"; do [[ "$path" == "$prefix"* ]] && return 0; done
+  return 1
+}
+is_dropped() {
+  local path=$1
+  has_prefix "$path" "${REVIEW_PREFIXES[@]}" && return 1
+  has_prefix "$path" "${DROPPED_PREFIXES[@]}" && return 0
+  if [[ "$path" == crates/*/* ]]; then
+    local crate_dir
+    crate_dir=$(echo "$path" | cut -d/ -f1-2)
+    in_head "$crate_dir" || return 0
+  fi
+  return 1
+}
+is_conflict() {
+  local path=$1 c
+  for c in "${conflicts[@]}"; do [[ "$c" == "$path" ]] && return 0; done
+  return 1
+}
+
+index_file=$(mktemp)
+trap 'rm -f "$index_file"' EXIT
+export GIT_INDEX_FILE=$index_file
+git read-tree "$merged_tree"
+
+dropped=()
+remaining=()
+while IFS=$'\t' read -r status path; do
+  if [[ "$status" == A ]] && is_dropped "$path"; then
+    git update-index --force-remove -- "$path"
+    dropped+=("$path")
+  elif is_conflict "$path"; then
+    if ! in_head "$path" && ! has_prefix "$path" "${REVIEW_PREFIXES[@]}"; then
+      git update-index --force-remove -- "$path"
+      dropped+=("$path")
+    else
+      remaining+=("$path")
+    fi
+  fi
+done < <(git diff-tree -r --name-status HEAD "$merged_tree")
+
+for pinned in "${PINNED_FILES[@]}"; do
+  if in_head "$pinned"; then
+    git update-index --add --cacheinfo "100644,$(git rev-parse "HEAD:$pinned"),$pinned"
+  fi
+done
+version_blob=$(printf '%s\n' "$target" | git hash-object -w --stdin)
+git update-index --add --cacheinfo "100644,$version_blob,$VERSION_FILE"
+
+new_tree=$(git write-tree)
+unset GIT_INDEX_FILE
+
+message="Sync Zed $target
+
+Upstream range: $base..$target"
+commit=$(echo "$message" | git commit-tree "$new_tree" -p HEAD)
+git merge --ff-only --quiet "$commit"
+git update-ref -d refs/upstream/base
+git update-ref -d refs/upstream/target
+
+echo "Synced $base..$target as $(git rev-parse --short HEAD)."
+if (( ${#dropped[@]} > 0 )); then
+  echo
+  echo "Discarded ${#dropped[@]} upstream change(s) under removed paths:"
+  printf '  %s\n' "${dropped[@]}"
+fi
+if (( ${#remaining[@]} > 0 )); then
+  echo
+  echo "${#remaining[@]} file(s) committed with conflict markers; resolve and amend:"
+  printf '  %s\n' "${remaining[@]}"
+  echo
+  echo "If Cargo.lock is listed: git checkout --theirs Cargo.lock && cargo check"
+  exit 2
+fi
