@@ -70,8 +70,10 @@ git fetch --depth=1 --no-tags upstream \
 base_time=$(git log -1 --format=%ct refs/upstream/base)
 target_time=$(git log -1 --format=%ct refs/upstream/target)
 if (( target_time < base_time )); then
-  echo "$target is older than the last synced point ($base); refusing to sync backwards." >&2
-  exit 1
+  echo "$target is older than the last synced point ($base); nothing to sync."
+  git update-ref -d refs/upstream/base
+  git update-ref -d refs/upstream/target
+  exit 0
 fi
 
 # Synthetic commits give merge-tree the intended merge base without any

@@ -42,16 +42,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git switch -c "sync/${{ steps.tag.outputs.tag }}"
+          before=$(git rev-parse HEAD)
           set +e
           script/upstream-sync "${{ steps.tag.outputs.tag }}" | tee sync.log
           status=${PIPESTATUS[0]}
           set -e
           if (( status > 2 )); then exit "$status"; fi
+          if [[ "$(git rev-parse HEAD)" == "$before" ]]; then
+            echo "Nothing to sync."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
           git push origin "sync/${{ steps.tag.outputs.tag }}"
 
       - name: Open pull request
-        if: steps.tag.outputs.skip != 'true'
+        if: steps.tag.outputs.skip != 'true' && steps.sync.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
