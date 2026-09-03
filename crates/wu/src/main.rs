@@ -51,7 +51,8 @@ use util::ResultExt;
 use uuid::Uuid;
 use workspace::{
     AppState, MultiWorkspace, SerializedWorkspaceLocation, SessionWorkspace, Toast,
-    WorkspaceSettings, WorkspaceStore, notifications::NotificationId, restore_multiworkspace,
+    WorkspaceDb, WorkspaceSettings, WorkspaceStore, notifications::NotificationId,
+    restore_multiworkspace,
 };
 use wu::{
     OpenListener, OpenRequest, RawOpenRequest, app_menus, build_window_options,
@@ -820,7 +821,8 @@ fn main() {
                     &current_session_id,
                     last_session_id.as_deref(),
                 )
-                .await
+                .await?;
+                restore_dock_recent_projects(&db, fs.as_ref(), cx).await
             }
         })
         .detach_and_log_err(cx);
@@ -849,6 +851,31 @@ fn main() {
         })
         .detach();
     });
+}
+
+// macOS ties the Dock's recent-items list to the app's code signature. Ad-hoc signed
+// builds get a new signature on every update, which empties that list, so rebuild it
+// from Wu's own project history. Oldest first so the newest ends up on top.
+async fn restore_dock_recent_projects(
+    db: &WorkspaceDb,
+    fs: &dyn Fs,
+    cx: &mut AsyncApp,
+) -> Result<()> {
+    const DOCK_RECENT_PROJECT_LIMIT: usize = 10;
+    let recent_paths = db
+        .recent_project_workspaces(fs)
+        .await?
+        .into_iter()
+        .filter(|workspace| workspace.location == SerializedWorkspaceLocation::Local)
+        .take(DOCK_RECENT_PROJECT_LIMIT)
+        .flat_map(|workspace| workspace.paths.paths().to_vec())
+        .collect::<Vec<_>>();
+    cx.update(|cx| {
+        for path in recent_paths.iter().rev() {
+            cx.add_recent_document(path);
+        }
+    });
+    Ok(())
 }
 
 fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut App) {
