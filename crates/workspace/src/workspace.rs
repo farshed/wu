@@ -1838,7 +1838,7 @@ impl Workspace {
             let workspace_id = if let Some(serialized_workspace) = serialized_workspace.as_ref() {
                 serialized_workspace.id
             } else {
-                db.next_id().await.unwrap_or_else(|_| Default::default())
+                db.next_id().await?
             };
 
             let toolchains = db.toolchains(workspace_id).await?;
@@ -3432,6 +3432,41 @@ impl Workspace {
 
         let project = self.project.clone();
         cx.spawn_in(window, async move |workspace, cx| {
+            if save_intent == SaveIntent::Close {
+                let items_to_confirm = workspace.update(cx, |workspace, cx| {
+                    workspace
+                        .panes
+                        .iter()
+                        .flat_map(|pane| {
+                            pane.read(cx).items().filter_map(|item| {
+                                let confirmation = item.confirm_close(cx)?;
+                                Some((pane.clone(), item.boxed_clone(), confirmation))
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })?;
+                for (pane, item, confirmation) in items_to_confirm {
+                    let confirmed = workspace.update_in(cx, |_, window, cx| {
+                        // The item may have closed itself while an earlier
+                        // prompt was open, e.g. a terminal whose shell exited.
+                        let Some(ix) = pane.read(cx).index_for_item(item.as_ref()) else {
+                            return Task::ready(true);
+                        };
+                        if item.confirm_close(cx).is_none() {
+                            return Task::ready(true);
+                        }
+                        cx.emit(Event::Activate);
+                        pane.update(cx, |pane, cx| {
+                            pane.activate_item(ix, true, true, window, cx);
+                        });
+                        Pane::prompt_close_confirmation(&confirmation, window, cx)
+                    })?;
+                    if !confirmed.await {
+                        return Ok(false);
+                    }
+                }
+            }
+
             let dirty_items = if save_intent == SaveIntent::Close && !dirty_items.is_empty() {
                 let mut serialize_tasks = Vec::new();
                 let mut remaining_dirty_items = Vec::new();

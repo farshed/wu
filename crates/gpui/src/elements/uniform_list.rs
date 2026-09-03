@@ -420,7 +420,8 @@ impl Element for UniformList {
                     }) = shared_scroll_to_item
                     {
                         if y_flipped {
-                            item_index = self.item_count.saturating_sub(item_index + 1);
+                            item_index =
+                                self.item_count.saturating_sub(item_index.saturating_add(1));
                         }
                         let list_height = padded_bounds.size.height;
                         let mut updated_scroll_offset = shared_scroll_offset.borrow_mut();

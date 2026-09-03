@@ -1,5 +1,6 @@
 //! Paths to locations used by Wu.
 
+use anyhow::Context as _;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, OnceLock};
@@ -94,28 +95,34 @@ pub fn remote_wsl_server_dir_relative() -> &'static RelPath {
 ///
 /// A reference to the static `PathBuf` containing the custom data directory path.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if:
+/// Returns an error if:
 /// * Called after the data directory has been initialized (e.g., via `data_dir` or `config_dir`)
 /// * The directory's path cannot be canonicalized to an absolute path
 /// * The directory cannot be created
-pub fn set_custom_data_dir(dir: &str) -> &'static PathBuf {
+pub fn set_custom_data_dir(dir: &str) -> anyhow::Result<&'static PathBuf> {
     if CURRENT_DATA_DIR.get().is_some() || CONFIG_DIR.get().is_some() {
-        panic!("set_custom_data_dir called after data_dir or config_dir was initialized");
+        anyhow::bail!("set_custom_data_dir called after data_dir or config_dir was initialized");
     }
-    CUSTOM_DATA_DIR.get_or_init(|| {
-        let path = PathBuf::from(dir);
-        std::fs::create_dir_all(&path).expect("failed to create custom data directory");
-        let canonicalized = path
-            .canonicalize()
-            .expect("failed to canonicalize custom data directory's path to an absolute path");
-        // On Windows, `canonicalize` produces extended-length paths prefixed
-        // with `\\?\`. Strip that prefix so downstream consumers (e.g.
-        // Node.js language servers) that receive derived paths as arguments
-        // don't choke on the verbatim syntax.
-        SanitizedPath::new(&canonicalized).as_path().to_path_buf()
-    })
+    if let Some(existing) = CUSTOM_DATA_DIR.get() {
+        return Ok(existing);
+    }
+    let path = PathBuf::from(dir);
+    std::fs::create_dir_all(&path)
+        .with_context(|| format!("failed to create custom data directory {}", path.display()))?;
+    let canonicalized = path.canonicalize().with_context(|| {
+        format!(
+            "failed to canonicalize custom data directory {} to an absolute path",
+            path.display()
+        )
+    })?;
+    // On Windows, `canonicalize` produces extended-length paths prefixed
+    // with `\\?\`. Strip that prefix so downstream consumers (e.g.
+    // Node.js language servers) that receive derived paths as arguments
+    // don't choke on the verbatim syntax.
+    let sanitized = SanitizedPath::new(&canonicalized).as_path().to_path_buf();
+    Ok(CUSTOM_DATA_DIR.get_or_init(|| sanitized))
 }
 
 /// Returns the path to the configuration directory used by Wu.

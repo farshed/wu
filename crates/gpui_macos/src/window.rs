@@ -38,7 +38,7 @@ use image::RgbaImage;
 use core_foundation::base::{CFRelease, CFTypeRef};
 use core_foundation_sys::base::CFEqual;
 use core_foundation_sys::number::{CFBooleanGetValue, CFBooleanRef};
-use core_graphics::display::{CGDirectDisplayID, CGRect};
+use core_graphics::display::{CGDirectDisplayID, CGMainDisplayID, CGRect};
 use ctor::ctor;
 use futures::channel::oneshot;
 use gpui_util::ResultExt;
@@ -951,7 +951,8 @@ impl MacWindow {
 
             let display = display_id
                 .and_then(MacDisplay::find_by_id)
-                .unwrap_or_else(MacDisplay::primary);
+                .or_else(MacDisplay::primary)
+                .unwrap_or_else(|| MacDisplay(CGMainDisplayID()));
 
             let mut target_screen = nil;
             let mut screen_frame = None;
@@ -1537,7 +1538,12 @@ impl PlatformWindow for MacWindow {
             if let Some(detail) = detail {
                 let _: () = msg_send![alert, setInformativeText: ns_string(detail)];
             }
-            if let Some(symbol_name) = icon {
+            // SF Symbol images need macOS 11, but the deployment target is 10.15.
+            let supports_system_symbols: BOOL = msg_send![
+                class!(NSImage),
+                respondsToSelector: sel!(imageWithSystemSymbolName:accessibilityDescription:)
+            ];
+            if let Some(symbol_name) = icon.filter(|_| supports_system_symbols == YES) {
                 let image: id = msg_send![
                     class!(NSImage),
                     imageWithSystemSymbolName: ns_string(symbol_name)
@@ -1571,10 +1577,21 @@ impl PlatformWindow for MacWindow {
 
             let (done_tx, done_rx) = oneshot::channel();
             let done_tx = Cell::new(Some(done_tx));
+            let button_count = answers.len();
+            let dismissed_ix = answers
+                .iter()
+                .position(|answer| answer.is_cancel())
+                .unwrap_or(button_count.saturating_sub(1));
             let block = ConcreteBlock::new(move |answer: NSInteger| {
                 let _: () = msg_send![alert, release];
                 if let Some(done_tx) = done_tx.take() {
-                    let _ = done_tx.send(answer.try_into().unwrap());
+                    // Negative responses (e.g. NSModalResponseAbort) mean the sheet was
+                    // dismissed without choosing a button, so treat them as Cancel.
+                    let answer = usize::try_from(answer)
+                        .ok()
+                        .filter(|&answer| answer < button_count)
+                        .unwrap_or(dismissed_ix);
+                    done_tx.send(answer).ok();
                 }
             });
             let block = block.copy();

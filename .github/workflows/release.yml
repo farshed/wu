@@ -33,7 +33,25 @@ jobs:
         run: brew install lld
       - name: Use the stable release channel
         run: echo stable > crates/wu/RELEASE_CHANNEL
+      # Signing and notarization only happen when these secrets exist.
+      # Without them the bundle is ad-hoc signed.
+      - name: Prepare provisioning profile
+        env:
+          MACOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
+        run: |
+          if [ -n "$MACOS_PROVISIONING_PROFILE_BASE64" ]; then
+            profile_path="$RUNNER_TEMP/embedded.provisionprofile"
+            echo "$MACOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$profile_path"
+            echo "MACOS_PROVISIONING_PROFILE=$profile_path" >> "$GITHUB_ENV"
+          fi
       - name: Bundle
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARIZATION_KEY: ${{ secrets.APPLE_NOTARIZATION_KEY }}
+          APPLE_NOTARIZATION_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
+          APPLE_NOTARIZATION_ISSUER_ID: ${{ secrets.APPLE_NOTARIZATION_ISSUER_ID }}
+          APPLE_NOTARIZATION_TEAM: ${{ secrets.APPLE_NOTARIZATION_TEAM }}
         run: script/bundle-mac aarch64-apple-darwin
       - uses: actions/upload-artifact@v4
         with:
@@ -41,6 +59,11 @@ jobs:
           path: |
             target/aarch64-apple-darwin/release/Wu-aarch64.dmg
             target/wu-remote-server-macos-aarch64.gz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-aarch64-dsym
+          path: target/aarch64-apple-darwin/release/Wu.dSYM.zip
           if-no-files-found: error
 
   bundle_linux:
@@ -107,6 +130,8 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - name: Keep debug symbols out of the release assets
+        run: find artifacts -name '*.dSYM.zip' -delete
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:

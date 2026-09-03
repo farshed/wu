@@ -74,11 +74,14 @@ impl From<&AlacrittyPty> for ProcessIdGetter {
     fn from(pty: &AlacrittyPty) -> Self {
         let child = pty.child_watcher();
         let handle = child.raw_handle();
-        let fallback_pid = child.pid().unwrap_or_else(|| unsafe {
-            NonZeroU32::new_unchecked(GetProcessId(HANDLE(handle as _)))
-        });
+        // `GetProcessId` returns 0 on failure; a zero fallback pid is treated
+        // as "no process" by `ProcessIdGetter`.
+        let fallback_pid = child
+            .pid()
+            .or_else(|| NonZeroU32::new(unsafe { GetProcessId(HANDLE(handle as _)) }))
+            .map_or(0, u32::from);
 
-        Self::new(handle as i32, u32::from(fallback_pid))
+        Self::new(handle as i32, fallback_pid)
     }
 }
 

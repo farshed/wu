@@ -544,8 +544,22 @@ impl WindowsWindow {
 
         // Failure to create a `WindowsWindowState` can cause window creation to fail,
         // so check the inner result first.
-        let this = context.inner.take().transpose()?;
-        let hwnd = creation_result?;
+        let created = context
+            .inner
+            .take()
+            .transpose()
+            .and_then(|this| Ok((this, creation_result?)));
+        let (this, hwnd) = match created {
+            Ok(created) => created,
+            Err(error) => {
+                if let Some(parent_hwnd) = parent_hwnd {
+                    unsafe {
+                        EnableWindow(parent_hwnd, true).as_bool();
+                    }
+                }
+                return Err(error);
+            }
+        };
         let this = this.unwrap();
 
         register_drag_drop(&this)?;

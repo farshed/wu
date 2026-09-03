@@ -3055,6 +3055,7 @@ impl Terminal {
     ///
     /// Calling this method after the resources have already been released is a no-op.
     pub fn release_pty_resources(&mut self) {
+        let child_exited = self.child_exited.is_some();
         let TerminalType::Pty { resources, info } = &mut self.terminal_type else {
             return;
         };
@@ -3064,6 +3065,15 @@ impl Terminal {
         };
         let info = info.clone();
 
+        // The foreground group is looked up through the PTY, so signal it
+        // before the PTY shuts down. On macOS the shell's own group is
+        // `login`'s and does not contain the running job. Once the child has
+        // exited the PTY may report a recycled group id, so skip it then.
+        let foreground_process_group = if child_exited {
+            None
+        } else {
+            info.terminate_current_process()
+        };
         pty_tx.shutdown();
         info.terminate_child_process();
 
@@ -3071,6 +3081,9 @@ impl Terminal {
         self.background_executor
             .spawn(async move {
                 timer.await;
+                if let Some(pid) = foreground_process_group {
+                    PtyProcessInfo::kill_process_group(pid);
+                }
                 info.kill_child_process();
             })
             .detach();
@@ -3092,34 +3105,50 @@ impl Terminal {
 
     /// The name of the foreground process running in this terminal, if it is
     /// not the shell itself. Detection relies on the PTY's foreground process
-    /// group, which is unavailable on Windows, so this always returns `None`
-    /// there.
+    /// group; on Windows only the spawned child is visible, so this always
+    /// returns `None` there.
     pub fn running_process_name(&self) -> Option<String> {
+        // On Linux the PTY keeps reporting the exited child's process group.
+        if self.child_exited.is_some() {
+            return None;
+        }
         let TerminalType::Pty { info, .. } = &self.terminal_type else {
             return None;
         };
-        let foreground_pid = info.pid()?;
-        if foreground_pid == info.pid_getter().fallback_pid() {
+        // The cached info only refreshes on PTY output, so a silent job like
+        // `sleep` would still carry the shell's name. Look the process up now.
+        let process = info.foreground_process()?;
+        // The shell is often spawned through a wrapper (`login` on macOS), so
+        // the terminal's own program is the spawned child or its direct child.
+        // Whatever the terminal was configured to run is never a job.
+        let fallback_pid = info.pid_getter().fallback_pid();
+        let is_own_process = process.pid == fallback_pid
+            || (process.parent_pid == Some(fallback_pid)
+                && info
+                    .child_process_name()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("login")));
+        if is_own_process {
             return None;
         }
-        // The shell is often spawned through a wrapper (`login` on macOS), so
-        // an idle shell's pid can differ from the spawned child's pid and the
-        // comparison above is not enough. Filter out anything that looks like
-        // a shell by name.
-        let name = info
-            .current
-            .read()
-            .as_ref()
-            .map(|process| process.name.clone())?;
+        let normalized = process.name.trim_start_matches('-').to_lowercase();
+        let normalized = normalized.strip_suffix(".exe").unwrap_or(&normalized);
+        if normalized == "login" {
+            return None;
+        }
         const SHELLS: &[&str] = &[
             "sh", "bash", "zsh", "fish", "nu", "csh", "tcsh", "ksh", "dash", "rc", "xonsh",
-            "elvish", "pwsh", "powershell", "cmd", "login",
+            "elvish", "pwsh", "powershell", "cmd",
         ];
-        let normalized = name.trim_start_matches('-').to_lowercase();
-        if SHELLS.contains(&normalized.as_str()) {
+        // A nested interactive shell is idle; a shell given a script or command is a job.
+        let runs_script = process
+            .argv
+            .iter()
+            .skip(1)
+            .any(|argument| !argument.starts_with('-'));
+        if SHELLS.contains(&normalized) && !runs_script {
             return None;
         }
-        Some(name)
+        Some(process.name)
     }
 
     pub fn task(&self) -> Option<&TaskState> {

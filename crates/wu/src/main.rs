@@ -178,11 +178,37 @@ fn fail_to_open_window(e: anyhow::Error, _cx: &mut App) {
     }
 }
 
+fn write_panic_report(info: &std::panic::PanicHookInfo<'_>) {
+    use std::io::Write as _;
+
+    let backtrace = std::backtrace::Backtrace::force_capture();
+    let report = format!(
+        "[{}] {} {} ({} {})\n{}\n{}\n\n",
+        chrono::Utc::now().to_rfc3339(),
+        paths::APP_NAME,
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        info,
+        backtrace
+    );
+    let panic_log = paths::logs_dir().join("panics.log");
+    let result = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&panic_log)
+        .and_then(|mut file| file.write_all(report.as_bytes()));
+    if let Err(error) = result {
+        eprintln!("failed to write panic report to {panic_log:?}: {error}");
+    }
+}
+
 fn install_panic_hook() {
     let old_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
         old_hook(info);
+        write_panic_report(info);
         // prevent the macOS crash dialog from popping up
         if cfg!(target_os = "macos") {
             std::process::exit(1);
@@ -249,7 +275,13 @@ fn main() {
     }
 
     let restart_arguments = if let Some(directory) = args.user_data_dir.as_deref() {
-        let directory = paths::set_custom_data_dir(directory);
+        let directory = match paths::set_custom_data_dir(directory) {
+            Ok(directory) => directory,
+            Err(error) => {
+                eprintln!("Error: could not use --user-data-dir {directory}: {error:#}");
+                process::exit(1);
+            }
+        };
         vec![
             std::ffi::OsString::from("--user-data-dir"),
             directory.as_os_str().to_owned(),
@@ -329,13 +361,6 @@ fn main() {
         .with_assets(Assets)
         .with_restart_arguments(restart_arguments);
 
-    let app_db = db::AppDatabase::new();
-    let session_id = Uuid::new_v4().to_string();
-    let session = app.background_executor().spawn(Session::new(
-        session_id,
-        KeyValueStore::from_app_db(&app_db),
-    ));
-
     let (open_listener, mut open_rx) = OpenListener::new();
 
     let failed_single_instance_check = if *wu_env_vars::ZED_STATELESS
@@ -363,6 +388,13 @@ fn main() {
         println!("wu is already running");
         return;
     }
+
+    let app_db = db::AppDatabase::new();
+    let session_id = Uuid::new_v4().to_string();
+    let session = app.background_executor().spawn(Session::new(
+        session_id,
+        KeyValueStore::from_app_db(&app_db),
+    ));
 
     install_panic_hook();
 
@@ -765,9 +797,24 @@ fn main() {
         cx.spawn({
             let db = workspace::WorkspaceDb::global(cx);
             let fs = app_state.fs.clone();
+            let session = app_state.session.clone();
             let restore_finished = restore_finished.clone();
-            async move |_cx| {
+            async move |cx| {
                 restore_finished.await;
+                // The restored workspaces are rebound to this session through debounced
+                // serialization. Flush it so the rows carry the new session id before that
+                // id becomes the stored one; a crash before this point leaves the previous
+                // session as the one to restore.
+                let workspace_windows = cx.update(|cx| {
+                    cx.windows()
+                        .into_iter()
+                        .filter_map(|window| window.downcast::<MultiWorkspace>())
+                        .collect::<Vec<_>>()
+                });
+                workspace::flush_windows_serialization(&workspace_windows, cx).await;
+                cx.update(|cx| session.read(cx).persist_id(cx))
+                    .await
+                    .log_err();
                 db.garbage_collect_workspaces(
                     fs.as_ref(),
                     &current_session_id,

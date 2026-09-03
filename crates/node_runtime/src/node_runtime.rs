@@ -2,11 +2,14 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use async_compression::futures::bufread::GzipDecoder;
 use async_tar::Archive;
 use chrono::{DateTime, Utc};
-use futures::{AsyncReadExt, FutureExt as _, channel::oneshot, future::Shared};
+use futures::{
+    AsyncRead, AsyncReadExt, AsyncWriteExt, FutureExt as _, channel::oneshot, future::Shared,
+};
 use http_client::{Host, HttpClient, Url};
 use log::Level;
 use semver::{Version, VersionReq};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use smol::io::BufReader;
 use smol::{fs, lock::Mutex};
 use std::collections::HashMap;
@@ -697,22 +700,45 @@ impl ManagedNodeRuntime {
                 }
             );
 
+            let expected_digest = download_node_checksum(&**http, version, &file_name).await?;
+
             let url = format!("https://nodejs.org/dist/{version}/{file_name}");
             log::info!("Downloading Node.js binary from {url}");
             let mut response = http
                 .get(&url, Default::default(), true)
                 .await
                 .context("error downloading Node binary tarball")?;
-            log::info!("Download of Node.js complete, extracting...");
+            anyhow::ensure!(
+                response.status().is_success(),
+                "downloading {url} failed with status {}",
+                response.status()
+            );
+            let archive_path = node_containing_dir.join(&file_name);
+            let actual_digest = write_and_hash(response.body_mut(), &archive_path)
+                .await
+                .context("error saving Node binary tarball")?;
+            anyhow::ensure!(
+                actual_digest.eq_ignore_ascii_case(&expected_digest),
+                "Node.js archive {file_name} failed SHA-256 verification: expected {expected_digest}, got {actual_digest}"
+            );
+            log::info!("Download of Node.js complete and verified, extracting...");
 
-            let body = response.body_mut();
+            let archive_file = fs::File::open(&archive_path)
+                .await
+                .context("error opening downloaded Node archive")?;
             match archive_type {
                 ArchiveType::TarGz => {
-                    let decompressed_bytes = GzipDecoder::new(BufReader::new(response.body_mut()));
+                    let decompressed_bytes = GzipDecoder::new(BufReader::new(archive_file));
                     let archive = Archive::new(decompressed_bytes);
                     archive.unpack(&node_containing_dir).await?;
                 }
-                ArchiveType::Zip => extract_zip(&node_containing_dir, body).await?,
+                ArchiveType::Zip => extract_zip(&node_containing_dir, archive_file).await?,
+            }
+            if let Err(error) = fs::remove_file(&archive_path).await {
+                log::warn!(
+                    "failed to remove Node archive {}: {error}",
+                    archive_path.display()
+                );
             }
             log::info!("Extracted Node.js to {}", node_containing_dir.display())
         }
@@ -728,6 +754,53 @@ impl ManagedNodeRuntime {
             installation_path: node_dir,
         })
     }
+}
+
+async fn download_node_checksum(
+    http: &dyn HttpClient,
+    version: &str,
+    file_name: &str,
+) -> Result<String> {
+    let url = format!("https://nodejs.org/dist/{version}/SHASUMS256.txt");
+    let mut response = http
+        .get(&url, Default::default(), true)
+        .await
+        .context("error downloading Node checksums")?;
+    anyhow::ensure!(
+        response.status().is_success(),
+        "failed to download Node checksums from {url}: {:?}",
+        response.status()
+    );
+    let mut body = String::new();
+    response
+        .body_mut()
+        .read_to_string(&mut body)
+        .await
+        .context("error reading Node checksums")?;
+    body.lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            Some((parts.next()?, parts.next()?))
+        })
+        .find(|(_, name)| *name == file_name)
+        .map(|(digest, _)| digest.to_owned())
+        .with_context(|| format!("no checksum for {file_name} in {url}"))
+}
+
+async fn write_and_hash(mut reader: impl AsyncRead + Unpin, path: &Path) -> Result<String> {
+    let mut file = fs::File::create(path).await?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let bytes_read = reader.read(&mut buffer).await?;
+        if bytes_read == 0 {
+            break;
+        }
+        file.write_all(&buffer[..bytes_read]).await?;
+        hasher.update(&buffer[..bytes_read]);
+    }
+    file.flush().await?;
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn path_with_node_binary_prepended(node_binary: &Path) -> Option<OsString> {

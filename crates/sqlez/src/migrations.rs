@@ -7,10 +7,32 @@
 use std::ffi::CString;
 
 use anyhow::{Context as _, Result};
-use indoc::{formatdoc, indoc};
+use indoc::indoc;
 use libsqlite3_sys::sqlite3_exec;
 
 use crate::connection::Connection;
+
+/// The SQL of an already applied migration step no longer matches the stored text.
+/// Retrying cannot fix this, so callers can stop early when they see it.
+#[derive(Debug)]
+pub struct MigrationChangedError {
+    pub domain: &'static str,
+    pub step: usize,
+    pub stored_migration: String,
+    pub proposed_migration: String,
+}
+
+impl std::fmt::Display for MigrationChangedError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Migration changed for {} at step {}\n\nStored migration:\n{}\n\nProposed migration:\n{}",
+            self.domain, self.step, self.stored_migration, self.proposed_migration
+        )
+    }
+}
+
+impl std::error::Error for MigrationChangedError {}
 
 impl Connection {
     fn eager_exec(&self, sql: &str) -> anyhow::Result<()> {
@@ -78,14 +100,13 @@ impl Connection {
                     {
                         continue;
                     } else {
-                        anyhow::bail!(formatdoc! {"
-                            Migration changed for {domain} at step {index}
-
-                            Stored migration:
-                            {completed_migration}
-
-                            Proposed migration:
-                            {migration}"});
+                        return Err(MigrationChangedError {
+                            domain,
+                            step: index,
+                            stored_migration: completed_migration,
+                            proposed_migration: migration,
+                        }
+                        .into());
                     }
                 }
 

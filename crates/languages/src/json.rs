@@ -1,11 +1,12 @@
 use anyhow::{Context as _, Result, bail};
-use async_compression::futures::bufread::GzipDecoder;
-use async_tar::Archive;
 use async_trait::async_trait;
 use collections::HashMap;
 use futures::StreamExt;
 use gpui::{App, AsyncApp, Entity, Task};
-use http_client::github::{GitHubLspBinaryVersion, latest_github_release};
+use http_client::{
+    github::{AssetKind, GitHubLspBinaryVersion, latest_github_release},
+    github_download::download_server_binary,
+};
 use language::{
     Buffer, ContextProvider, LanguageName, LanguageRegistry, LocalFile as _, LspAdapter,
     LspAdapterDelegate, LspInstaller, Toolchain,
@@ -16,10 +17,7 @@ use project::lsp_store::language_server_settings;
 use semver::Version;
 use serde_json::{Value, json};
 use settings::SettingsLocation;
-use smol::{
-    fs::{self},
-    io::BufReader,
-};
+use smol::fs;
 use std::{
     borrow::Cow,
     env::consts,
@@ -31,8 +29,8 @@ use std::{
 };
 use task::{TaskTemplate, TaskTemplates, VariableName};
 use util::{
-    ResultExt, archive::extract_zip, fs::remove_matching, maybe, merge_json_value_into,
-    paths::PathStyle, rel_path::RelPath, union_json_value_into,
+    ResultExt, fs::remove_matching, maybe, merge_json_value_into, paths::PathStyle,
+    rel_path::RelPath, union_json_value_into,
 };
 
 use crate::PackageJsonData;
@@ -507,18 +505,21 @@ impl LspInstaller for NodeVersionAdapter {
             let destination_container_path =
                 container_dir.join(format!("{}-{}-tmp", Self::SERVER_NAME, version.name));
             if fs::metadata(&destination_path).await.is_err() {
-                let mut response = delegate
-                    .http_client()
-                    .get(&version.url, Default::default(), true)
-                    .await
-                    .context("downloading release")?;
-                if version.url.ends_with(".zip") {
-                    extract_zip(&destination_container_path, response.body_mut()).await?;
+                let asset_kind = if version.url.ends_with(".zip") {
+                    AssetKind::Zip
                 } else if version.url.ends_with(".tar.gz") {
-                    let decompressed_bytes = GzipDecoder::new(BufReader::new(response.body_mut()));
-                    let archive = Archive::new(decompressed_bytes);
-                    archive.unpack(&destination_container_path).await?;
-                }
+                    AssetKind::TarGz
+                } else {
+                    bail!("unsupported release asset {}", version.url);
+                };
+                download_server_binary(
+                    &*delegate.http_client(),
+                    &version.url,
+                    version.digest.as_deref(),
+                    &destination_container_path,
+                    asset_kind,
+                )
+                .await?;
 
                 fs::copy(
                     destination_container_path.join(format!(

@@ -119,7 +119,7 @@ impl LspInstaller for EsLintLspAdapter {
                 download_server_binary(
                     &*delegate.http_client(),
                     &version.url,
-                    None,
+                    version.digest.as_deref(),
                     &destination_path,
                     Self::GITHUB_ASSET_KIND,
                 )

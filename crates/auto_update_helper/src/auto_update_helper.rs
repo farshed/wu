@@ -158,7 +158,7 @@ mod windows_impl {
         fn test_parse_args_preserves_launch_arguments() {
             let launch_arguments = vec![
                 OsString::from("--user-data-dir"),
-                OsString::from(r"C:\Zed Data"),
+                OsString::from(r"C:\Wu Data"),
             ];
             assert_eq!(
                 parse_args(launch_arguments.clone()).launch_arguments,

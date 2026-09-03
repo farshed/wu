@@ -61,7 +61,7 @@ impl Settings for WorktreeSettings {
     fn from_settings(content: &settings::SettingsContent) -> Self {
         let worktree = content.project.worktree.clone();
         let file_scan_exclusions = worktree.file_scan_exclusions.unwrap().0;
-        let file_scan_inclusions = worktree.file_scan_inclusions.unwrap();
+        let file_scan_inclusions = valid_globs(worktree.file_scan_inclusions.unwrap(), "file_scan_inclusions");
         let private_files = worktree.private_files.unwrap().0;
         let hidden_files = worktree.hidden_files.unwrap();
         let read_only_files = worktree.read_only_files.unwrap_or_default();
@@ -86,9 +86,11 @@ impl Settings for WorktreeSettings {
                 parsed_file_scan_inclusions,
                 "file_scan_inclusions",
             )
-            .unwrap(),
+            .log_err()
+            .unwrap_or_default(),
             file_scan_inclusions: path_matchers(file_scan_inclusions, "file_scan_inclusions")
-                .unwrap(),
+                .log_err()
+                .unwrap_or_default(),
             private_files: path_matchers(private_files, "private_files")
                 .log_err()
                 .unwrap_or_default(),
@@ -104,8 +106,20 @@ impl Settings for WorktreeSettings {
     }
 }
 
-fn path_matchers(mut values: Vec<String>, context: &'static str) -> anyhow::Result<PathMatcher> {
-    values.sort();
-    PathMatcher::new(values, PathStyle::local())
+fn valid_globs(values: Vec<String>, context: &'static str) -> Vec<String> {
+    let mut valid_values = Vec::with_capacity(values.len());
+    for value in values {
+        match PathMatcher::new([value.as_str()], PathStyle::local()) {
+            Ok(_) => valid_values.push(value),
+            Err(error) => log::error!("Ignoring invalid glob {value:?} in {context}: {error}"),
+        }
+    }
+    valid_values
+}
+
+fn path_matchers(values: Vec<String>, context: &'static str) -> anyhow::Result<PathMatcher> {
+    let mut valid_values = valid_globs(values, context);
+    valid_values.sort();
+    PathMatcher::new(valid_values, PathStyle::local())
         .with_context(|| format!("Failed to parse globs from {}", context))
 }

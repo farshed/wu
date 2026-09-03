@@ -12,12 +12,12 @@ const SESSION_ID_KEY: &str = "session_id";
 const SESSION_WINDOW_STACK_KEY: &str = "session_window_stack";
 
 impl Session {
+    /// The new session id is not written to the database here. It becomes the stored
+    /// session only through `AppSession::persist_id`, once the previous session's
+    /// workspaces have been rebound to it, so a crash during restore keeps the
+    /// previous session restorable.
     pub async fn new(session_id: String, db: KeyValueStore) -> Self {
         let old_session_id = db.read_kvp(SESSION_ID_KEY).ok().flatten();
-
-        db.write_kvp(SESSION_ID_KEY.to_string(), session_id.clone())
-            .await
-            .log_err();
 
         let old_window_ids = db
             .read_kvp(SESSION_WINDOW_STACK_KEY)
@@ -120,6 +120,14 @@ impl AppSession {
 
     pub fn last_session_id(&self) -> Option<&str> {
         self.session.old_session_id.as_deref()
+    }
+
+    /// Records this session as the most recent one, so the next launch restores it.
+    /// Call only after the last session's workspaces have been rebound to this session.
+    pub fn persist_id(&self, cx: &App) -> Task<anyhow::Result<()>> {
+        let db = KeyValueStore::global(cx);
+        let session_id = self.session.session_id.clone();
+        cx.background_spawn(async move { db.write_kvp(SESSION_ID_KEY.to_string(), session_id).await })
     }
 
     #[cfg(any(test, feature = "test-support"))]

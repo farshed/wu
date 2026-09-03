@@ -70,6 +70,8 @@ pub(crate) struct ProcessInfo {
     pub(crate) name: String,
     pub(crate) cwd: PathBuf,
     pub(crate) argv: Vec<String>,
+    pub(crate) pid: Pid,
+    pub(crate) parent_pid: Option<Pid>,
 }
 
 /// Fetches Zed-relevant Pseudo-Terminal (PTY) process information
@@ -151,12 +153,36 @@ impl PtyProcessInfo {
         let Some(pid) = self.pid_getter.pid() else {
             return false;
         };
-        unsafe { libc::killpg(pid.as_u32() as i32, libc::SIGKILL) == 0 }
+        Self::kill_process_group(pid)
     }
 
     #[cfg(not(unix))]
     pub(crate) fn kill_current_process(&self) -> bool {
         self.refresh().is_some_and(|process| process.kill())
+    }
+
+    /// Sends SIGTERM to the foreground process group and returns it, so the
+    /// caller can still kill it once the PTY (which the lookup needs) is gone.
+    #[cfg(unix)]
+    pub(crate) fn terminate_current_process(&self) -> Option<Pid> {
+        let pid = self.pid_getter.pid()?;
+        unsafe { libc::killpg(pid.as_u32() as i32, libc::SIGTERM) };
+        Some(pid)
+    }
+
+    #[cfg(not(unix))]
+    pub(crate) fn terminate_current_process(&self) -> Option<Pid> {
+        None
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn kill_process_group(pid: Pid) -> bool {
+        unsafe { libc::killpg(pid.as_u32() as i32, libc::SIGKILL) == 0 }
+    }
+
+    #[cfg(not(unix))]
+    pub(crate) fn kill_process_group(_pid: Pid) -> bool {
+        false
     }
 
     pub(crate) fn kill_child_process(&self) -> bool {
@@ -174,11 +200,13 @@ impl PtyProcessInfo {
         false
     }
 
-    fn load(&self) -> Option<ProcessInfo> {
+    /// Synchronously refreshes and returns the foreground process, without
+    /// touching the cached `current` info.
+    pub(crate) fn foreground_process(&self) -> Option<ProcessInfo> {
         let process = self.refresh()?;
         let cwd = process.cwd().map_or(PathBuf::new(), |p| p.to_owned());
 
-        let info = ProcessInfo {
+        Some(ProcessInfo {
             name: process.name().to_str()?.to_owned(),
             cwd,
             argv: process
@@ -186,7 +214,18 @@ impl PtyProcessInfo {
                 .iter()
                 .filter_map(|s| s.to_str().map(ToOwned::to_owned))
                 .collect(),
-        };
+            pid: process.pid(),
+            parent_pid: process.parent(),
+        })
+    }
+
+    pub(crate) fn child_process_name(&self) -> Option<String> {
+        let process = self.get_child()?;
+        Some(process.name().to_str()?.to_owned())
+    }
+
+    fn load(&self) -> Option<ProcessInfo> {
+        let info = self.foreground_process()?;
         *self.current.write() = Some(info.clone());
         Some(info)
     }

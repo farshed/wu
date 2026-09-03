@@ -1293,17 +1293,14 @@ impl WgpuRenderer {
             // TBD. Does retrying more actually help?
             if self.failed_frame_count > 10 {
                 panic!("Too many consecutive GPU errors. Last error: {error}");
-            } else if self.failed_frame_count > 5 {
+            } else if self.failed_frame_count == 6 {
                 if let Some(res) = self.resources.as_mut() {
                     res.invalidate_intermediate_textures();
                 }
                 self.atlas.clear();
                 self.needs_redraw = true;
-                self.failed_frame_count = 0;
                 return false;
             }
-        } else {
-            self.failed_frame_count = 0;
         }
 
         self.atlas.before_frame();
@@ -1399,6 +1396,7 @@ impl WgpuRenderer {
         }
 
         frame.present();
+        self.failed_frame_count = 0;
         true
     }
 
@@ -1632,7 +1630,10 @@ impl WgpuRenderer {
         if range.is_empty() {
             return;
         }
-        let texture_info = self.atlas.get_texture_info(texture_id);
+        let Some(texture_info) = self.atlas.get_texture_info(texture_id) else {
+            log::warn!("skipping sprite batch: atlas texture {texture_id:?} no longer exists");
+            return;
+        };
         let texture =
             self.create_texture_bind_group("atlas_texture_bind_group", &texture_info.view);
         pass.set_pipeline(pipeline);

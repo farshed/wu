@@ -1,4 +1,4 @@
-use anyhow::Context as _;
+use anyhow::{Context as _, anyhow};
 use collections::HashMap;
 use futures::{Future, FutureExt, channel::oneshot};
 use parking_lot::{Mutex, RwLock};
@@ -11,7 +11,10 @@ use std::{
 };
 use thread_local::ThreadLocal;
 
-use crate::{connection::Connection, domain::Migrator, util::UnboundedSyncSender};
+use crate::{
+    connection::Connection, domain::Migrator, migrations::MigrationChangedError,
+    util::UnboundedSyncSender,
+};
 
 const MIGRATION_RETRIES: usize = 10;
 const CONNECTION_INITIALIZE_RETRIES: usize = 50;
@@ -36,6 +39,7 @@ pub struct ThreadSafeConnection {
     persistent: bool,
     connection_initialize_query: Option<&'static str>,
     connections: Arc<ThreadLocal<Connection>>,
+    fallback_connections: Arc<ThreadLocal<Connection>>,
 }
 
 unsafe impl Send for ThreadSafeConnection {}
@@ -110,8 +114,12 @@ impl<M: Migrator> ThreadSafeConnectionBuilder<M> {
                     migration_result = connection
                         .with_savepoint("thread_safe_multi_migration", || M::migrate(connection));
 
-                    if migration_result.is_ok() {
-                        break;
+                    match &migration_result {
+                        Ok(()) => break,
+                        Err(error) if error.downcast_ref::<MigrationChangedError>().is_some() => {
+                            break;
+                        }
+                        Err(_) => {}
                     }
                 }
 
@@ -149,6 +157,7 @@ impl ThreadSafeConnection {
                 persistent,
                 connection_initialize_query: None,
                 connections: Default::default(),
+                fallback_connections: Default::default(),
             },
             _migrator: PhantomData,
         }
@@ -156,8 +165,8 @@ impl ThreadSafeConnection {
 
     /// Opens a new db connection with the initialized file path. This is internal and only
     /// called from the deref function.
-    fn open_file(uri: &str) -> Connection {
-        Connection::open_file(uri)
+    fn open_file(uri: &str) -> anyhow::Result<Connection> {
+        Connection::open_file(uri).with_context(|| format!("Could not open database file {uri}"))
     }
 
     /// Opens a shared memory connection using the file path as the identifier. This is internal
@@ -166,72 +175,86 @@ impl ThreadSafeConnection {
         Connection::open_memory(Some(uri))
     }
 
+    /// Queues `callback` on the single writer for this database. The result is an error if
+    /// the writer's connection cannot be opened or the write queue is gone.
     pub fn write<T: 'static + Send + Sync>(
         &self,
-        callback: impl 'static + Send + FnOnce(&Connection) -> T,
-    ) -> impl Future<Output = T> {
-        // Check and invalidate queue and maybe recreate queue
-        let queues = QUEUES.read();
-        let write_channel = queues
-            .get(&self.uri)
-            .expect("Queues are inserted when build is called. This should always succeed");
+        callback: impl 'static + Send + FnOnce(&Connection) -> anyhow::Result<T>,
+    ) -> impl Future<Output = anyhow::Result<T>> {
+        let (sender, receiver) = oneshot::channel::<anyhow::Result<T>>();
 
-        // Create a one shot channel for the result of the queued write
-        // so we can await on the result
-        let (sender, receiver) = oneshot::channel();
+        match QUEUES.read().get(&self.uri) {
+            Some(write_channel) => {
+                let thread_safe_connection = (*self).clone();
+                write_channel(Box::new(move || {
+                    let result = thread_safe_connection
+                        .connection()
+                        .and_then(|connection| connection.with_write(|connection| callback(connection)));
+                    // When this is the last handle (a failed open in the builder), dropping it
+                    // closes the file before the caller learns of the failure and may move it.
+                    drop(thread_safe_connection);
+                    sender.send(result).ok();
+                }));
+            }
+            None => {
+                sender
+                    .send(Err(anyhow!(
+                        "No write queue registered for database {}",
+                        self.uri
+                    )))
+                    .ok();
+            }
+        }
 
-        let thread_safe_connection = (*self).clone();
-        write_channel(Box::new(move || {
-            let connection = thread_safe_connection.deref();
-            let result = connection.with_write(|connection| callback(connection));
-            sender.send(result).ok();
-        }));
-        receiver.map(|response| response.expect("Write queue unexpectedly closed"))
+        let uri = self.uri.clone();
+        receiver.map(move |response| {
+            response.unwrap_or_else(|_canceled| {
+                Err(anyhow!("Write queue for database {uri} closed before the write ran"))
+            })
+        })
+    }
+
+    /// The read-only connection for the current thread, opening it on first use.
+    pub fn connection(&self) -> anyhow::Result<&Connection> {
+        self.connections.get_or_try(|| {
+            Self::create_connection(self.persistent, &self.uri, self.connection_initialize_query)
+        })
     }
 
     pub(crate) fn create_connection(
         persistent: bool,
         uri: &str,
         connection_initialize_query: Option<&'static str>,
-    ) -> Connection {
+    ) -> anyhow::Result<Connection> {
         let mut connection = if persistent {
-            Self::open_file(uri)
+            Self::open_file(uri)?
         } else {
             Self::open_shared_memory(uri)
         };
 
         if let Some(initialize_query) = connection_initialize_query {
-            let mut last_error = None;
-            let initialized = (0..CONNECTION_INITIALIZE_RETRIES).any(|attempt| {
+            let mut attempt = 0;
+            loop {
                 match connection
                     .exec(initialize_query)
                     .and_then(|mut statement| statement())
                 {
-                    Ok(()) => true,
-                    Err(err)
-                        if is_schema_lock_error(&err)
+                    Ok(()) => break,
+                    Err(error)
+                        if is_schema_lock_error(&error)
                             && attempt + 1 < CONNECTION_INITIALIZE_RETRIES =>
                     {
-                        last_error = Some(err);
+                        attempt += 1;
                         thread::sleep(CONNECTION_INITIALIZE_RETRY_DELAY);
-                        false
                     }
-                    Err(err) => {
-                        panic!(
-                            "Initialize query failed to execute: {}\n\nCaused by:\n{err:#}",
+                    Err(error) => {
+                        return Err(error.context(format!(
+                            "Initialize query failed to execute after {} attempt(s): {}",
+                            attempt + 1,
                             initialize_query
-                        )
+                        )));
                     }
                 }
-            });
-
-            if !initialized {
-                let err = last_error
-                    .expect("connection initialization retries should record the last error");
-                panic!(
-                    "Initialize query failed to execute after retries: {}\n\nCaused by:\n{err:#}",
-                    initialize_query
-                );
             }
         }
 
@@ -239,7 +262,7 @@ impl ThreadSafeConnection {
         // are from the background thread that can serialize them.
         *connection.write.get_mut() = false;
 
-        connection
+        Ok(connection)
     }
 }
 
@@ -262,6 +285,7 @@ impl ThreadSafeConnection {
             persistent,
             connection_initialize_query,
             connections: Default::default(),
+            fallback_connections: Default::default(),
         };
 
         connection.initialize_queues(write_queue_constructor);
@@ -272,10 +296,27 @@ impl ThreadSafeConnection {
 impl Deref for ThreadSafeConnection {
     type Target = Connection;
 
+    /// Reads cannot report errors through `Deref`, so if this thread's connection cannot be
+    /// opened, reads on this thread use an unmigrated in-memory database (queries fail with
+    /// "no such table") and the failure is logged. Writes go through `write`, which reports
+    /// the failure to the caller instead.
     fn deref(&self) -> &Self::Target {
-        self.connections.get_or(|| {
-            Self::create_connection(self.persistent, &self.uri, self.connection_initialize_query)
-        })
+        if let Some(connection) = self.fallback_connections.get() {
+            return connection;
+        }
+        match self.connection() {
+            Ok(connection) => connection,
+            Err(error) => self.fallback_connections.get_or(|| {
+                log::error!(
+                    "Could not open database {} for reads on thread {:?}, using an empty in-memory database instead: {error:#}",
+                    self.uri,
+                    thread::current().name()
+                );
+                let mut connection = Self::open_shared_memory(&self.uri);
+                *connection.write.get_mut() = false;
+                connection
+            }),
+        }
     }
 }
 
@@ -285,20 +326,24 @@ pub fn background_thread_queue() -> WriteQueueConstructor {
     Box::new(|| {
         let (sender, receiver) = channel::<QueuedWrite>();
 
-        thread::Builder::new()
+        let spawned = thread::Builder::new()
             .name("sqlezWorker".to_string())
             .spawn(move || {
                 while let Ok(write) = receiver.recv() {
                     write()
                 }
-            })
-            .unwrap();
+            });
+        if let Err(error) = spawned {
+            log::error!("Could not spawn the sqlez worker thread, database writes will fail: {error}");
+        }
 
         let sender = UnboundedSyncSender::new(sender);
         Box::new(move |queued_write| {
-            sender
-                .send(queued_write)
-                .expect("Could not send write action to background thread");
+            // A failed send drops the write together with its result channel, so the
+            // caller awaiting it receives an error instead of hanging or panicking.
+            if let Err(error) = sender.send(queued_write) {
+                log::error!("Could not send write to the sqlez worker thread: {error}");
+            }
         })
     })
 }
@@ -368,7 +413,8 @@ mod test {
             locking_connection.exec("ROLLBACK").unwrap()().unwrap();
         });
 
-        ThreadSafeConnection::create_connection(false, name, Some("PRAGMA FOREIGN_KEYS=true"));
+        ThreadSafeConnection::create_connection(false, name, Some("PRAGMA FOREIGN_KEYS=true"))
+            .unwrap();
         releaser.join().unwrap();
     }
 }

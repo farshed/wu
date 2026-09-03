@@ -25,7 +25,7 @@ impl MacDisplay {
 
     /// Get the primary screen - the one with the menu bar, and whose bottom left
     /// corner is at the origin of the AppKit coordinate system.
-    pub fn primary() -> Self {
+    pub fn primary() -> Option<Self> {
         // Instead of iterating through all active systems displays via `all()` we use the first
         // NSScreen and gets its CGDirectDisplayID, because we can't be sure that `CGGetActiveDisplayList`
         // will always return a list of active displays (machine might be sleeping).
@@ -35,12 +35,18 @@ impl MacDisplay {
         // https://chromium.googlesource.com/chromium/src/+/66.0.3359.158/ui/display/mac/screen_mac.mm#56
         unsafe {
             let screens = NSScreen::screens(nil);
+            if screens == nil || cocoa::foundation::NSArray::count(screens) == 0 {
+                return None;
+            }
             let screen = cocoa::foundation::NSArray::objectAtIndex(screens, 0);
             let device_description = NSScreen::deviceDescription(screen);
             let screen_number_key: id = ns_string("NSScreenNumber");
             let screen_number = device_description.objectForKey_(screen_number_key);
+            if screen_number == nil {
+                return None;
+            }
             let screen_number: CGDirectDisplayID = msg_send![screen_number, unsignedIntegerValue];
-            Self(screen_number)
+            Some(Self(screen_number))
         }
     }
 

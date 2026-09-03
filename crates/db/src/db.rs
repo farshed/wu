@@ -15,7 +15,9 @@ pub use uuid;
 
 pub use release_channel::RELEASE_CHANNEL;
 use release_channel::ReleaseChannel;
+use sqlez::connection::SqliteError;
 use sqlez::domain::Migrator;
+use sqlez::migrations::MigrationChangedError;
 use sqlez::thread_safe_connection::ThreadSafeConnection;
 use sqlez_macros::sql;
 use std::fs::create_dir_all;
@@ -23,7 +25,8 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{LazyLock, atomic::Ordering};
-use util::{ResultExt, maybe};
+use std::time::{SystemTime, UNIX_EPOCH};
+use util::ResultExt;
 use wu_env_vars::ZED_STATELESS;
 
 /// A migration registered via `static_connection!` and collected at link time.
@@ -127,8 +130,8 @@ const CONNECTION_INITIALIZE_QUERY: &str = sql!(
 );
 
 const DB_INITIALIZE_QUERY: &str = sql!(
-    PRAGMA journal_mode=WAL;
     PRAGMA busy_timeout=500;
+    PRAGMA journal_mode=WAL;
     PRAGMA case_sensitive_like=TRUE;
     PRAGMA synchronous=NORMAL;
 );
@@ -138,6 +141,10 @@ const FALLBACK_DB_NAME: &str = "FALLBACK_MEMORY_DB";
 const DB_FILE_NAME: &str = "db.sqlite";
 
 pub static ALL_FILE_DB_FAILED: LazyLock<AtomicBool> = LazyLock::new(|| AtomicBool::new(false));
+
+/// Serializes opening on-disk databases so two openers cannot both move a broken
+/// database aside, which would move the fresh replacement created by the first.
+static DB_OPEN_LOCK: futures::lock::Mutex<()> = futures::lock::Mutex::new(());
 
 /// A type that can be used as a database scope for path construction.
 pub trait DbScope {
@@ -168,9 +175,10 @@ pub fn db_path(db_dir: &Path, scope: impl DbScope) -> PathBuf {
 }
 
 /// Open or create a database at the given directory path.
-/// This will retry a couple times if there are failures. If opening fails once, the db directory
-/// is moved to a backup folder and a new one is created. If that fails, a shared in memory db is created.
-/// In either case, static variables are set so that the user can be notified.
+/// If opening (including running migrations) fails, the database file is moved to a
+/// timestamped backup next to it and a fresh one is created at the original path. If that
+/// also fails, a shared in memory db is created and `ALL_FILE_DB_FAILED` is set so that the
+/// user can be notified.
 pub async fn open_db<M: Migrator + 'static>(
     db_dir: &Path,
     scope: impl DbScope,
@@ -181,17 +189,7 @@ pub async fn open_db<M: Migrator + 'static>(
 
     let db_path = db_path(db_dir, scope);
 
-    let connection = maybe!(async {
-        if let Some(parent) = db_path.parent() {
-            create_dir_all(parent)
-                .context("Could not create db directory")
-                .log_err()?;
-        }
-        open_main_db::<M>(&db_path).await
-    })
-    .await;
-
-    if let Some(connection) = connection {
+    if let Some(connection) = open_or_recreate_main_db::<M>(&db_path).await {
         return connection;
     }
 
@@ -202,14 +200,136 @@ pub async fn open_db<M: Migrator + 'static>(
     open_fallback_db::<M>().await
 }
 
-async fn open_main_db<M: Migrator>(db_path: &Path) -> Option<ThreadSafeConnection> {
+async fn open_or_recreate_main_db<M: Migrator>(db_path: &Path) -> Option<ThreadSafeConnection> {
+    let _open_guard = DB_OPEN_LOCK.lock().await;
+
+    if let Some(parent) = db_path.parent() {
+        create_dir_all(parent)
+            .context("Could not create db directory")
+            .log_err()?;
+    }
+
+    let open_error = match open_main_db::<M>(db_path).await {
+        Ok(connection) => return Some(connection),
+        Err(error) => error,
+    };
+
+    // Transient failures such as a lock held by another process must not move a
+    // healthy database aside; only an unreadable file or an unusable schema does.
+    if !is_unrecoverable_db_error(&open_error) {
+        log::error!(
+            "Could not open database {}: {open_error:#}",
+            db_path.display()
+        );
+        return None;
+    }
+
+    let backup_path = match move_db_to_backup(db_path) {
+        Ok(backup_path) => backup_path,
+        Err(backup_error) => {
+            log::error!(
+                "Could not open database {}: {open_error:#}. Moving it aside also failed: {backup_error:#}",
+                db_path.display()
+            );
+            return None;
+        }
+    };
+
+    log::error!(
+        "Could not open database {}: {open_error:#}. The old database was moved to {} and a fresh database is being created in its place",
+        db_path.display(),
+        backup_path.display()
+    );
+
+    open_main_db::<M>(db_path).await.log_err()
+}
+
+fn is_unrecoverable_db_error(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| {
+            cause.downcast_ref::<MigrationChangedError>().is_some()
+                || cause
+                    .downcast_ref::<SqliteError>()
+                    .is_some_and(SqliteError::is_corruption)
+        })
+}
+
+/// Renames the database file and its `-wal` / `-shm` sidecars to a timestamped backup name
+/// next to the original, so the backup stays openable as a normal SQLite database.
+fn move_db_to_backup(db_path: &Path) -> anyhow::Result<PathBuf> {
+    let file_name = db_path
+        .file_name()
+        .with_context(|| format!("Database path {} has no file name", db_path.display()))?
+        .to_string_lossy()
+        .into_owned();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("System clock is before the unix epoch")?
+        .as_secs();
+    let mut backup_file_name = format!("{file_name}.backup-{timestamp}");
+    let mut attempt = 1;
+    while db_path.with_file_name(&backup_file_name).exists() {
+        backup_file_name = format!("{file_name}.backup-{timestamp}-{attempt}");
+        attempt += 1;
+    }
+    let backup_path = db_path.with_file_name(&backup_file_name);
+
+    // Sidecars go first: a fresh database next to an orphaned old `-wal` would
+    // replay stale frames into itself.
+    let mut moved_sidecars = Vec::new();
+    for suffix in ["-wal", "-shm"] {
+        let sidecar_path = db_path.with_file_name(format!("{file_name}{suffix}"));
+        if !sidecar_path.exists() {
+            continue;
+        }
+        let sidecar_backup_path = db_path.with_file_name(format!("{backup_file_name}{suffix}"));
+        if let Err(error) = std::fs::rename(&sidecar_path, &sidecar_backup_path) {
+            restore_moved_files(&moved_sidecars);
+            return Err(error).with_context(|| {
+                format!(
+                    "Could not move {} to {}",
+                    sidecar_path.display(),
+                    sidecar_backup_path.display()
+                )
+            });
+        }
+        moved_sidecars.push((sidecar_path, sidecar_backup_path));
+    }
+
+    if let Err(error) = std::fs::rename(db_path, &backup_path) {
+        restore_moved_files(&moved_sidecars);
+        return Err(error).with_context(|| {
+            format!(
+                "Could not move {} to {}",
+                db_path.display(),
+                backup_path.display()
+            )
+        });
+    }
+
+    Ok(backup_path)
+}
+
+fn restore_moved_files(moved: &[(PathBuf, PathBuf)]) {
+    for (original, backup) in moved {
+        if let Err(error) = std::fs::rename(backup, original) {
+            log::error!(
+                "Could not move {} back to {}: {error}",
+                backup.display(),
+                original.display()
+            );
+        }
+    }
+}
+
+async fn open_main_db<M: Migrator>(db_path: &Path) -> anyhow::Result<ThreadSafeConnection> {
     log::trace!("Opening database {}", db_path.display());
     ThreadSafeConnection::builder::<M>(db_path.to_string_lossy().as_ref(), true)
         .with_db_initialization_query(DB_INITIALIZE_QUERY)
         .with_connection_initialize_query(CONNECTION_INITIALIZE_QUERY)
         .build()
         .await
-        .log_err()
 }
 
 async fn open_fallback_db<M: Migrator>() -> ThreadSafeConnection {
@@ -299,7 +419,7 @@ mod tests {
     use sqlez::domain::Domain;
     use sqlez_macros::sql;
 
-    use crate::open_db;
+    use crate::{db_path, open_db, open_or_recreate_main_db};
 
     // Test bad migration panics
     #[gpui::test]
@@ -321,6 +441,36 @@ mod tests {
             .tempdir()
             .unwrap();
         let _bad_db = open_db::<BadDB>(tempdir.path(), release_channel::ReleaseChannel::Dev).await;
+    }
+
+    /// A migration that merely fails must not move the database aside.
+    #[gpui::test]
+    async fn test_failed_migration_keeps_db_file(cx: &mut gpui::TestAppContext) {
+        cx.executor().allow_parking();
+
+        enum BadDB {}
+
+        impl Domain for BadDB {
+            const NAME: &str = "db_tests";
+            const MIGRATIONS: &[&str] = &[
+                sql!(CREATE TABLE test(value);),
+                sql!(CREATE TABLE test(value);),
+            ];
+        }
+
+        let tempdir = tempfile::Builder::new()
+            .prefix("DbTests")
+            .tempdir()
+            .unwrap();
+        let db_path = db_path(tempdir.path(), release_channel::ReleaseChannel::Dev);
+        assert!(open_or_recreate_main_db::<BadDB>(&db_path).await.is_none());
+        assert!(db_path.exists());
+        let backups: Vec<_> = std::fs::read_dir(db_path.parent().unwrap())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().contains("backup"))
+            .collect();
+        assert!(backups.is_empty(), "unexpected backups: {backups:?}");
     }
 
     /// Test that DB exists but corrupted (causing recreate)

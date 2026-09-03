@@ -9,6 +9,33 @@ use std::{
 use anyhow::Result;
 use libsqlite3_sys::*;
 
+#[derive(Debug)]
+pub struct SqliteError {
+    pub code: i32,
+    pub message: Option<String>,
+}
+
+impl SqliteError {
+    /// Whether the database file itself is unreadable, as opposed to a transient
+    /// failure such as a lock held by another process.
+    pub fn is_corruption(&self) -> bool {
+        let primary_code = self.code & 0xff;
+        primary_code == SQLITE_CORRUPT || primary_code == SQLITE_NOTADB
+    }
+}
+
+impl std::fmt::Display for SqliteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Sqlite call failed with code {} and message: {:?}",
+            self.code, self.message
+        )
+    }
+}
+
+impl std::error::Error for SqliteError {}
+
 pub struct Connection {
     pub(crate) sqlite3: *mut sqlite3,
     persistent: bool,
@@ -51,10 +78,9 @@ impl Connection {
         )
     }
 
-    /// Attempts to open the database at uri. If it fails, a shared memory db will be opened
-    /// instead.
-    pub fn open_file(uri: &str) -> Self {
-        Self::open(uri, true).unwrap_or_else(|_| Self::open_memory(Some(uri)))
+    /// Opens the database file at uri, creating it if it does not exist.
+    pub fn open_file(uri: &str) -> Result<Self> {
+        Self::open(uri, true)
     }
 
     pub fn open_memory(uri: Option<&str>) -> Self {
@@ -94,7 +120,7 @@ impl Connection {
     }
 
     pub fn backup_main_to(&self, destination: impl AsRef<Path>) -> Result<()> {
-        let destination = Self::open_file(destination.as_ref().to_string_lossy().as_ref());
+        let destination = Self::open_file(destination.as_ref().to_string_lossy().as_ref())?;
         self.backup_main(&destination)
     }
 
@@ -216,7 +242,7 @@ impl Connection {
                 )
             };
 
-            anyhow::bail!("Sqlite call failed with code {code} and message: {message:?}")
+            Err(SqliteError { code, message }.into())
         }
     }
 

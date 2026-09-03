@@ -12,6 +12,7 @@ use release_channel::ReleaseChannel;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use settings::{RegisterSetting, Settings, SettingsStore};
+use sha2::{Digest, Sha256};
 use smol::fs::File;
 use smol::{
     fs,
@@ -46,6 +47,54 @@ impl std::fmt::Display for MissingDependencyError {
 impl std::error::Error for MissingDependencyError {}
 const POLL_INTERVAL: Duration = Duration::from_secs(12 * 60 * 60);
 const REMOTE_SERVER_CACHE_LIMIT: usize = 5;
+/// Cross-process guard so that two running instances (for example with
+/// different `--user-data-dir`s) never download or install an update at the
+/// same time. The OS releases the lock when the process exits, however it exits.
+struct UpdateLock {
+    _file: std::fs::File,
+}
+
+impl UpdateLock {
+    fn path() -> PathBuf {
+        #[cfg(test)]
+        let file_name = format!("wu-auto-update-{}.lock", std::process::id());
+        #[cfg(not(test))]
+        let file_name = "wu-auto-update.lock".to_string();
+        paths::temp_dir().join(file_name)
+    }
+
+    fn try_acquire() -> Result<Self> {
+        let path = Self::path();
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&path)
+            .with_context(|| format!("opening update lock at {path:?}"))?;
+        match file.try_lock() {
+            Ok(()) => Ok(Self { _file: file }),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                anyhow::bail!("another Wu instance is already checking for updates")
+            }
+            Err(std::fs::TryLockError::Error(error)) => {
+                Err(error).with_context(|| format!("locking update lock at {path:?}"))
+            }
+        }
+    }
+}
+
+fn verify_digest(hasher: Sha256, expected_digest: Option<&str>, url: &str) -> Result<()> {
+    let Some(expected_digest) = expected_digest else {
+        log::warn!("no digest published for {url}, skipping download verification");
+        return Ok(());
+    };
+    let actual_digest = format!("{:x}", hasher.finalize());
+    anyhow::ensure!(
+        actual_digest.eq_ignore_ascii_case(expected_digest),
+        "download from {url} failed SHA-256 verification: expected {expected_digest}, got {actual_digest}"
+    );
+    Ok(())
+}
 
 #[cfg(target_os = "linux")]
 fn linux_rsync_install_hint() -> &'static str {
@@ -177,6 +226,8 @@ pub struct AutoUpdater {
 pub struct ReleaseAsset {
     pub version: String,
     pub url: String,
+    /// Hex SHA-256 of the asset, when the release publishes one.
+    pub digest: Option<String>,
 }
 
 const GITHUB_RELEASES_API_URL: &str = "https://api.github.com/repos/farshed/wu/releases";
@@ -191,6 +242,8 @@ struct GitHubRelease {
 struct GitHubReleaseAsset {
     name: String,
     browser_download_url: String,
+    #[serde(default)]
+    digest: Option<String>,
 }
 
 fn github_asset_name(asset: &str, os: &str, arch: &str) -> Result<String> {
@@ -731,6 +784,12 @@ impl AutoUpdater {
                 .unwrap_or(&release.tag_name)
                 .to_string(),
             url: asset.browser_download_url,
+            digest: asset.digest.map(|digest| {
+                digest
+                    .strip_prefix("sha256:")
+                    .map(str::to_owned)
+                    .unwrap_or(digest)
+            }),
         })
     }
 
@@ -746,6 +805,8 @@ impl AutoUpdater {
             });
 
         Self::check_dependencies()?;
+
+        let _update_lock = UpdateLock::try_acquire()?;
 
         this.update(cx, |this, cx| {
             this.status = AutoUpdateStatus::Checking;
@@ -845,7 +906,7 @@ impl AutoUpdater {
         }
 
         this.update(cx, |this, cx| {
-            this.set_should_show_update_notification(true, cx)
+            this.record_installed_update(&newer_version, cx)
                 .detach_and_log_err(cx);
             this.status = AutoUpdateStatus::Updated {
                 version: newer_version,
@@ -959,10 +1020,38 @@ impl AutoUpdater {
         })
     }
 
+    /// Records that an update to `version` was staged, so the "updated"
+    /// notification can be shown once that version is actually running.
+    fn record_installed_update(&self, version: &Version, cx: &App) -> Task<Result<()>> {
+        let kvp = KeyValueStore::global(cx);
+        let version = version.to_string();
+        cx.background_spawn(async move {
+            kvp.write_kvp(SHOULD_SHOW_UPDATE_NOTIFICATION_KEY.to_string(), version)
+                .await
+        })
+    }
+
     pub fn should_show_update_notification(&self, cx: &App) -> Task<Result<bool>> {
         let kvp = KeyValueStore::global(cx);
+        let mut running_version = self.current_version.clone();
+        running_version.pre = semver::Prerelease::EMPTY;
+        running_version.build = semver::BuildMetadata::EMPTY;
         cx.background_spawn(async move {
-            Ok(kvp.read_kvp(SHOULD_SHOW_UPDATE_NOTIFICATION_KEY)?.is_some())
+            let Some(recorded_version) = kvp.read_kvp(SHOULD_SHOW_UPDATE_NOTIFICATION_KEY)? else {
+                return Ok(false);
+            };
+            // An empty value was written by older builds that did not record
+            // the version. A mismatch means the staged update was rolled back
+            // or never applied, so the notification would be wrong.
+            if recorded_version.is_empty() || recorded_version == running_version.to_string() {
+                return Ok(true);
+            }
+            log::info!(
+                "Auto Update: recorded update to {recorded_version} but {running_version} is running, not showing update notification"
+            );
+            kvp.delete_kvp(SHOULD_SHOW_UPDATE_NOTIFICATION_KEY.to_string())
+                .await?;
+            Ok(false)
         })
     }
 }
@@ -981,7 +1070,19 @@ async fn download_remote_server_binary(
         "failed to download remote server release: {:?}",
         response.status()
     );
-    smol::io::copy(response.body_mut(), &mut temp_file).await?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+    let body = response.body_mut();
+    loop {
+        let bytes_read = body.read(&mut buffer).await?;
+        if bytes_read == 0 {
+            break;
+        }
+        temp_file.write_all(&buffer[..bytes_read]).await?;
+        hasher.update(&buffer[..bytes_read]);
+    }
+    temp_file.flush().await?;
+    verify_digest(hasher, release.digest.as_deref(), &release.url)?;
     smol::fs::rename(&temp, &target_path).await?;
 
     Ok(())
@@ -1069,6 +1170,7 @@ async fn download_release(
     let mut downloaded_bytes: u64 = 0;
     let mut last_reported_percent: Option<u8> = None;
     let mut buffer = [0u8; 8192];
+    let mut hasher = Sha256::new();
     let body = response.body_mut();
     loop {
         let bytes_read = body.read(&mut buffer).await?;
@@ -1076,6 +1178,7 @@ async fn download_release(
             break;
         }
         target_file.write_all(&buffer[..bytes_read]).await?;
+        hasher.update(&buffer[..bytes_read]);
         downloaded_bytes += bytes_read as u64;
 
         if let Some(total_bytes) = total_bytes {
@@ -1089,6 +1192,7 @@ async fn download_release(
         }
     }
     target_file.flush().await?;
+    verify_digest(hasher, release.digest.as_deref(), &release.url)?;
     if total_bytes.is_some() && last_reported_percent != Some(100) {
         on_progress(Some(1.0));
     }
@@ -1273,10 +1377,26 @@ async fn cleanup_windows() -> Result<()> {
         .context("No parent dir for Wu.exe")?
         .to_owned();
 
-    // keep in sync with crates/auto_update_helper/src/updater.rs
-    _ = smol::fs::remove_dir(parent.join("updates")).await;
-    _ = smol::fs::remove_dir(parent.join("install")).await;
-    _ = smol::fs::remove_dir(parent.join("old")).await;
+    // keep in sync with crates/auto_update_helper/src/updater.rs. `updates` and
+    // `install` hold a staged update until the helper applies it, so only their
+    // empty leftovers are removed; `old` is safe to clear entirely.
+    for (directory_name, recursive) in [("updates", false), ("install", false), ("old", true)] {
+        let directory = parent.join(directory_name);
+        if smol::fs::metadata(&directory).await.is_err() {
+            continue;
+        }
+        let result = if recursive {
+            smol::fs::remove_dir_all(&directory).await
+        } else {
+            smol::fs::remove_dir(&directory).await
+        };
+        match result {
+            Ok(()) => log::info!("removed leftover update directory {directory:?}"),
+            Err(error) => {
+                log::info!("left update directory {directory:?} in place: {error}")
+            }
+        }
+    }
 
     Ok(())
 }
@@ -1505,6 +1625,7 @@ mod tests {
         let release = ReleaseAsset {
             version: "1.0.0".to_string(),
             url: "https://test.example/download".to_string(),
+            digest: None,
         };
 
         let reported = Rc::new(std::cell::RefCell::new(Vec::<f32>::new()));
@@ -1565,6 +1686,7 @@ mod tests {
         let release = ReleaseAsset {
             version: "1.0.0".to_string(),
             url: "https://test.example/download".to_string(),
+            digest: None,
         };
 
         let reported = Rc::new(std::cell::RefCell::new(Vec::<Option<f32>>::new()));

@@ -1681,9 +1681,9 @@ impl WorkspaceDb {
 
                 Ok(())
             })
-            .log_err();
         })
-        .await;
+        .await
+        .log_err();
     }
 
     pub(crate) async fn get_or_create_remote_connection(
@@ -3162,9 +3162,9 @@ mod tests {
                 )],
                 &mut |_, _, _| false,
             )
-            .unwrap();
         })
-        .await;
+        .await
+        .unwrap();
 
         let id = db.next_id().await.unwrap();
         // Assert the empty row got inserted
@@ -3180,9 +3180,9 @@ mod tests {
         db.write(move |conn| {
             conn.exec_bound(sql!(INSERT INTO test_table(text, workspace_id) VALUES (?, ?)))
                 .unwrap()(("test-text-1", id))
-            .unwrap()
         })
-        .await;
+        .await
+        .unwrap();
 
         let test_text_1 = db
             .select_row_bound::<_, String>(sql!(SELECT text FROM test_table WHERE workspace_id = ?))
@@ -3256,18 +3256,18 @@ mod tests {
         db.write(|conn| {
             conn.exec_bound(sql!(INSERT INTO test_table(text, workspace_id) VALUES (?, ?)))
                 .unwrap()(("test-text-1", 1))
-            .unwrap();
         })
-        .await;
+        .await
+        .unwrap();
 
         db.save_workspace(workspace_2.clone()).await;
 
         db.write(|conn| {
             conn.exec_bound(sql!(INSERT INTO test_table(text, workspace_id) VALUES (?, ?)))
                 .unwrap()(("test-text-2", 2))
-            .unwrap();
         })
-        .await;
+        .await
+        .unwrap();
 
         workspace_1.paths = PathList::new(&["/tmp", "/tmp3"]);
         db.save_workspace(workspace_1.clone()).await;

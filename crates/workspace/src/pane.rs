@@ -4,9 +4,9 @@ use crate::{
     focus_follows_mouse::FocusFollowsMouse as _,
     invalid_item_view::InvalidItemView,
     item::{
-        ActivateOnClose, ClosePosition, Item, ItemBufferKind, ItemHandle, ItemSettings,
-        PreviewTabsSettings, ProjectItemKind, SaveOptions, ShowCloseButton, ShowDiagnostics,
-        TabContentParams, TabTooltipContent, WeakItemHandle,
+        ActivateOnClose, CloseConfirmation, ClosePosition, Item, ItemBufferKind, ItemHandle,
+        ItemSettings, PreviewTabsSettings, ProjectItemKind, SaveOptions, ShowCloseButton,
+        ShowDiagnostics, TabContentParams, TabTooltipContent, WeakItemHandle,
     },
     move_item,
     notifications::NotifyResultExt,
@@ -1886,6 +1886,14 @@ impl Pane {
                 continue;
             }
 
+            if self
+                .items
+                .get(index)
+                .is_some_and(|item| item.confirm_close(cx).is_some())
+            {
+                continue;
+            }
+
             index_list.push(index);
             items_len -= 1;
         }
@@ -1897,6 +1905,25 @@ impl Pane {
             .iter()
             .rev()
             .for_each(|&index| self._remove_item(index, false, false, None, window, cx));
+    }
+
+    /// Shows an item's [`CloseConfirmation`] and resolves to whether the user
+    /// chose to close it anyway. Cancel is the first button so that Return
+    /// (the platform default) never terminates anything.
+    pub fn prompt_close_confirmation(
+        confirmation: &CloseConfirmation,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Task<bool> {
+        let answer = window.prompt_with_icon(
+            PromptLevel::Warning,
+            &confirmation.message,
+            None,
+            &["Cancel", confirmation.confirm_button.as_ref()],
+            confirmation.icon.as_deref(),
+            cx,
+        );
+        cx.spawn(async move |_| matches!(answer.await, Ok(1)))
     }
 
     // Usually when you close an item that has unsaved changes, we prompt you to
@@ -2015,25 +2042,24 @@ impl Pane {
             }
 
             for item_to_close in items_to_close {
-                if save_intent == SaveIntent::Close {
-                    let confirmation = cx.update(|_window, cx| item_to_close.confirm_close(cx))?;
-                    if let Some(confirmation) = confirmation {
-                        let answer = pane.update_in(cx, |pane, window, cx| {
-                            if let Some(ix) = pane.index_for_item(item_to_close.as_ref()) {
-                                pane.activate_item(ix, true, true, window, cx);
-                            }
-                            window.prompt_with_icon(
-                                PromptLevel::Warning,
-                                &confirmation.message,
-                                None,
-                                &[confirmation.confirm_button.as_ref(), "Cancel"],
-                                confirmation.icon.as_deref(),
-                                cx,
-                            )
-                        })?;
-                        if !matches!(answer.await, Ok(0)) {
-                            continue;
+                let confirmation = cx.update(|_window, cx| item_to_close.confirm_close(cx))?;
+                if let Some(confirmation) = confirmation {
+                    let confirmed = pane.update_in(cx, |pane, window, cx| {
+                        if let Some(ix) = pane.index_for_item(item_to_close.as_ref()) {
+                            pane.activate_item(ix, true, true, window, cx);
                         }
+                        Self::prompt_close_confirmation(&confirmation, window, cx)
+                    })?;
+                    if !confirmed.await {
+                        return Ok(());
+                    }
+                    // The item may have closed itself while the prompt was open,
+                    // e.g. a terminal whose shell exited.
+                    let still_open = pane.update(cx, |pane, _| {
+                        pane.index_for_item(item_to_close.as_ref()).is_some()
+                    })?;
+                    if !still_open {
+                        continue;
                     }
                 }
 

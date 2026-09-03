@@ -880,12 +880,13 @@ impl App {
             let app = Rc::downgrade(&app);
             move || {
                 if let Some(app) = app.upgrade() {
-                    let cx = &mut app.borrow_mut();
-                    cx.keyboard_layout = cx.platform.keyboard_layout();
-                    cx.keyboard_mapper = cx.platform.keyboard_mapper();
-                    cx.keyboard_layout_observers
-                        .clone()
-                        .retain(&(), move |callback| (callback)(cx));
+                    app.borrow_mut().update(|cx| {
+                        cx.keyboard_layout = cx.platform.keyboard_layout();
+                        cx.keyboard_mapper = cx.platform.keyboard_mapper();
+                        cx.keyboard_layout_observers
+                            .clone()
+                            .retain(&(), move |callback| (callback)(cx));
+                    });
                 }
             }
         }));
@@ -894,10 +895,11 @@ impl App {
             let app = Rc::downgrade(&app);
             move || {
                 if let Some(app) = app.upgrade() {
-                    let cx = &mut app.borrow_mut();
-                    cx.thermal_state_observers
-                        .clone()
-                        .retain(&(), move |callback| (callback)(cx));
+                    app.borrow_mut().update(|cx| {
+                        cx.thermal_state_observers
+                            .clone()
+                            .retain(&(), move |callback| (callback)(cx));
+                    });
                 }
             }
         }));
@@ -906,10 +908,11 @@ impl App {
             let app = Rc::downgrade(&app);
             move || {
                 if let Some(app) = app.upgrade() {
-                    let cx = &mut app.borrow_mut();
-                    cx.system_wake_observers
-                        .clone()
-                        .retain(&(), move |callback| (callback)(cx));
+                    app.borrow_mut().update(|cx| {
+                        cx.system_wake_observers
+                            .clone()
+                            .retain(&(), move |callback| (callback)(cx));
+                    });
                 }
             }
         }));
@@ -1744,25 +1747,30 @@ impl App {
 
     /// Repeatedly called during `flush_effects` to handle a focused handle being dropped.
     fn release_dropped_focus_handles(&mut self) {
-        self.focus_handles
-            .clone()
-            .write()
-            .retain(|handle_id, focus| {
-                if focus.ref_count.load(SeqCst) == 0 {
-                    for window_handle in self.windows() {
-                        window_handle
-                            .update(self, |_, window, cx| {
-                                if window.focus == Some(handle_id) {
-                                    window.blur(cx);
-                                }
-                            })
-                            .unwrap();
+        let mut dropped_focus_ids = Vec::new();
+        self.focus_handles.write().retain(|handle_id, focus| {
+            if focus.ref_count.load(SeqCst) == 0 {
+                dropped_focus_ids.push(handle_id);
+                false
+            } else {
+                true
+            }
+        });
+        if dropped_focus_ids.is_empty() {
+            return;
+        }
+
+        for window_handle in self.windows() {
+            window_handle
+                .update(self, |_, window, cx| {
+                    if let Some(focus_id) = window.focus
+                        && dropped_focus_ids.contains(&focus_id)
+                    {
+                        window.blur(cx);
                     }
-                    false
-                } else {
-                    true
-                }
-            });
+                })
+                .log_err();
+        }
     }
 
     fn apply_notify_effect(&mut self, emitter: EntityId) {
@@ -2851,7 +2859,7 @@ impl AppContext for App {
             .get(window.id)
             .context("window not found")?
             .as_deref()
-            .expect("attempted to read a window that is already on the stack");
+            .context("attempted to read a window that is already on the stack")?;
 
         let root_view = window.root.clone().unwrap();
         let view = root_view

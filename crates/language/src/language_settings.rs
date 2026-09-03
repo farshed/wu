@@ -680,15 +680,27 @@ impl settings::Settings for AllLanguageSettings {
             let mut builder = GlobSetBuilder::new();
 
             for pattern in &patterns.0 {
-                builder.add(Glob::new(pattern).unwrap());
+                match Glob::new(pattern) {
+                    Ok(glob) => {
+                        builder.add(glob);
+                    }
+                    Err(error) => log::error!(
+                        "Ignoring invalid file_types glob {pattern:?} for language {language}: {error}"
+                    ),
+                }
             }
+
+            let glob_set = match builder.build() {
+                Ok(glob_set) => glob_set,
+                Err(error) => {
+                    log::error!("Ignoring file_types globs for language {language}: {error}");
+                    continue;
+                }
+            };
 
             file_types.insert(
                 language.clone(),
-                (
-                    builder.build().unwrap(),
-                    patterns.0.iter().cloned().collect(),
-                ),
+                (glob_set, patterns.0.iter().cloned().collect()),
             );
         }
 

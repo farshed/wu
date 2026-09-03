@@ -11,7 +11,9 @@ can_code_sign=false
 
 # This must match the team in the provisioning profile.
 IDENTITY="Farshed"
-APPLE_NOTARIZATION_TEAM="MQ55VZLNZQ"
+APPLE_NOTARIZATION_TEAM="${APPLE_NOTARIZATION_TEAM:-}"
+# Optional path to a provisioning profile to embed in the app bundle.
+MACOS_PROVISIONING_PROFILE="${MACOS_PROVISIONING_PROFILE:-}"
 
 # Function for displaying help info
 help_info() {
@@ -120,6 +122,11 @@ fi
 if [[ -n "${MACOS_CERTIFICATE:-}" && -n "${MACOS_CERTIFICATE_PASSWORD:-}" && -n "${APPLE_NOTARIZATION_KEY:-}" && -n "${APPLE_NOTARIZATION_KEY_ID:-}" && -n "${APPLE_NOTARIZATION_ISSUER_ID:-}" ]]; then
     can_code_sign=true
 
+    if [[ -z "$APPLE_NOTARIZATION_TEAM" ]]; then
+        echo "APPLE_NOTARIZATION_TEAM must be set when code signing is enabled"
+        exit 1
+    fi
+
     echo "Setting up keychain for code signing..."
     security create-keychain -p "$MACOS_CERTIFICATE_PASSWORD" zed.keychain || echo ""
     security default-keychain -s zed.keychain
@@ -195,14 +202,17 @@ function sign_app_binaries() {
     echo "Downloading git binary"
     download_git "${target_triple}" "${app_path}/Contents/MacOS/git"
 
-    cp crates/wu/contents/$channel/embedded.provisionprofile "${app_path}/Contents/"
+    if [[ -n "$MACOS_PROVISIONING_PROFILE" ]]; then
+        echo "Embedding provisioning profile from ${MACOS_PROVISIONING_PROFILE}"
+        cp "$MACOS_PROVISIONING_PROFILE" "${app_path}/Contents/embedded.provisionprofile"
+    fi
 
     if [[ $can_code_sign = true ]]; then
         echo "Code signing binaries"
         # sequence of codesign commands modeled after this example: https://developer.apple.com/forums/thread/701514
         /usr/bin/codesign --deep --force --timestamp --options runtime --sign "$IDENTITY" "${app_path}/Contents/MacOS/cli" -v
         /usr/bin/codesign --deep --force --timestamp --options runtime --sign "$IDENTITY" "${app_path}/Contents/MacOS/git" -v
-        /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${app_path}/Contents/MacOS/zed" -v
+        /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${app_path}/Contents/MacOS/wu" -v
         /usr/bin/codesign --force --timestamp --options runtime --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${app_path}" -v
     else
         echo "One or more of the following variables are missing: MACOS_CERTIFICATE, MACOS_CERTIFICATE_PASSWORD, APPLE_NOTARIZATION_KEY, APPLE_NOTARIZATION_KEY_ID, APPLE_NOTARIZATION_ISSUER_ID"
@@ -213,8 +223,7 @@ function sign_app_binaries() {
 
         # NOTE: if you need to test universal links you have a few paths forward:
         # - create a PR and tag it with the `run-bundling` label, and download the .dmg file from there.
-        # - get a signing key for the MQ55VZLNZQ team from Nathan.
-        # - create your own signing key, and update references to MQ55VZLNZQ to your own team ID
+        # - create your own signing key and set APPLE_NOTARIZATION_TEAM to your own team ID
         # then comment out this line.
         cat crates/wu/resources/zed.entitlements | sed '/com.apple.developer.associated-domains/,+1d' > "${app_path}/Contents/Resources/zed.entitlements"
 
@@ -267,7 +276,7 @@ function sign_app_binaries() {
             echo "Notarizing DMG with Apple"
             /usr/bin/codesign --deep --force --timestamp --options runtime --sign "$IDENTITY" "$(pwd)/${dmg_file_path}" -v
             echo "$APPLE_NOTARIZATION_KEY" > "$notarization_key_file"
-            "${xcode_bin_dir_path}/notarytool" submit --wait --key "$notarization_key_file" --key-id "$APPLE_NOTARIZATION_KEY_ID" --issuer "$APPLE_NOTARIZATION_ISSUER_ID" "${dmg_file_path}"
+            "${xcode_bin_dir_path}/notarytool" submit --wait --key "$notarization_key_file" --key-id "$APPLE_NOTARIZATION_KEY_ID" --issuer "$APPLE_NOTARIZATION_ISSUER_ID" --team-id "$APPLE_NOTARIZATION_TEAM" "${dmg_file_path}"
             rm "$notarization_key_file"
             "${xcode_bin_dir_path}/stapler" staple "${dmg_file_path}"
         fi
@@ -290,6 +299,20 @@ function sign_binary() {
 
 cp target/${target_triple}/${target_dir}/wu "${app_path}/Contents/MacOS/wu"
 cp target/${target_triple}/${target_dir}/cli "${app_path}/Contents/MacOS/cli"
+
+if [[ "$target_dir" = "release" && -n "${CI:-}${BUNDLE_DSYM:-}" ]]; then
+    dsym_path="target/${target_triple}/${target_dir}/Wu.dSYM"
+    rm -rf "$dsym_path" "${dsym_path}.zip"
+    # Use rustc's dSYM when split-debuginfo produced one, otherwise build it.
+    if [[ -d "target/${target_triple}/${target_dir}/wu.dSYM" ]]; then
+        cp -R "target/${target_triple}/${target_dir}/wu.dSYM" "$dsym_path"
+    else
+        dsymutil "target/${target_triple}/${target_dir}/wu" -o "$dsym_path"
+    fi
+    ditto -c -k --keepParent "$dsym_path" "${dsym_path}.zip"
+    echo "Created debug symbols at ${dsym_path}.zip"
+fi
+
 sign_app_binaries
 
 sign_binary "target/$target_triple/release/remote_server"

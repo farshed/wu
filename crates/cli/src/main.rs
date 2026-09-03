@@ -515,7 +515,7 @@ fn run() -> Result<()> {
     // Set custom data directory before any path operations
     let user_data_dir = args.user_data_dir.clone();
     if let Some(dir) = &user_data_dir {
-        paths::set_custom_data_dir(dir);
+        paths::set_custom_data_dir(dir).context("Could not use --user-data-dir")?;
     }
 
     #[cfg(target_os = "linux")]

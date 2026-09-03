@@ -78,6 +78,9 @@ impl KeyContext {
             .chars()
             .take_while(|c| is_identifier_char(*c))
             .collect::<String>();
+        if key.is_empty() {
+            anyhow::bail!("unexpected character in key context: {source:?}");
+        }
         source = skip_whitespace(&source[key.len()..]);
         if let Some(suffix) = source.strip_prefix('=') {
             source = skip_whitespace(suffix);
@@ -548,6 +551,13 @@ mod tests {
             expected
         );
         assert_eq!(KeyContext::parse(" baz foo = bar").unwrap(), expected);
+    }
+
+    #[test]
+    fn test_parse_context_rejects_non_identifier_characters() {
+        assert!(KeyContext::parse("Editor.Foo").is_err());
+        assert!(KeyContext::parse(".").is_err());
+        assert!(KeyContext::parse("foo = a.b").is_err());
     }
 
     #[test]

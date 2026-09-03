@@ -8,7 +8,8 @@ use block::ConcreteBlock;
 use cocoa::{
     appkit::{
         NSAppearanceNameVibrantDark, NSAppearanceNameVibrantLight, NSApplication,
-        NSApplicationActivationPolicy::NSApplicationActivationPolicyRegular, NSControl as _,
+        NSApplicationActivationPolicy::NSApplicationActivationPolicyRegular,
+        NSApplicationTerminateReply, NSControl as _,
         NSEventModifierFlags, NSMenu, NSMenuItem, NSModalResponse, NSOpenPanel, NSSavePanel,
         NSVisualEffectState, NSVisualEffectView, NSWindow,
     },
@@ -63,6 +64,8 @@ use std::{
 
 #[allow(non_upper_case_globals)]
 const NSUTF8StringEncoding: NSUInteger = 4;
+// Dock menu item tags live above this offset so they can be told apart from menu bar tags.
+const DOCK_MENU_TAG_OFFSET: NSInteger = 1 << 32;
 
 const MAC_PLATFORM_IVAR: &str = "platform";
 static mut APP_CLASS: *const Class = ptr::null();
@@ -92,6 +95,10 @@ unsafe fn build_classes() {
             decl.add_method(
                 sel!(applicationShouldHandleReopen:hasVisibleWindows:),
                 should_handle_reopen as extern "C" fn(&mut Object, Sel, id, bool),
+            );
+            decl.add_method(
+                sel!(applicationShouldTerminate:),
+                should_terminate as extern "C" fn(&mut Object, Sel, id) -> NSUInteger,
             );
             decl.add_method(
                 sel!(applicationWillTerminate:),
@@ -183,6 +190,7 @@ pub(crate) struct MacPlatformState {
     validate_menu_command: Option<Box<dyn FnMut(&dyn Action) -> bool>>,
     will_open_menu: Option<Box<dyn FnMut()>>,
     menu_actions: Vec<Box<dyn Action>>,
+    dock_menu_actions: Vec<Box<dyn Action>>,
     open_urls: Option<Box<dyn FnMut(Vec<String>)>>,
     finish_launching: Option<Box<dyn FnOnce()>>,
     dock_menu: Option<id>,
@@ -227,6 +235,7 @@ impl MacPlatform {
             validate_menu_command: None,
             will_open_menu: None,
             menu_actions: Default::default(),
+            dock_menu_actions: Default::default(),
             open_urls: None,
             finish_launching: None,
             dock_menu: None,
@@ -263,6 +272,7 @@ impl MacPlatform {
                         item_config,
                         delegate,
                         actions,
+                        0,
                         keymap,
                     ));
                 }
@@ -297,6 +307,7 @@ impl MacPlatform {
                     &item_config,
                     delegate,
                     actions,
+                    DOCK_MENU_TAG_OFFSET,
                     keymap,
                 ));
             }
@@ -309,6 +320,7 @@ impl MacPlatform {
         item: &MenuItem,
         delegate: id,
         actions: &mut Vec<Box<dyn Action>>,
+        tag_offset: NSInteger,
         keymap: &Keymap,
     ) -> id {
         static DEFAULT_CONTEXT: OnceLock<Vec<KeyContext>> = OnceLock::new();
@@ -421,7 +433,7 @@ impl MacPlatform {
                     }
                     item.setEnabled_(if *disabled { NO } else { YES });
 
-                    let tag = actions.len() as NSInteger;
+                    let tag = tag_offset + actions.len() as NSInteger;
                     let _: () = msg_send![item, setTag: tag];
                     actions.push(action.boxed_clone());
                     item
@@ -435,7 +447,9 @@ impl MacPlatform {
                     let submenu = NSMenu::new(nil).autorelease();
                     submenu.setDelegate_(delegate);
                     for item in items {
-                        submenu.addItem_(Self::create_menu_item(item, delegate, actions, keymap));
+                        submenu.addItem_(Self::create_menu_item(
+                            item, delegate, actions, tag_offset, keymap,
+                        ));
                     }
                     item.setSubmenu_(submenu);
                     item.setEnabled_(if *disabled { NO } else { YES });
@@ -614,7 +628,7 @@ impl Platform for MacPlatform {
     }
 
     fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>> {
-        Some(Rc::new(MacDisplay::primary()))
+        MacDisplay::primary().map(|display| Rc::new(display) as Rc<dyn PlatformDisplay>)
     }
 
     fn displays(&self) -> Vec<Rc<dyn PlatformDisplay>> {
@@ -1030,6 +1044,7 @@ impl Platform for MacPlatform {
             let app: id = msg_send![APP_CLASS, sharedApplication];
             let mut state = self.0.lock();
             let actions = &mut state.menu_actions;
+            actions.clear();
             let menu = self.create_menu_bar(&menus, NSWindow::delegate(app), actions, keymap);
             drop(state);
             app.setMainMenu_(menu);
@@ -1057,7 +1072,8 @@ impl Platform for MacPlatform {
         unsafe {
             let app: id = msg_send![APP_CLASS, sharedApplication];
             let mut state = self.0.lock();
-            let actions = &mut state.menu_actions;
+            let actions = &mut state.dock_menu_actions;
+            actions.clear();
             let new = self.create_dock_menu(menu, NSWindow::delegate(app), actions, keymap);
             if let Some(old) = state.dock_menu.replace(new) {
                 CFRelease(old as _)
@@ -1341,6 +1357,21 @@ extern "C" fn should_handle_reopen(this: &mut Object, _: Sel, _: id, has_open_wi
     }
 }
 
+extern "C" fn should_terminate(this: &mut Object, _: Sel, _: id) -> NSUInteger {
+    let platform = unsafe { get_mac_platform(this) };
+    let mut lock = platform.0.lock();
+    if let Some(mut callback) = lock.quit.take() {
+        drop(lock);
+        // NSTerminateLater keeps this frame on the stack, so a borrowed app
+        // state could not be retried here; applicationWillTerminate: tries again.
+        if !callback() {
+            log::warn!("app state was borrowed while terminating; shutdown deferred");
+        }
+        platform.0.lock().quit.get_or_insert(callback);
+    }
+    NSApplicationTerminateReply::NSTerminateNow as NSUInteger
+}
+
 extern "C" fn will_terminate(this: &mut Object, _: Sel, _: id) {
     let platform = unsafe { get_mac_platform(this) };
     let mut lock = platform.0.lock();
@@ -1437,18 +1468,27 @@ extern "C" fn open_urls(this: &mut Object, _: Sel, _: id, urls: id) {
     }
 }
 
+fn menu_action_for_tag(state: &MacPlatformState, tag: NSInteger) -> Option<Box<dyn Action>> {
+    let (actions, index) = if tag >= DOCK_MENU_TAG_OFFSET {
+        (&state.dock_menu_actions, tag - DOCK_MENU_TAG_OFFSET)
+    } else {
+        (&state.menu_actions, tag)
+    };
+    let index = usize::try_from(index).ok()?;
+    actions.get(index).map(|action| action.boxed_clone())
+}
+
 extern "C" fn handle_menu_item(this: &mut Object, _: Sel, item: id) {
     unsafe {
         let platform = get_mac_platform(this);
+        let tag: NSInteger = msg_send![item, tag];
         let mut lock = platform.0.lock();
+        let Some(action) = menu_action_for_tag(&lock, tag) else {
+            return;
+        };
         if let Some(mut callback) = lock.menu_command.take() {
-            let tag: NSInteger = msg_send![item, tag];
-            let index = tag as usize;
-            if let Some(action) = lock.menu_actions.get(index) {
-                let action = action.boxed_clone();
-                drop(lock);
-                callback(&*action);
-            }
+            drop(lock);
+            callback(&*action);
             platform.0.lock().menu_command.get_or_insert(callback);
         }
     }
@@ -1458,15 +1498,14 @@ extern "C" fn validate_menu_item(this: &mut Object, _: Sel, item: id) -> bool {
     unsafe {
         let mut result = false;
         let platform = get_mac_platform(this);
+        let tag: NSInteger = msg_send![item, tag];
         let mut lock = platform.0.lock();
+        let Some(action) = menu_action_for_tag(&lock, tag) else {
+            return result;
+        };
         if let Some(mut callback) = lock.validate_menu_command.take() {
-            let tag: NSInteger = msg_send![item, tag];
-            let index = tag as usize;
-            if let Some(action) = lock.menu_actions.get(index) {
-                let action = action.boxed_clone();
-                drop(lock);
-                result = callback(action.as_ref());
-            }
+            drop(lock);
+            result = callback(action.as_ref());
             platform
                 .0
                 .lock()
