@@ -1598,15 +1598,19 @@ impl App {
         self.platform.should_auto_hide_scrollbars()
     }
 
-    /// Restarts the application.
-    pub fn restart(&mut self) {
+    /// Restarts the application. Returns an error if the platform could not
+    /// schedule the relaunch, in which case the app keeps running.
+    pub fn restart(&mut self) -> anyhow::Result<()> {
+        // Keep the restart path and arguments (and the restart observers'
+        // side effects) for a retry when the platform rejects the relaunch.
+        self.platform
+            .restart(self.restart_path.clone(), self.restart_arguments.clone())?;
+        self.restart_path = None;
+        self.restart_arguments = Vec::new();
         self.restart_observers
             .clone()
             .retain(&(), |observer| observer(self));
-        self.platform.restart(
-            self.restart_path.take(),
-            std::mem::take(&mut self.restart_arguments),
-        )
+        Ok(())
     }
 
     /// Sets the path to use when restarting the application.
@@ -3170,7 +3174,7 @@ mod test {
 
         cx.update(|cx| {
             cx.set_restart_path(restart_path.clone());
-            cx.restart();
+            cx.restart().expect("restart was rejected");
         });
 
         let (path, restart_arguments) = restart.await.expect("restart was not requested");

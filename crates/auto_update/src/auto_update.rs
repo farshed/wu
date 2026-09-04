@@ -1591,7 +1591,7 @@ mod tests {
             }
         );
         let will_restart = cx.expect_restart();
-        cx.update(|cx| cx.restart());
+        cx.update(|cx| cx.restart()).expect("restart was rejected");
         let (path, arguments) = will_restart.await.unwrap();
         assert!(arguments.is_empty());
         let path = path.unwrap();
@@ -1772,12 +1772,4 @@ mod tests {
 
         assert_eq!(newer_version.unwrap(), Some(fetched_version));
     }
-
-
-
-
-
-
-
-
 }

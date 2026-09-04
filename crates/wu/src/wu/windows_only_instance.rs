@@ -25,13 +25,21 @@ use windows::{
 
 use crate::{Args, OpenListener, RawOpenRequest};
 
+/// Instances using different `--user-data-dir`s must not answer each other.
+fn instance_identifier() -> String {
+    match paths::custom_data_dir_instance_hash() {
+        Some(hash) => format!("{}-{hash:x}", app_identifier()),
+        None => app_identifier().to_string(),
+    }
+}
+
 #[inline]
 fn is_first_instance() -> bool {
     unsafe {
         CreateMutexW(
             None,
             false,
-            &HSTRING::from(format!("{}-Instance-Mutex", app_identifier())),
+            &HSTRING::from(format!("{}-Instance-Mutex", instance_identifier())),
         )
         .expect("Unable to create instance mutex.")
     };
@@ -64,7 +72,7 @@ pub fn handle_single_instance(opener: OpenListener, args: &Args) -> bool {
 fn with_pipe(f: &dyn Fn(String)) {
     let pipe = unsafe {
         CreateNamedPipeW(
-            &HSTRING::from(format!("\\\\.\\pipe\\{}-Named-Pipe", app_identifier())),
+            &HSTRING::from(format!("\\\\.\\pipe\\{}-Named-Pipe", instance_identifier())),
             PIPE_ACCESS_INBOUND,
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
             1,
@@ -188,6 +196,7 @@ fn send_args_to_instance(args: &Args) -> anyhow::Result<()> {
                         CliResponse::PromptOpenBehavior => {
                             tx.send(CliRequest::SetOpenBehavior {
                                 behavior: cli::CliBehaviorSetting::ExistingWindow,
+                                persist: false,
                             })?;
                         }
                     }
@@ -208,7 +217,7 @@ fn send_args_to_instance(args: &Args) -> anyhow::Result<()> {
 fn write_message_to_instance_pipe(message: &[u8]) -> anyhow::Result<()> {
     unsafe {
         let pipe = CreateFileW(
-            &HSTRING::from(format!("\\\\.\\pipe\\{}-Named-Pipe", app_identifier())),
+            &HSTRING::from(format!("\\\\.\\pipe\\{}-Named-Pipe", instance_identifier())),
             GENERIC_WRITE.0,
             FILE_SHARE_MODE::default(),
             None,

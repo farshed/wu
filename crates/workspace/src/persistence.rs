@@ -2198,16 +2198,23 @@ impl WorkspaceDb {
                 let window_id = window_id.map(WindowId::from);
 
                 if let Some(remote_connection_id) = remote_connection_id {
+                    let Some(connection_options) = self
+                        .remote_connection(RemoteConnectionId(remote_connection_id))
+                        .with_context(|| {
+                            format!("loading remote connection for workspace {workspace_id:?}")
+                        })
+                        .log_err()
+                    else {
+                        continue;
+                    };
                     workspaces.push(SessionWorkspace {
                         workspace_id,
-                        location: SerializedWorkspaceLocation::Remote(
-                            self.remote_connection(RemoteConnectionId(remote_connection_id))?,
-                        ),
+                        location: SerializedWorkspaceLocation::Remote(connection_options),
                         paths,
                         window_id,
                     });
-                } else if !paths.is_empty()
-                    && Self::all_paths_exist_with_a_directory(paths.paths(), fs).await
+                } else if paths.is_empty()
+                    || Self::all_paths_exist_with_a_directory(paths.paths(), fs).await
                 {
                     workspaces.push(SessionWorkspace {
                         workspace_id,

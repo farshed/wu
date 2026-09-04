@@ -591,7 +591,7 @@ mod tests {
     fn register_test_themes(cx: &mut TestAppContext) {
         cx.update(|cx| {
             let registry = ThemeRegistry::global(cx);
-            let base_theme = registry.get("One Dark").unwrap();
+            let base_theme = registry.get(theme::DEFAULT_DARK_THEME).unwrap();
 
             let mut test_light = (*base_theme).clone();
             test_light.id = "test-light".to_string();

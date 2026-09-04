@@ -1060,6 +1060,28 @@ pub trait GitRepository: Send + Sync {
         path_prefixes: &[RepoPath],
     ) -> BoxFuture<'static, Result<crate::status::GitDiffStat>>;
 
+    /// Computes all three diff stats at once so the untracked file scan is
+    /// shared between the worktree-side diffs.
+    fn diff_stats(
+        &self,
+        path_prefixes: &[RepoPath],
+    ) -> BoxFuture<'static, Result<crate::status::GitDiffStats>> {
+        let head_to_worktree = self.diff_stat(DiffStatType::HeadToWorktree, path_prefixes);
+        let head_to_index = self.diff_stat(DiffStatType::HeadToIndex, path_prefixes);
+        let index_to_worktree = self.diff_stat(DiffStatType::IndexToWorktree, path_prefixes);
+        async move {
+            let (head_to_worktree, head_to_index, index_to_worktree) =
+                futures::future::try_join3(head_to_worktree, head_to_index, index_to_worktree)
+                    .await?;
+            Ok(crate::status::GitDiffStats {
+                head_to_worktree,
+                head_to_index,
+                index_to_worktree,
+            })
+        }
+        .boxed()
+    }
+
     /// Creates a checkpoint for the repository.
     fn checkpoint(&self) -> BoxFuture<'static, Result<GitRepositoryCheckpoint>>;
 
@@ -1141,7 +1163,7 @@ pub enum DiffType {
     MergeBase { base_ref: SharedString },
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffStatType {
     HeadToIndex,
     HeadToWorktree,
@@ -2515,83 +2537,48 @@ impl GitRepository for RealGitRepository {
         self.executor
             .spawn(async move {
                 let git_binary = git_binary?;
-                let mut args: Vec<String> =
-                    vec!["diff".into(), "--numstat".into(), "--no-renames".into()];
-                // `git diff` never reports untracked files, so worktree-side
-                // diffs list them separately and count their lines as added.
-                let include_untracked = match diff {
-                    DiffStatType::HeadToIndex => {
-                        args.extend(["--cached".into(), "HEAD".into()]);
-                        false
-                    }
-                    DiffStatType::HeadToWorktree => {
-                        args.push("HEAD".into());
-                        true
-                    }
-                    DiffStatType::IndexToWorktree => true,
-                };
-                if !path_prefixes.is_empty() {
-                    args.push("--".into());
-                    args.extend(
-                        path_prefixes
-                            .iter()
-                            .map(|p| p.as_std_path().to_string_lossy().into_owned()),
-                    );
+                let stat = numstat(&git_binary, diff, &path_prefixes).await?;
+                if diff == DiffStatType::HeadToIndex {
+                    return Ok(stat);
                 }
-                let output = git_binary.run(&args).await?;
-                let mut stat = crate::status::parse_numstat(&output);
+                let untracked =
+                    untracked_diff_stats(&git_binary, &working_directory?, &path_prefixes).await?;
+                Ok(crate::status::merge_untracked_stats(&stat, &untracked))
+            })
+            .boxed()
+    }
 
-                if include_untracked {
-                    let working_directory = working_directory?;
-                    let mut args: Vec<String> = vec![
-                        "ls-files".into(),
-                        "--others".into(),
-                        "--exclude-standard".into(),
-                        "-z".into(),
-                    ];
-                    if !path_prefixes.is_empty() {
-                        args.push("--".into());
-                        args.extend(
-                            path_prefixes
-                                .iter()
-                                .map(|p| p.as_std_path().to_string_lossy().into_owned()),
-                        );
-                    }
-                    let output = git_binary.run(&args).await?;
-                    let mut entries = stat.entries.to_vec();
-                    for path in output.split('\0').filter(|path| !path.is_empty()) {
-                        let Ok(repo_path) = RepoPath::new(path) else {
-                            continue;
-                        };
-                        let absolute_path = working_directory.join(repo_path.as_std_path());
-                        let Ok(contents) = smol::fs::read(&absolute_path).await else {
-                            continue;
-                        };
-                        // Match `git diff --numstat`, which reports no line
-                        // counts for binary files.
-                        if contents.iter().take(8000).any(|&byte| byte == 0) {
-                            continue;
-                        }
-                        let mut added = contents.iter().filter(|&&byte| byte == b'\n').count();
-                        if contents.last().is_some_and(|&byte| byte != b'\n') {
-                            added += 1;
-                        }
-                        entries.push((
-                            repo_path,
-                            crate::status::DiffStat {
-                                added: added.min(u32::MAX as usize) as u32,
-                                deleted: 0,
-                            },
-                        ));
-                    }
-                    entries.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-                    entries.dedup_by(|(a, _), (b, _)| a == b);
-                    stat = crate::status::GitDiffStat {
-                        entries: entries.into(),
-                    };
-                }
+    fn diff_stats(
+        &self,
+        path_prefixes: &[RepoPath],
+    ) -> BoxFuture<'static, Result<crate::status::GitDiffStats>> {
+        let path_prefixes = path_prefixes.to_vec();
+        let git_binary = self.git_binary_in_worktree();
+        let working_directory = self.working_directory();
 
-                Ok(stat)
+        self.executor
+            .spawn(async move {
+                let git_binary = git_binary?;
+                let working_directory = working_directory?;
+                let (head_to_worktree, head_to_index, index_to_worktree, untracked) =
+                    futures::future::try_join4(
+                        numstat(&git_binary, DiffStatType::HeadToWorktree, &path_prefixes),
+                        numstat(&git_binary, DiffStatType::HeadToIndex, &path_prefixes),
+                        numstat(&git_binary, DiffStatType::IndexToWorktree, &path_prefixes),
+                        untracked_diff_stats(&git_binary, &working_directory, &path_prefixes),
+                    )
+                    .await?;
+                Ok(crate::status::GitDiffStats {
+                    head_to_worktree: crate::status::merge_untracked_stats(
+                        &head_to_worktree,
+                        &untracked,
+                    ),
+                    head_to_index,
+                    index_to_worktree: crate::status::merge_untracked_stats(
+                        &index_to_worktree,
+                        &untracked,
+                    ),
+                })
             })
             .boxed()
     }
@@ -3790,6 +3777,126 @@ fn parse_initial_graph_output<'a>(
         .collect()
 }
 
+const MAX_UNTRACKED_DIFF_STAT_FILE_SIZE: u64 = 2 * 1024 * 1024;
+const BINARY_CHECK_LENGTH: usize = 8000;
+
+async fn numstat(
+    git_binary: &GitBinary,
+    diff: DiffStatType,
+    path_prefixes: &[RepoPath],
+) -> Result<crate::status::GitDiffStat> {
+    let mut args: Vec<String> = vec![
+        "diff".into(),
+        "--numstat".into(),
+        "--no-renames".into(),
+        "-z".into(),
+    ];
+    match diff {
+        DiffStatType::HeadToIndex => args.extend(["--cached".into(), "HEAD".into()]),
+        DiffStatType::HeadToWorktree => args.push("HEAD".into()),
+        DiffStatType::IndexToWorktree => {}
+    }
+    if !path_prefixes.is_empty() {
+        args.push("--".into());
+        args.extend(
+            path_prefixes
+                .iter()
+                .map(|path| path.as_std_path().to_string_lossy().into_owned()),
+        );
+    }
+    let output = git_binary.run_lossy(&args).await?;
+    Ok(crate::status::parse_numstat(&output))
+}
+
+/// `git diff` never reports untracked files, so worktree-side diffs list
+/// them separately and count their lines as added.
+async fn untracked_diff_stats(
+    git_binary: &GitBinary,
+    working_directory: &Path,
+    path_prefixes: &[RepoPath],
+) -> Result<Vec<(RepoPath, crate::status::DiffStat)>> {
+    let mut args: Vec<String> = vec![
+        "ls-files".into(),
+        "--others".into(),
+        "--exclude-standard".into(),
+        "-z".into(),
+    ];
+    if !path_prefixes.is_empty() {
+        args.push("--".into());
+        args.extend(
+            path_prefixes
+                .iter()
+                .map(|path| path.as_std_path().to_string_lossy().into_owned()),
+        );
+    }
+    let output = git_binary.run_lossy(&args).await?;
+    let mut entries = Vec::new();
+    for path in output.split('\0').filter(|path| !path.is_empty()) {
+        let Ok(repo_path) = RepoPath::new(path) else {
+            continue;
+        };
+        let absolute_path = working_directory.join(repo_path.as_std_path());
+        match untracked_file_diff_stat(&absolute_path).await {
+            Ok(Some(stat)) => entries.push((repo_path, stat)),
+            Ok(None) => {}
+            Err(error) => log::debug!("failed to read untracked file {absolute_path:?}: {error:#}"),
+        }
+    }
+    entries.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+    entries.dedup_by(|(a, _), (b, _)| a == b);
+    Ok(entries)
+}
+
+/// Returns `None` for anything `git diff --numstat` would report no line
+/// counts for: directories, binary files, and files too large to be worth
+/// scanning on every refresh. Git stores a symlink as a blob holding the
+/// target path, so numstat reports one added line for it regardless of the
+/// target.
+async fn untracked_file_diff_stat(path: &Path) -> Result<Option<crate::status::DiffStat>> {
+    let metadata = smol::fs::symlink_metadata(path).await?;
+    if metadata.is_symlink() {
+        return Ok(Some(crate::status::DiffStat {
+            added: 1,
+            deleted: 0,
+        }));
+    }
+    if !metadata.is_file() || metadata.len() > MAX_UNTRACKED_DIFF_STAT_FILE_SIZE {
+        return Ok(None);
+    }
+    let mut file = smol::fs::File::open(path).await?;
+    let mut buffer = [0u8; 8192];
+    let mut bytes_checked_for_binary = 0;
+    let mut newline_count: u64 = 0;
+    let mut last_byte = None;
+    loop {
+        let bytes_read = file.read(&mut buffer).await?;
+        if bytes_read == 0 {
+            break;
+        }
+        let Some(chunk) = buffer.get(..bytes_read) else {
+            break;
+        };
+        let binary_check_length = BINARY_CHECK_LENGTH.saturating_sub(bytes_checked_for_binary);
+        if chunk
+            .iter()
+            .take(binary_check_length)
+            .any(|&byte| byte == 0)
+        {
+            return Ok(None);
+        }
+        bytes_checked_for_binary += bytes_read;
+        newline_count += chunk.iter().filter(|&&byte| byte == b'\n').count() as u64;
+        last_byte = chunk.last().copied();
+    }
+    if last_byte.is_some_and(|byte| byte != b'\n') {
+        newline_count += 1;
+    }
+    Ok(Some(crate::status::DiffStat {
+        added: newline_count.min(u32::MAX as u64) as u32,
+        deleted: 0,
+    }))
+}
+
 fn git_status_args(path_prefixes: &[RepoPath]) -> Vec<OsString> {
     let mut args = vec![
         OsString::from("status"),
@@ -4003,6 +4110,22 @@ impl GitBinary {
     where
         S: AsRef<OsStr>,
     {
+        Ok(String::from_utf8(self.run_bytes(args).await?)?)
+    }
+
+    /// Like `run_raw`, but non-UTF-8 bytes (possible in `-z` path output) are
+    /// replaced instead of failing the whole command.
+    pub async fn run_lossy<S>(&self, args: &[S]) -> Result<String>
+    where
+        S: AsRef<OsStr>,
+    {
+        Ok(String::from_utf8_lossy(&self.run_bytes(args).await?).into_owned())
+    }
+
+    async fn run_bytes<S>(&self, args: &[S]) -> Result<Vec<u8>>
+    where
+        S: AsRef<OsStr>,
+    {
         let mut command = self.build_command(args);
         let output = command.output().await?;
         anyhow::ensure!(
@@ -4013,7 +4136,7 @@ impl GitBinary {
                 status: output.status,
             }
         );
-        Ok(String::from_utf8(output.stdout)?)
+        Ok(output.stdout)
     }
 
     #[allow(clippy::disallowed_methods)]
@@ -4435,6 +4558,49 @@ mod tests {
             fs::canonicalize(left.as_ref()).unwrap(),
             fs::canonicalize(right.as_ref()).unwrap()
         );
+    }
+
+    #[test]
+    fn test_untracked_file_diff_stat() {
+        let dir = tempfile::tempdir().unwrap();
+        let stat = |name: &str| smol::block_on(untracked_file_diff_stat(&dir.path().join(name)));
+        let lines = |added| Some(crate::status::DiffStat { added, deleted: 0 });
+
+        fs::write(dir.path().join("no_newline.txt"), "bb").unwrap();
+        fs::write(dir.path().join("newline.txt"), "a\nb\n").unwrap();
+        fs::write(dir.path().join("empty.txt"), "").unwrap();
+        fs::write(dir.path().join("binary.dat"), b"a\0b\n").unwrap();
+        let mut late_nul = vec![b'\n'; BINARY_CHECK_LENGTH];
+        late_nul.push(0);
+        fs::write(dir.path().join("late_nul.txt"), &late_nul).unwrap();
+        fs::write(
+            dir.path().join("large.txt"),
+            vec![b'\n'; MAX_UNTRACKED_DIFF_STAT_FILE_SIZE as usize + 1],
+        )
+        .unwrap();
+        fs::create_dir(dir.path().join("subdir")).unwrap();
+
+        assert_eq!(stat("no_newline.txt").unwrap(), lines(1));
+        assert_eq!(stat("newline.txt").unwrap(), lines(2));
+        assert_eq!(stat("empty.txt").unwrap(), lines(0));
+        assert_eq!(stat("binary.dat").unwrap(), None);
+        assert_eq!(
+            stat("late_nul.txt").unwrap(),
+            lines(BINARY_CHECK_LENGTH as u32 + 1)
+        );
+        assert_eq!(stat("large.txt").unwrap(), None);
+        assert_eq!(stat("subdir").unwrap(), None);
+        assert!(stat("missing.txt").is_err());
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("newline.txt", dir.path().join("link")).unwrap();
+            std::os::unix::fs::symlink("missing", dir.path().join("dangling")).unwrap();
+            std::os::unix::fs::symlink("subdir", dir.path().join("dir_link")).unwrap();
+            assert_eq!(stat("link").unwrap(), lines(1));
+            assert_eq!(stat("dangling").unwrap(), lines(1));
+            assert_eq!(stat("dir_link").unwrap(), lines(1));
+        }
     }
 
     #[gpui::test]
@@ -6091,7 +6257,7 @@ mod tests {
     #[test]
     fn test_branches_parsing_containing_refs_with_missing_fields() {
         #[allow(clippy::octal_escapes)]
-        let input = " \090012116c03db04344ab10d50348553aa94f1ea0\0refs/heads/broken\n \0eb0cae33272689bd11030822939dd2701c52f81e\0895951d681e5561478c0acdd6905e8aacdfd2249\0refs/heads/dev\0\0\01762948725\0Zed\0Add feature\n*\0895951d681e5561478c0acdd6905e8aacdfd2249\0\0refs/heads/main\0\0\01762948695\0Zed\0Initial commit\n";
+        let input = " \090012116c03db04344ab10d50348553aa94f1ea0\0refs/heads/broken\n \0eb0cae33272689bd11030822939dd2701c52f81e\0895951d681e5561478c0acdd6905e8aacdfd2249\0refs/heads/dev\0\0\01762948725\0Wu\0Add feature\n*\0895951d681e5561478c0acdd6905e8aacdfd2249\0\0refs/heads/main\0\0\01762948695\0Wu\0Initial commit\n";
 
         let branches = parse_branch_input(input).unwrap();
         assert_eq!(branches.len(), 2);

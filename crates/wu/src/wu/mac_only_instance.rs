@@ -5,15 +5,23 @@ use std::{
     time::Duration,
 };
 
-use sysinfo::System;
-
+use anyhow::Context as _;
 use release_channel::ReleaseChannel;
+use util::ResultExt;
+
+use crate::{OpenListener, RawOpenRequest};
 
 const LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(10);
 const RECEIVE_TIMEOUT: Duration = Duration::from_millis(35);
 const SEND_TIMEOUT: Duration = Duration::from_millis(20);
+const FORWARD_TIMEOUT: Duration = Duration::from_millis(250);
 const USER_BLOCK: u16 = 100;
+// Kept below the per-user ports, which start at 45737 and can reach 65534
+// for large user IDs.
+const DATA_DIR_PORT_BASE: u16 = 30000;
+const DATA_DIR_PORT_RANGE: u16 = 10000;
+const MAX_FORWARDED_REQUEST_BYTES: u64 = 1024 * 1024;
 
 fn address() -> SocketAddr {
     // These port numbers are offset by the user ID to avoid conflicts between
@@ -28,50 +36,37 @@ fn address() -> SocketAddr {
     // uses the next block of ports (46438 for user 501, 46439 for user 502, ...).
     // Wu uses a different port range than Zed so both apps can run side by side
     // without answering each other's single-instance handshake.
+    //
+    // A custom `--user-data-dir` is a separate instance, so it gets its own port
+    // derived from the data directory, below the per-user blocks.
     let port = match *release_channel::RELEASE_CHANNEL {
         ReleaseChannel::Dev => 45737,
         ReleaseChannel::Stable => 45737 + (2 * USER_BLOCK),
     };
-    let mut user_port = port;
-    let mut sys = System::new_all();
-    sys.refresh_all();
-    if let Ok(current_pid) = sysinfo::get_current_pid()
-        && let Some(uid) = sys
-            .process(current_pid)
-            .and_then(|process| process.user_id())
-    {
-        let uid_u32 = get_uid_as_u32(uid);
+    let uid = unsafe { libc::getuid() };
+    let user_port = if let Some(data_dir_hash) = paths::custom_data_dir_instance_hash() {
+        let hash = data_dir_hash ^ u64::from(uid);
+        DATA_DIR_PORT_BASE + (hash % u64::from(DATA_DIR_PORT_RANGE)) as u16
+    } else {
         // Ensure that the user ID is not too large to avoid overflow when
         // calculating the port number. This seems unlikely but it doesn't
         // hurt to be safe.
         let max_port = 65535;
         let max_uid: u32 = max_port - port as u32;
-        let wrapped_uid: u16 = (uid_u32 % max_uid) as u16;
-        user_port += wrapped_uid;
-    }
+        port + (uid % max_uid) as u16
+    };
 
     SocketAddr::V4(SocketAddrV4::new(LOCALHOST, user_port))
 }
 
-#[cfg(unix)]
-fn get_uid_as_u32(uid: &sysinfo::Uid) -> u32 {
-    *uid.clone()
-}
-
-#[cfg(windows)]
-fn get_uid_as_u32(uid: &sysinfo::Uid) -> u32 {
-    // Extract the RID which is an integer
-    uid.to_string()
-        .rsplit('-')
-        .next()
-        .and_then(|rid| rid.parse::<u32>().ok())
-        .unwrap_or(0)
-}
-
-fn instance_handshake() -> &'static str {
-    match *release_channel::RELEASE_CHANNEL {
+fn instance_handshake() -> String {
+    let handshake = match *release_channel::RELEASE_CHANNEL {
         ReleaseChannel::Dev => "Wu Editor Dev Instance Running",
         ReleaseChannel::Stable => "Wu Editor Stable Instance Running",
+    };
+    match paths::custom_data_dir_instance_hash() {
+        Some(hash) => format!("{handshake} {hash:x}"),
+        None => handshake.to_string(),
     }
 }
 
@@ -81,8 +76,15 @@ pub enum IsOnlyInstance {
     No,
 }
 
-pub fn ensure_only_instance() -> IsOnlyInstance {
-    if check_got_handshake() {
+/// Checks whether another instance is already running. If so, `request` is
+/// handed over to it so the paths still get opened. Otherwise this instance
+/// starts answering the handshake and opens requests forwarded by later
+/// launches through `open_listener`.
+pub fn ensure_only_instance(
+    open_listener: OpenListener,
+    request: RawOpenRequest,
+) -> IsOnlyInstance {
+    if check_got_handshake(&request) {
         return IsOnlyInstance::No;
     }
 
@@ -91,7 +93,7 @@ pub fn ensure_only_instance() -> IsOnlyInstance {
 
         Err(err) => {
             log::warn!("Error binding to single instance port: {err}");
-            if check_got_handshake() {
+            if check_got_handshake(&request) {
                 return IsOnlyInstance::No;
             }
 
@@ -103,45 +105,95 @@ pub fn ensure_only_instance() -> IsOnlyInstance {
         }
     };
 
-    thread::Builder::new()
+    let handshake = instance_handshake();
+    if let Err(error) = thread::Builder::new()
         .name("EnsureSingleton".to_string())
         .spawn(move || {
             for stream in listener.incoming() {
-                let mut stream = match stream {
+                let stream = match stream {
                     Ok(stream) => stream,
                     Err(_) => return,
                 };
 
-                _ = stream.set_nodelay(true);
-                _ = stream.set_read_timeout(Some(SEND_TIMEOUT));
-                _ = stream.write_all(instance_handshake().as_bytes());
+                // Each connection gets its own thread. Reading the forwarded
+                // request can wait up to FORWARD_TIMEOUT, which is longer than
+                // a launcher waits for the handshake; serving connections one
+                // at a time would let an idle client make a concurrent launch
+                // miss the handshake and start a duplicate instance.
+                let handshake = handshake.clone();
+                let open_listener = open_listener.clone();
+                if let Err(error) = thread::Builder::new()
+                    .name("SingletonConnection".to_string())
+                    .spawn(move || answer_launch(stream, &handshake, &open_listener))
+                {
+                    log::error!("failed to start single instance connection thread: {error}");
+                }
             }
         })
-        .unwrap();
+    {
+        log::error!("failed to start single instance listener thread: {error}");
+    }
 
     IsOnlyInstance::Yes
 }
 
-fn check_got_handshake() -> bool {
-    match TcpStream::connect_timeout(&address(), CONNECT_TIMEOUT) {
-        Ok(mut stream) => {
-            let mut buf = vec![0u8; instance_handshake().len()];
-
-            stream.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
-            if let Err(err) = stream.read_exact(&mut buf) {
-                log::warn!("Connected to single instance port but failed to read: {err}");
-                return false;
-            }
-
-            if buf == instance_handshake().as_bytes() {
-                log::info!("Got instance handshake");
-                return true;
-            }
-
-            log::warn!("Got wrong instance handshake value");
-            false
-        }
-
-        Err(_) => false,
+fn answer_launch(mut stream: TcpStream, handshake: &str, open_listener: &OpenListener) {
+    stream.set_nodelay(true).log_err();
+    stream.set_write_timeout(Some(SEND_TIMEOUT)).log_err();
+    stream.set_read_timeout(Some(FORWARD_TIMEOUT)).log_err();
+    if stream.write_all(handshake.as_bytes()).log_err().is_none() {
+        return;
     }
+
+    let mut forwarded = Vec::new();
+    if (&mut stream)
+        .take(MAX_FORWARDED_REQUEST_BYTES)
+        .read_to_end(&mut forwarded)
+        .log_err()
+        .is_none()
+        || forwarded.is_empty()
+    {
+        return;
+    }
+    if let Some(request) = serde_json::from_slice::<RawOpenRequest>(&forwarded)
+        .log_err()
+        .filter(|request| !request.is_empty())
+    {
+        open_listener.open(request);
+    }
+}
+
+fn check_got_handshake(request: &RawOpenRequest) -> bool {
+    let Ok(mut stream) = TcpStream::connect_timeout(&address(), CONNECT_TIMEOUT) else {
+        return false;
+    };
+
+    let handshake = instance_handshake();
+    let mut buf = vec![0u8; handshake.len()];
+
+    stream.set_read_timeout(Some(RECEIVE_TIMEOUT)).log_err();
+    if let Err(err) = stream.read_exact(&mut buf) {
+        log::warn!("Connected to single instance port but failed to read: {err}");
+        return false;
+    }
+
+    if buf != handshake.as_bytes() {
+        log::warn!("Got wrong instance handshake value");
+        return false;
+    }
+
+    log::info!("Got instance handshake");
+    if !request.is_empty() {
+        forward_request(&mut stream, request)
+            .context("forwarding open request to the running instance")
+            .log_err();
+    }
+    true
+}
+
+fn forward_request(stream: &mut TcpStream, request: &RawOpenRequest) -> anyhow::Result<()> {
+    stream.set_write_timeout(Some(FORWARD_TIMEOUT))?;
+    stream.write_all(&serde_json::to_vec(request)?)?;
+    stream.shutdown(std::net::Shutdown::Write)?;
+    Ok(())
 }

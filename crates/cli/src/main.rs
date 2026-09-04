@@ -736,9 +736,12 @@ fn run() -> Result<()> {
                             return Ok(());
                         }
                         CliResponse::PromptOpenBehavior => {
-                            let behavior = prompt_open_behavior()
-                                .unwrap_or(cli::CliBehaviorSetting::ExistingWindow);
-                            tx.send(CliRequest::SetOpenBehavior { behavior })?;
+                            let behavior = prompt_open_behavior();
+                            tx.send(CliRequest::SetOpenBehavior {
+                                behavior: behavior
+                                    .unwrap_or(cli::CliBehaviorSetting::ExistingWindow),
+                                persist: behavior.is_some(),
+                            })?;
                         }
                     }
                 }
@@ -901,8 +904,7 @@ mod linux {
 
                 // libexec is the standard, lib/wu is for Arch (and other non-libexec distros),
                 // ./wu is for the target directory in development builds.
-                let possible_locations =
-                    ["../libexec/wu-editor", "../lib/wu/wu-editor", "./wu"];
+                let possible_locations = ["../libexec/wu-editor", "../lib/wu/wu-editor", "./wu"];
                 possible_locations
                     .iter()
                     .find_map(|p| dir.join(p).canonicalize().ok().filter(|path| path != &cli))
@@ -1176,12 +1178,21 @@ mod windows {
     use std::path::{Path, PathBuf};
     use std::process::{ExitStatus, Stdio};
 
+    /// Must match `instance_identifier` in the app's `windows_only_instance`,
+    /// otherwise a `--user-data-dir` instance is unreachable from the CLI.
+    fn instance_identifier() -> String {
+        match paths::custom_data_dir_instance_hash() {
+            Some(hash) => format!("{}-{hash:x}", app_identifier()),
+            None => app_identifier().to_string(),
+        }
+    }
+
     fn check_single_instance() -> bool {
         let mutex = unsafe {
             CreateMutexW(
                 None,
                 false,
-                &HSTRING::from(format!("{}-Instance-Mutex", app_identifier())),
+                &HSTRING::from(format!("{}-Instance-Mutex", instance_identifier())),
             )
             .expect("Unable to create instance sync event")
         };
@@ -1224,7 +1235,10 @@ mod windows {
             } else {
                 unsafe {
                     let pipe = CreateFileW(
-                        &HSTRING::from(format!("\\\\.\\pipe\\{}-Named-Pipe", app_identifier())),
+                        &HSTRING::from(format!(
+                            "\\\\.\\pipe\\{}-Named-Pipe",
+                            instance_identifier()
+                        )),
                         GENERIC_WRITE.0,
                         FILE_SHARE_MODE::default(),
                         None,

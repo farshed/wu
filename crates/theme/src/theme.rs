@@ -47,7 +47,7 @@ pub use crate::theme_settings_provider::*;
 pub use crate::ui_density::*;
 
 /// The name of the default dark theme.
-pub const DEFAULT_DARK_THEME: &str = "One Dark";
+pub const DEFAULT_DARK_THEME: &str = "Catppuccin Mocha";
 
 /// Defines window border radius for platforms that use client side decorations.
 pub const CLIENT_SIDE_DECORATION_ROUNDING: Pixels = px(10.0);

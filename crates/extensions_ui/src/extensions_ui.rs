@@ -29,9 +29,8 @@ use settings::Settings;
 use strum::IntoEnumIterator as _;
 use theme_settings::ThemeSettings;
 use ui::{
-    Banner, ContextMenu, ListItem, ListItemSpacing, ScrollableHandle,
-    ToggleButtonGroup, ToggleButtonGroupSize, ToggleButtonGroupStyle, ToggleButtonSimple,
-    WithScrollbar, prelude::*,
+    Banner, ContextMenu, ListItem, ListItemSpacing, ScrollableHandle, ToggleButtonGroup,
+    ToggleButtonGroupSize, ToggleButtonGroupStyle, ToggleButtonSimple, WithScrollbar, prelude::*,
 };
 use util::ResultExt;
 use workspace::{
@@ -127,6 +126,8 @@ pub fn init(cx: &mut App) {
                         ExtensionCategoryFilter::Snippets => ExtensionProvides::Snippets,
                         ExtensionCategoryFilter::DebugAdapters => ExtensionProvides::DebugAdapters,
                     });
+
+                    ExtensionStore::global(cx).update(cx, |store, cx| store.check_for_updates(cx));
 
                     let existing = workspace
                         .active_pane()

@@ -578,23 +578,39 @@ pub struct GitDiffStat {
     pub entries: Arc<[(RepoPath, DiffStat)]>,
 }
 
-/// Parses the output of `git diff --numstat` where output looks like:
-///
-/// ```text
-/// 24   12   dir/file.txt
-/// ```
+#[derive(Clone, Debug, Default)]
+pub struct GitDiffStats {
+    pub head_to_worktree: GitDiffStat,
+    pub head_to_index: GitDiffStat,
+    pub index_to_worktree: GitDiffStat,
+}
+
+/// Parses the output of `git diff --numstat -z`. Each record is
+/// `added\tdeleted\tpath\0`; for renames the path field is empty and the
+/// old and new paths follow as two more NUL-terminated fields.
 pub fn parse_numstat(output: &str) -> GitDiffStat {
     let mut entries = Vec::new();
-    for line in output.lines() {
-        let line = line.trim();
-        if line.is_empty() {
+    let mut records = output.split('\0');
+    while let Some(record) = records.next() {
+        if record.is_empty() {
             continue;
         }
-        let mut parts = line.splitn(3, '\t');
+        let mut parts = record.splitn(3, '\t');
         let (Some(added_str), Some(deleted_str), Some(path_str)) =
             (parts.next(), parts.next(), parts.next())
         else {
             continue;
+        };
+        let path_str = if path_str.is_empty() {
+            let (Some(_old_path), Some(new_path)) = (records.next(), records.next()) else {
+                break;
+            };
+            if new_path.is_empty() {
+                break;
+            }
+            new_path
+        } else {
+            path_str
         };
         let Ok(added) = added_str.parse::<u32>() else {
             continue;
@@ -615,6 +631,34 @@ pub fn parse_numstat(output: &str) -> GitDiffStat {
     }
 }
 
+/// Merges line counts for untracked files into a `git diff` stat. A path that
+/// is deleted in the index but present again in the worktree appears in both
+/// lists; its counts are summed so the result matches the `DA` status shown
+/// for such a file.
+pub fn merge_untracked_stats(
+    stat: &GitDiffStat,
+    untracked: &[(RepoPath, DiffStat)],
+) -> GitDiffStat {
+    if untracked.is_empty() {
+        return stat.clone();
+    }
+    let mut entries = Vec::with_capacity(stat.entries.len() + untracked.len());
+    entries.extend(stat.entries.iter().cloned());
+    entries.extend(untracked.iter().cloned());
+    entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+    entries.dedup_by(|(a, a_stat), (b, b_stat)| {
+        if a != b {
+            return false;
+        }
+        b_stat.added = b_stat.added.saturating_add(a_stat.added);
+        b_stat.deleted = b_stat.deleted.saturating_add(a_stat.deleted);
+        true
+    });
+    GitDiffStat {
+        entries: entries.into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -623,7 +667,7 @@ mod tests {
         status::{FileStatus, GitStatus, TreeDiff, TreeDiffStatus},
     };
 
-    use super::{DiffStat, parse_numstat};
+    use super::{DiffStat, merge_untracked_stats, parse_numstat};
 
     fn lookup<'a>(entries: &'a [(RepoPath, DiffStat)], path: &str) -> Option<&'a DiffStat> {
         let path = RepoPath::new(path).unwrap();
@@ -632,7 +676,7 @@ mod tests {
 
     #[test]
     fn test_parse_numstat_normal() {
-        let input = "10\t5\tsrc/main.rs\n3\t1\tREADME.md\n";
+        let input = "10\t5\tsrc/main.rs\x003\t1\tREADME.md\0";
         let result = parse_numstat(input);
         assert_eq!(result.entries.len(), 2);
         assert_eq!(
@@ -654,7 +698,7 @@ mod tests {
     #[test]
     fn test_parse_numstat_binary_files_skipped() {
         // git diff --numstat outputs "-\t-\tpath" for binary files
-        let input = "-\t-\timage.png\n5\t2\tsrc/lib.rs\n";
+        let input = "-\t-\timage.png\x005\t2\tsrc/lib.rs\0";
         let result = parse_numstat(input);
         assert_eq!(result.entries.len(), 1);
         assert!(lookup(&result.entries, "image.png").is_none());
@@ -670,13 +714,12 @@ mod tests {
     #[test]
     fn test_parse_numstat_empty_input() {
         assert!(parse_numstat("").entries.is_empty());
-        assert!(parse_numstat("\n\n").entries.is_empty());
-        assert!(parse_numstat("   \n  \n").entries.is_empty());
+        assert!(parse_numstat("\0\0").entries.is_empty());
     }
 
     #[test]
-    fn test_parse_numstat_malformed_lines_skipped() {
-        let input = "not_a_number\t5\tfile.rs\n10\t5\tvalid.rs\n";
+    fn test_parse_numstat_malformed_records_skipped() {
+        let input = "not_a_number\t5\tfile.rs\x0010\t5\tvalid.rs\0";
         let result = parse_numstat(input);
         assert_eq!(result.entries.len(), 1);
         assert_eq!(
@@ -689,9 +732,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_numstat_incomplete_lines_skipped() {
-        // Lines with fewer than 3 tab-separated fields are skipped
-        let input = "10\t5\n7\t3\tok.rs\n";
+    fn test_parse_numstat_incomplete_records_skipped() {
+        let input = "10\t5\x007\t3\tok.rs\0";
         let result = parse_numstat(input);
         assert_eq!(result.entries.len(), 1);
         assert_eq!(
@@ -705,13 +747,128 @@ mod tests {
 
     #[test]
     fn test_parse_numstat_zero_stats() {
-        let input = "0\t0\tunchanged_but_present.rs\n";
+        let input = "0\t0\tunchanged_but_present.rs\0";
         let result = parse_numstat(input);
         assert_eq!(
             lookup(&result.entries, "unchanged_but_present.rs"),
             Some(&DiffStat {
                 added: 0,
                 deleted: 0
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_numstat_rename_records() {
+        let input = "1\t0\t\0old.txt\0new.txt\x004\t2\tother.rs\0";
+        let result = parse_numstat(input);
+        assert_eq!(result.entries.len(), 2);
+        assert!(lookup(&result.entries, "old.txt").is_none());
+        assert_eq!(
+            lookup(&result.entries, "new.txt"),
+            Some(&DiffStat {
+                added: 1,
+                deleted: 0
+            })
+        );
+        assert_eq!(
+            lookup(&result.entries, "other.rs"),
+            Some(&DiffStat {
+                added: 4,
+                deleted: 2
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_numstat_truncated_rename_record() {
+        let input = "1\t0\t\0old.txt\0";
+        assert!(parse_numstat(input).entries.is_empty());
+    }
+
+    #[test]
+    fn test_parse_numstat_special_filenames() {
+        let input = "1\t0\ttab\tname.txt\x002\t0\ttrailing space.txt \x003\t1\t\u{fc}n\u{ef}.txt\x004\t0\tquo\"te.txt\0";
+        let result = parse_numstat(input);
+        assert_eq!(result.entries.len(), 4);
+        assert_eq!(
+            lookup(&result.entries, "tab\tname.txt"),
+            Some(&DiffStat {
+                added: 1,
+                deleted: 0
+            })
+        );
+        assert_eq!(
+            lookup(&result.entries, "trailing space.txt "),
+            Some(&DiffStat {
+                added: 2,
+                deleted: 0
+            })
+        );
+        assert_eq!(
+            lookup(&result.entries, "\u{fc}n\u{ef}.txt"),
+            Some(&DiffStat {
+                added: 3,
+                deleted: 1
+            })
+        );
+        assert_eq!(
+            lookup(&result.entries, "quo\"te.txt"),
+            Some(&DiffStat {
+                added: 4,
+                deleted: 0
+            })
+        );
+    }
+
+    #[test]
+    fn test_merge_untracked_stats_sums_index_deleted_and_untracked() {
+        let stat = parse_numstat("0\t2\tnew.txt\x003\t1\ttracked.rs\0");
+        let untracked = vec![
+            (
+                RepoPath::new("new.txt").unwrap(),
+                DiffStat {
+                    added: 5,
+                    deleted: 0,
+                },
+            ),
+            (
+                RepoPath::new("fresh.rs").unwrap(),
+                DiffStat {
+                    added: 7,
+                    deleted: 0,
+                },
+            ),
+        ];
+        let merged = merge_untracked_stats(&stat, &untracked);
+        assert_eq!(merged.entries.len(), 3);
+        assert_eq!(
+            lookup(&merged.entries, "new.txt"),
+            Some(&DiffStat {
+                added: 5,
+                deleted: 2
+            })
+        );
+        assert_eq!(
+            lookup(&merged.entries, "tracked.rs"),
+            Some(&DiffStat {
+                added: 3,
+                deleted: 1
+            })
+        );
+        assert_eq!(
+            lookup(&merged.entries, "fresh.rs"),
+            Some(&DiffStat {
+                added: 7,
+                deleted: 0
+            })
+        );
+        let reversed = merge_untracked_stats(&parse_numstat("0\t2\tnew.txt\0"), &untracked[..1]);
+        assert_eq!(
+            lookup(&reversed.entries, "new.txt"),
+            Some(&DiffStat {
+                added: 5,
+                deleted: 2
             })
         );
     }

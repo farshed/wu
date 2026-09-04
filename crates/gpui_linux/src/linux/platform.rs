@@ -267,7 +267,11 @@ impl<P: LinuxClient + 'static> Platform for LinuxPlatform<P> {
         self.inner.compositor_name()
     }
 
-    fn restart(&self, binary_path: Option<PathBuf>, arguments: Vec<std::ffi::OsString>) {
+    fn restart(
+        &self,
+        binary_path: Option<PathBuf>,
+        arguments: Vec<std::ffi::OsString>,
+    ) -> anyhow::Result<()> {
         use std::os::unix::process::CommandExt as _;
 
         // get the process id of the current process
@@ -276,13 +280,7 @@ impl<P: LinuxClient + 'static> Platform for LinuxPlatform<P> {
         let app_path = if let Some(path) = binary_path {
             path
         } else {
-            match self.app_path() {
-                Ok(path) => path,
-                Err(err) => {
-                    log::error!("Failed to get app path: {:?}", err);
-                    return;
-                }
-            }
+            self.app_path().context("failed to get app path")?
         };
 
         log::info!("Restarting process, using app path: {:?}", app_path);
@@ -303,7 +301,7 @@ impl<P: LinuxClient + 'static> Platform for LinuxPlatform<P> {
             clippy::disallowed_methods,
             reason = "We are restarting ourselves, using std command thus is fine"
         )]
-        let restart_process = new_std_command("/usr/bin/env")
+        let _restart_process = new_std_command("/usr/bin/env")
             .arg("bash")
             .arg("-c")
             .arg(script)
@@ -311,12 +309,10 @@ impl<P: LinuxClient + 'static> Platform for LinuxPlatform<P> {
             .arg(&app_path)
             .args(arguments)
             .process_group(0)
-            .spawn();
-
-        match restart_process {
-            Ok(_) => self.quit(),
-            Err(e) => log::error!("failed to spawn restart script: {:?}", e),
-        }
+            .spawn()
+            .context("failed to spawn restart script")?;
+        self.quit();
+        Ok(())
     }
 
     fn activate(&self, _ignoring_other_apps: bool) {

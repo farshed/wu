@@ -70,6 +70,9 @@ pub enum CliRequest {
     },
     SetOpenBehavior {
         behavior: CliBehaviorSetting,
+        /// Whether the answer came from the user and should be saved as
+        /// `cli_default_open_behavior`, or is a one-off default.
+        persist: bool,
     },
 }
 

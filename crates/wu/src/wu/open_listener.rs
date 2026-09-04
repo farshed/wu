@@ -18,6 +18,7 @@ use onboarding::FIRST_OPEN;
 use onboarding::show_onboarding_view;
 use recent_projects::{RemoteSettings, navigate_to_positions, open_remote_project};
 use remote::{RemoteConnectionOptions, WslConnectionOptions};
+use serde::{Deserialize, Serialize};
 use settings::Settings;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -318,13 +319,19 @@ fn parse_ssh_url(url: &str) -> Result<url::Url> {
 #[derive(Clone)]
 pub struct OpenListener(UnboundedSender<RawOpenRequest>);
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct RawOpenRequest {
     pub urls: Vec<String>,
     pub diff_paths: Vec<[String; 2]>,
     pub diff_all: bool,
     pub wsl: Option<String>,
     pub open_behavior: Option<cli::OpenBehavior>,
+}
+
+impl RawOpenRequest {
+    pub fn is_empty(&self) -> bool {
+        self.urls.is_empty() && self.diff_paths.is_empty()
+    }
 }
 
 impl Global for OpenListener {}
@@ -687,7 +694,7 @@ async fn resolve_open_behavior(
 
     responses.send(CliResponse::PromptOpenBehavior).log_err()?;
 
-    if let Some(CliRequest::SetOpenBehavior { behavior }) = requests.next().await {
+    if let Some(CliRequest::SetOpenBehavior { behavior, persist }) = requests.next().await {
         let behavior = match behavior {
             cli::CliBehaviorSetting::ExistingWindow => {
                 settings::CliDefaultOpenBehavior::ExistingWindow
@@ -695,12 +702,14 @@ async fn resolve_open_behavior(
             cli::CliBehaviorSetting::NewWindow => settings::CliDefaultOpenBehavior::NewWindow,
         };
 
-        let fs = app_state.fs.clone();
-        cx.update(|cx| {
-            settings::update_settings_file(fs, cx, move |content, _cx| {
-                content.workspace.cli_default_open_behavior = Some(behavior);
+        if persist {
+            let fs = app_state.fs.clone();
+            cx.update(|cx| {
+                settings::update_settings_file(fs, cx, move |content, _cx| {
+                    content.workspace.cli_default_open_behavior = Some(behavior);
+                });
             });
-        });
+        }
 
         return Some(behavior);
     }
@@ -2155,7 +2164,10 @@ mod tests {
                         let behavior =
                             prompt_response.unwrap_or(cli::CliBehaviorSetting::ExistingWindow);
                         request_tx
-                            .unbounded_send(CliRequest::SetOpenBehavior { behavior })
+                            .unbounded_send(CliRequest::SetOpenBehavior {
+                                behavior,
+                                persist: prompt_response.is_some(),
+                            })
                             .map_err(|error| anyhow::anyhow!("{error}"))?;
                     }
                 }

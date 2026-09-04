@@ -337,10 +337,15 @@ impl Platform for TestPlatform {
 
     fn quit(&self) {}
 
-    fn restart(&self, path: Option<PathBuf>, arguments: Vec<std::ffi::OsString>) {
+    fn restart(
+        &self,
+        path: Option<PathBuf>,
+        arguments: Vec<std::ffi::OsString>,
+    ) -> anyhow::Result<()> {
         if let Some(tx) = self.expect_restart.take() {
             tx.send((path, arguments)).unwrap();
         }
+        Ok(())
     }
 
     fn activate(&self, _ignoring_other_apps: bool) {

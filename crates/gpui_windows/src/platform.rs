@@ -474,10 +474,15 @@ impl Platform for WindowsPlatform {
             .detach();
     }
 
-    fn restart(&self, binary_path: Option<PathBuf>, arguments: Vec<OsString>) {
+    fn restart(
+        &self,
+        binary_path: Option<PathBuf>,
+        arguments: Vec<OsString>,
+    ) -> anyhow::Result<()> {
         let pid = std::process::id();
-        let Some(app_path) = binary_path.or(self.app_path().log_err()) else {
-            return;
+        let app_path = match binary_path {
+            Some(path) => path,
+            None => self.app_path().context("failed to get app path")?,
         };
         let script = r#"
             $pidToWaitFor = $env:ZED_RESTART_PID
@@ -507,10 +512,8 @@ impl Platform for WindowsPlatform {
         // can pump the Win32 message loop (via `CreateProcessW`), which
         // re-enters message handling possibly resulting in another mutable
         // borrow of the `AppCell` ending up with a double borrow panic
-        let Some(powershell) = get_powershell() else {
-            log::error!("failed to restart: PowerShell is unavailable");
-            return;
-        };
+        let powershell =
+            get_powershell().context("failed to restart: PowerShell is unavailable")?;
         self.foreground_executor
             .spawn(async move {
                 let mut command = new_std_command(powershell);
@@ -533,6 +536,7 @@ impl Platform for WindowsPlatform {
                 }
             })
             .detach();
+        Ok(())
     }
 
     fn activate(&self, _ignoring_other_apps: bool) {}

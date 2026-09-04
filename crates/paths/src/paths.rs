@@ -125,6 +125,26 @@ pub fn set_custom_data_dir(dir: &str) -> anyhow::Result<&'static PathBuf> {
     Ok(CUSTOM_DATA_DIR.get_or_init(|| sanitized))
 }
 
+/// Returns the data directory given via `--user-data-dir`, if any.
+pub fn custom_data_dir() -> Option<&'static PathBuf> {
+    CUSTOM_DATA_DIR.get()
+}
+
+/// A stable hash of the `--user-data-dir` override, used to keep the
+/// single-instance handshake separate per data directory. `None` when the
+/// default data directory is in use. Shared by the app and the CLI so both
+/// derive the same instance identity.
+pub fn custom_data_dir_instance_hash() -> Option<u64> {
+    // FNV-1a: deterministic across builds, unlike `DefaultHasher`, so an
+    // older running instance and a newer launcher agree on the identity.
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in custom_data_dir()?.to_string_lossy().bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    Some(hash)
+}
+
 /// Returns the path to the configuration directory used by Wu.
 pub fn config_dir() -> &'static PathBuf {
     CONFIG_DIR.get_or_init(|| {
@@ -492,6 +512,20 @@ pub fn legacy_local_settings_folder_name() -> &'static str {
 /// Returns the relative path to a `.vscode` folder within a project.
 pub fn local_vscode_folder_name() -> &'static str {
     ".vscode"
+}
+
+/// Picks the `.wu` config file over its `.zed` counterpart. The `.zed` file is
+/// only used when it exists and the `.wu` one does not.
+pub fn resolve_local_config_path<P: AsRef<RelPath>>(
+    path: P,
+    legacy_path: P,
+    exists: impl Fn(&RelPath) -> bool,
+) -> P {
+    if !exists(path.as_ref()) && exists(legacy_path.as_ref()) {
+        legacy_path
+    } else {
+        path
+    }
 }
 
 /// Returns the relative path to a `settings.json` file within a project.

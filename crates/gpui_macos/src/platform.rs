@@ -9,9 +9,9 @@ use cocoa::{
     appkit::{
         NSAppearanceNameVibrantDark, NSAppearanceNameVibrantLight, NSApplication,
         NSApplicationActivationPolicy::NSApplicationActivationPolicyRegular,
-        NSApplicationTerminateReply, NSControl as _,
-        NSEventModifierFlags, NSMenu, NSMenuItem, NSModalResponse, NSOpenPanel, NSSavePanel,
-        NSVisualEffectState, NSVisualEffectView, NSWindow,
+        NSApplicationTerminateReply, NSControl as _, NSEventModifierFlags, NSMenu, NSMenuItem,
+        NSModalResponse, NSOpenPanel, NSSavePanel, NSVisualEffectState, NSVisualEffectView,
+        NSWindow,
     },
     base::{BOOL, NO, YES, id, nil, selector},
     foundation::{
@@ -551,7 +551,11 @@ impl Platform for MacPlatform {
         }
     }
 
-    fn restart(&self, binary_path: Option<PathBuf>, arguments: Vec<std::ffi::OsString>) {
+    fn restart(
+        &self,
+        binary_path: Option<PathBuf>,
+        arguments: Vec<std::ffi::OsString>,
+    ) -> anyhow::Result<()> {
         use std::os::unix::process::CommandExt as _;
 
         let app_pid = std::process::id().to_string();
@@ -584,19 +588,17 @@ impl Platform for MacPlatform {
             clippy::disallowed_methods,
             reason = "We are restarting ourselves, using std command thus is fine"
         )]
-        let restart_process = new_std_command("/bin/bash")
+        let _restart_process = new_std_command("/bin/bash")
             .arg("-c")
             .arg(script)
             .arg(app_pid)
             .arg(app_path)
             .args(arguments)
             .process_group(0)
-            .spawn();
-
-        match restart_process {
-            Ok(_) => self.quit(),
-            Err(e) => log::error!("failed to spawn restart script: {:?}", e),
-        }
+            .spawn()
+            .context("failed to spawn restart script")?;
+        self.quit();
+        Ok(())
     }
 
     fn activate(&self, ignoring_other_apps: bool) {

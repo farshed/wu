@@ -35,7 +35,7 @@ use git::{
     parse_git_remote_url,
     repository::{
         Branch, BranchesScanResult, CommitData, CommitDetails, CommitFileStatus, CommitOptions,
-        CreateWorktreeTarget, DiffStatType, DiffType, FetchOptions, FileHistoryChangedFileSets,
+        CreateWorktreeTarget, DiffType, FetchOptions, FileHistoryChangedFileSets,
         GitCommitTemplate, GitRepository, GitRepositoryCheckpoint, InitialGraphCommitData,
         LogOrder, LogSource, PushOptions, Remote, RemoteCommandOutput, RepoPath, ResetMode,
         SearchCommitArgs, UpstreamTrackingStatus, Worktree as GitWorktree, delete_branch_flag,
@@ -10327,29 +10327,24 @@ impl Repository {
                         let changed_paths_vec = changed_paths.iter().cloned().collect::<Vec<_>>();
 
                         let status_task = backend.status(&changed_paths_vec);
-                        let diff_stat_future = |diff| {
-                            if has_head {
-                                backend.diff_stat(diff, &changed_paths_vec)
-                            } else {
-                                future::ready(Ok(status::GitDiffStat::default())).boxed()
-                            }
+                        let diff_stats_future = if has_head {
+                            backend.diff_stats(&changed_paths_vec)
+                        } else {
+                            future::ready(Ok(status::GitDiffStats::default())).boxed()
                         };
 
-                        let (statuses, diff_stats, staged_diff_stats, unstaged_diff_stats) =
-                            futures::future::try_join4(
-                                status_task,
-                                diff_stat_future(DiffStatType::HeadToWorktree),
-                                diff_stat_future(DiffStatType::HeadToIndex),
-                                diff_stat_future(DiffStatType::IndexToWorktree),
-                            )
-                            .await?;
+                        let (statuses, all_diff_stats) =
+                            futures::future::try_join(status_task, diff_stats_future).await?;
 
-                        let diff_stats: HashMap<RepoPath, DiffStat> =
-                            HashMap::from_iter(diff_stats.entries.into_iter().cloned());
-                        let staged_diff_stats: HashMap<RepoPath, DiffStat> =
-                            HashMap::from_iter(staged_diff_stats.entries.into_iter().cloned());
-                        let unstaged_diff_stats: HashMap<RepoPath, DiffStat> =
-                            HashMap::from_iter(unstaged_diff_stats.entries.into_iter().cloned());
+                        let diff_stats: HashMap<RepoPath, DiffStat> = HashMap::from_iter(
+                            all_diff_stats.head_to_worktree.entries.iter().cloned(),
+                        );
+                        let staged_diff_stats: HashMap<RepoPath, DiffStat> = HashMap::from_iter(
+                            all_diff_stats.head_to_index.entries.iter().cloned(),
+                        );
+                        let unstaged_diff_stats: HashMap<RepoPath, DiffStat> = HashMap::from_iter(
+                            all_diff_stats.index_to_worktree.entries.iter().cloned(),
+                        );
 
                         let mut changed_path_statuses = Vec::new();
                         let prev_statuses = prev_snapshot.statuses_by_path.clone();
@@ -12269,18 +12264,9 @@ async fn compute_snapshot(
         let backend = backend.clone();
         async move {
             if snapshot.head_commit.is_some() {
-                futures::future::join3(
-                    backend.diff_stat(DiffStatType::HeadToWorktree, &[]),
-                    backend.diff_stat(DiffStatType::HeadToIndex, &[]),
-                    backend.diff_stat(DiffStatType::IndexToWorktree, &[]),
-                )
-                .await
+                backend.diff_stats(&[]).await.log_err().unwrap_or_default()
             } else {
-                (
-                    Ok(status::GitDiffStat::default()),
-                    Ok(status::GitDiffStat::default()),
-                    Ok(status::GitDiffStat::default()),
-                )
+                status::GitDiffStats::default()
             }
         }
     };
@@ -12291,10 +12277,11 @@ async fn compute_snapshot(
 
     let (statuses, diff_stats, stash_entries) =
         futures::future::join3(statuses_future, diff_stats_future, stash_entries_future).await;
-    let (diff_stats, staged_diff_stats, unstaged_diff_stats) = diff_stats;
-    let diff_stats = diff_stats.log_err().unwrap_or_default();
-    let staged_diff_stats = staged_diff_stats.log_err().unwrap_or_default();
-    let unstaged_diff_stats = unstaged_diff_stats.log_err().unwrap_or_default();
+    let status::GitDiffStats {
+        head_to_worktree: diff_stats,
+        head_to_index: staged_diff_stats,
+        index_to_worktree: unstaged_diff_stats,
+    } = diff_stats;
     log::debug!("fetched statuses, diff stats, stash entries");
 
     let diff_stat_map: HashMap<&RepoPath, DiffStat> =

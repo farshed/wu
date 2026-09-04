@@ -4403,8 +4403,7 @@ fn project_settings_file_path(
     cx: &App,
 ) -> Arc<RelPath> {
     let settings_path = project_dir.join(paths::local_settings_file_relative_path());
-    let legacy_settings_path =
-        project_dir.join(paths::legacy_local_settings_file_relative_path());
+    let legacy_settings_path = project_dir.join(paths::legacy_local_settings_file_relative_path());
     let worktree = workspace::AppState::global(cx)
         .workspace_store
         .read(cx)
@@ -4417,16 +4416,12 @@ fn project_settings_file_path(
                 .read(cx)
                 .worktree_for_id(worktree_id, cx)
         });
-    let use_legacy = worktree.is_some_and(|worktree| {
-        let worktree = worktree.read(cx);
-        worktree.entry_for_path(&settings_path).is_none()
-            && worktree.entry_for_path(&legacy_settings_path).is_some()
-    });
-    if use_legacy {
-        legacy_settings_path.into()
-    } else {
-        settings_path.into()
-    }
+    paths::resolve_local_config_path(settings_path, legacy_settings_path, |candidate| {
+        worktree
+            .as_ref()
+            .is_some_and(|worktree| worktree.read(cx).entry_for_path(candidate).is_some())
+    })
+    .into()
 }
 
 fn update_project_setting_file(

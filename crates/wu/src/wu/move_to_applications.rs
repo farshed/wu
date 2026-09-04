@@ -93,7 +93,8 @@ impl MoveToApplicationsRequest {
                             .toggle_modal(window, cx, |_window, cx| InstallingZedModal::new(cx));
                     })
                     .ok();
-                if let Err(error) = move_to_applications(&self.app_path, cx).await {
+                let result = move_to_applications(&self.app_path, cx).await;
+                if !matches!(result, Ok(true)) {
                     workspace
                         .update_in(cx, |workspace, _window, cx| {
                             if let Some(modal) = workspace.active_modal::<InstallingZedModal>(cx) {
@@ -101,6 +102,8 @@ impl MoveToApplicationsRequest {
                             }
                         })
                         .ok();
+                }
+                if let Err(error) = result {
                     cx.prompt(
                         PromptLevel::Critical,
                         "Failed to move Wu to Applications",
@@ -212,7 +215,9 @@ fn should_offer_to_move(app_path: &Path) -> bool {
         || app_path.to_string_lossy().contains("/AppTranslocation/")
 }
 
-async fn move_to_applications(app_path: &Path, cx: &mut AsyncWindowContext) -> Result<()> {
+/// Returns `Ok(false)` when the user cancelled a save prompt and the app keeps
+/// running from its current location.
+async fn move_to_applications(app_path: &Path, cx: &mut AsyncWindowContext) -> Result<bool> {
     let destination_path = install_destination(app_path).await?;
     restart_into(destination_path, cx).await
 }
@@ -305,7 +310,7 @@ async fn copy_app_bundle(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn restart_into(app_path: PathBuf, cx: &mut AsyncWindowContext) -> Result<()> {
+async fn restart_into(app_path: PathBuf, cx: &mut AsyncWindowContext) -> Result<bool> {
     let workspace_windows = cx
         .update(|_window, cx| {
             cx.windows()
@@ -314,14 +319,7 @@ async fn restart_into(app_path: PathBuf, cx: &mut AsyncWindowContext) -> Result<
                 .collect::<Vec<_>>()
         })
         .context("collecting workspace windows before restarting")?;
-    if !workspace::prepare_windows_to_quit(&workspace_windows, cx).await {
-        return Ok(());
-    }
-    cx.update(|_window, cx| {
-        cx.set_restart_path(app_path);
-        cx.restart();
-    })?;
-    Ok(())
+    workspace::restart_and_restore_workspaces(&workspace_windows, Some(app_path), cx).await
 }
 
 fn user_applications_directory() -> Option<PathBuf> {

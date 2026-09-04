@@ -1353,6 +1353,143 @@ async fn test_fallback_to_single_worktree_tasks(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
+async fn test_wu_tasks_take_precedence_over_zed_tasks(cx: &mut gpui::TestAppContext) {
+    init_test(cx);
+    TaskStore::init(None);
+
+    let wu_tasks = r#"[{ "label": "wu task", "command": "echo" }]"#;
+    let fs = FakeFs::new(cx.executor());
+    fs.insert_tree(
+        path!("/dir"),
+        json!({
+            ".wu": {
+                "tasks.json": wu_tasks,
+            },
+            ".zed": {
+                "tasks.json": r#"[{ "label": "zed task", "command": "echo" }]"#,
+            },
+        }),
+    )
+    .await;
+
+    let project = Project::test(fs.clone(), [path!("/dir").as_ref()], cx).await;
+    cx.executor().run_until_parked();
+    let worktree_id = project.update(cx, |project, cx| {
+        project.worktrees(cx).next().unwrap().read(cx).id()
+    });
+    let mut task_contexts = TaskContexts::default();
+    task_contexts.active_worktree_context = Some((worktree_id, TaskContext::default()));
+    let task_contexts = Arc::new(task_contexts);
+
+    async fn local_tasks(
+        project: &Entity<Project>,
+        task_contexts: &Arc<TaskContexts>,
+        cx: &mut gpui::TestAppContext,
+    ) -> Vec<(String, String)> {
+        cx.update(|cx| get_all_tasks(project, task_contexts.clone(), cx))
+            .await
+            .into_iter()
+            .filter_map(|(source_kind, task)| match source_kind {
+                TaskSourceKind::Worktree {
+                    directory_in_worktree,
+                    ..
+                } => Some((
+                    directory_in_worktree.as_unix_str().to_string(),
+                    task.resolved_label,
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+    let wu_only = vec![(".wu".to_string(), "wu task".to_string())];
+
+    assert_eq!(
+        local_tasks(&project, &task_contexts, cx).await,
+        wu_only,
+        "With both files present, only .wu tasks should be listed"
+    );
+
+    fs.remove_file(
+        path!("/dir/.wu/tasks.json").as_ref(),
+        RemoveOptions::default(),
+    )
+    .await
+    .unwrap();
+    cx.executor().run_until_parked();
+    assert_eq!(
+        local_tasks(&project, &task_contexts, cx).await,
+        vec![(".zed".to_string(), "zed task".to_string())],
+        "Removing .wu/tasks.json should fall back to .zed/tasks.json"
+    );
+
+    fs.insert_file(path!("/dir/.wu/tasks.json"), wu_tasks.as_bytes().to_vec())
+        .await;
+    cx.executor().run_until_parked();
+    assert_eq!(
+        local_tasks(&project, &task_contexts, cx).await,
+        wu_only,
+        "Adding .wu/tasks.json back should replace the .zed tasks"
+    );
+
+    fs.remove_file(
+        path!("/dir/.zed/tasks.json").as_ref(),
+        RemoveOptions::default(),
+    )
+    .await
+    .unwrap();
+    cx.executor().run_until_parked();
+    assert_eq!(
+        local_tasks(&project, &task_contexts, cx).await,
+        wu_only,
+        "Removing the shadowed .zed/tasks.json should change nothing"
+    );
+
+    fs.insert_file(
+        path!("/dir/.zed/tasks.json"),
+        br#"[{ "label": "zed task", "command": "echo" }]"#.to_vec(),
+    )
+    .await;
+    fs.remove_file(
+        path!("/dir/.wu/tasks.json").as_ref(),
+        RemoveOptions::default(),
+    )
+    .await
+    .unwrap();
+    cx.executor().run_until_parked();
+    fs.remove_file(
+        path!("/dir/.zed/tasks.json").as_ref(),
+        RemoveOptions::default(),
+    )
+    .await
+    .unwrap();
+    cx.executor().run_until_parked();
+    assert!(
+        local_tasks(&project, &task_contexts, cx).await.is_empty(),
+        "Removing .zed/tasks.json with no .wu counterpart should clear the tasks"
+    );
+
+    fs.insert_file(
+        path!("/dir/.zed/tasks.json"),
+        br#"[{ "label": "zed task", "command": "echo" }]"#.to_vec(),
+    )
+    .await;
+    cx.executor().run_until_parked();
+    fs.rename(
+        path!("/dir/.zed/tasks.json").as_ref(),
+        path!("/dir/.wu/tasks.json").as_ref(),
+        fs::RenameOptions::default(),
+    )
+    .await
+    .unwrap();
+    cx.executor().run_until_parked();
+    assert_eq!(
+        local_tasks(&project, &task_contexts, cx).await,
+        vec![(".wu".to_string(), "zed task".to_string())],
+        "Renaming .zed/tasks.json to .wu/tasks.json should drop the .zed tasks"
+    );
+}
+
+#[gpui::test]
 async fn test_running_multiple_instances_of_a_single_server_in_one_worktree(
     cx: &mut gpui::TestAppContext,
 ) {
@@ -13729,9 +13866,15 @@ async fn test_git_repository_status(cx: &mut gpui::TestAppContext) {
                 StatusEntry {
                     repo_path: repo_path("b.txt"),
                     status: FileStatus::Untracked,
-                    diff_stat: None,
+                    diff_stat: Some(DiffStat {
+                        added: 1,
+                        deleted: 0,
+                    }),
                     staged_diff_stat: None,
-                    unstaged_diff_stat: None,
+                    unstaged_diff_stat: Some(DiffStat {
+                        added: 1,
+                        deleted: 0,
+                    }),
                 },
                 StatusEntry {
                     repo_path: repo_path("d.txt"),
@@ -13779,9 +13922,15 @@ async fn test_git_repository_status(cx: &mut gpui::TestAppContext) {
                 StatusEntry {
                     repo_path: repo_path("b.txt"),
                     status: FileStatus::Untracked,
-                    diff_stat: None,
+                    diff_stat: Some(DiffStat {
+                        added: 1,
+                        deleted: 0,
+                    }),
                     staged_diff_stat: None,
-                    unstaged_diff_stat: None,
+                    unstaged_diff_stat: Some(DiffStat {
+                        added: 1,
+                        deleted: 0,
+                    }),
                 },
                 StatusEntry {
                     repo_path: repo_path("c.txt"),
@@ -13897,9 +14046,15 @@ async fn test_git_repository_status_removes_directory_descendants(cx: &mut gpui:
             [StatusEntry {
                 repo_path: repo_path("ci2/Dockerfile.namespace"),
                 status: FileStatus::Untracked,
-                diff_stat: None,
+                diff_stat: Some(DiffStat {
+                    added: 1,
+                    deleted: 0,
+                }),
                 staged_diff_stat: None,
-                unstaged_diff_stat: None,
+                unstaged_diff_stat: Some(DiffStat {
+                    added: 1,
+                    deleted: 0,
+                }),
             }]
         );
     });
@@ -13941,9 +14096,15 @@ async fn test_git_repository_status_removes_directory_descendants(cx: &mut gpui:
             [StatusEntry {
                 repo_path: repo_path("ci3/Dockerfile.namespace"),
                 status: FileStatus::Untracked,
-                diff_stat: None,
+                diff_stat: Some(DiffStat {
+                    added: 1,
+                    deleted: 0,
+                }),
                 staged_diff_stat: None,
-                unstaged_diff_stat: None,
+                unstaged_diff_stat: Some(DiffStat {
+                    added: 1,
+                    deleted: 0,
+                }),
             }]
         );
     });

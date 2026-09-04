@@ -9284,41 +9284,63 @@ pub fn reload(cx: &mut App) {
             }
         }
 
-        if !prepare_windows_to_quit(&workspace_windows, cx).await {
-            return anyhow::Ok(());
-        }
-
-        // Record which workspaces are open so the next launch can reopen
-        // exactly these, even if session-based restore has nothing for them.
-        let workspace_ids = cx.update(|cx| {
-            workspace_windows
-                .iter()
-                .filter_map(|window| {
-                    window
-                        .update(cx, |multi_workspace, _window, cx| {
-                            multi_workspace
-                                .workspaces()
-                                .filter_map(|workspace| workspace.read(cx).database_id())
-                                .collect::<Vec<_>>()
-                        })
-                        .ok()
-                })
-                .flatten()
-                .collect::<Vec<_>>()
-        });
-        if !workspace_ids.is_empty()
-            && let Ok(ids_json) = serde_json::to_string(&workspace_ids)
-        {
-            let kvp = cx.update(|cx| db::kvp::KeyValueStore::global(cx));
-            kvp.write_kvp(RESTART_WORKSPACE_IDS_KEY.to_string(), ids_json)
-                .await
-                .log_err();
-        }
-
-        cx.update(|cx| cx.restart());
+        restart_and_restore_workspaces(&workspace_windows, None, cx).await?;
         anyhow::Ok(())
     })
     .detach_and_log_err(cx);
+}
+
+/// Prompts to save unsaved changes in the given windows and then restarts the
+/// app, recording the open workspaces so the next launch reopens exactly
+/// these. Returns `Ok(false)` if the user cancelled a save prompt.
+pub async fn restart_and_restore_workspaces(
+    workspace_windows: &[WindowHandle<MultiWorkspace>],
+    restart_path: Option<PathBuf>,
+    cx: &mut AsyncApp,
+) -> anyhow::Result<bool> {
+    if !prepare_windows_to_quit(workspace_windows, cx).await {
+        return Ok(false);
+    }
+    if let Some(restart_path) = restart_path {
+        cx.update(|cx| cx.set_restart_path(restart_path));
+    }
+
+    let workspace_ids = cx.update(|cx| {
+        workspace_windows
+            .iter()
+            .filter_map(|window| {
+                window
+                    .update(cx, |multi_workspace, _window, cx| {
+                        multi_workspace
+                            .workspaces()
+                            .filter_map(|workspace| workspace.read(cx).database_id())
+                            .collect::<Vec<_>>()
+                    })
+                    .ok()
+            })
+            .flatten()
+            .collect::<Vec<_>>()
+    });
+    let kvp = cx.update(|cx| db::kvp::KeyValueStore::global(cx));
+    let mut recorded_workspace_ids = false;
+    if !workspace_ids.is_empty() {
+        let ids_json = serde_json::to_string(&workspace_ids)?;
+        kvp.write_kvp(RESTART_WORKSPACE_IDS_KEY.to_string(), ids_json)
+            .await?;
+        recorded_workspace_ids = true;
+    }
+
+    // The relaunch may quit synchronously, so the ids are recorded before
+    // restarting and only removed again when the restart did not happen.
+    if let Err(error) = cx.update(|cx| cx.restart()) {
+        if recorded_workspace_ids {
+            kvp.delete_kvp(RESTART_WORKSPACE_IDS_KEY.to_string())
+                .await
+                .log_err();
+        }
+        return Err(error.context("failed to restart"));
+    }
+    Ok(true)
 }
 
 pub async fn prepare_windows_to_quit(

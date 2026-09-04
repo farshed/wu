@@ -49,7 +49,7 @@ use outline_panel::OutlinePanel;
 use paths::{
     legacy_local_debug_file_relative_path, legacy_local_settings_file_relative_path,
     legacy_local_tasks_file_relative_path, local_debug_file_relative_path,
-    local_settings_file_relative_path, local_tasks_file_relative_path,
+    local_settings_file_relative_path, local_tasks_file_relative_path, resolve_local_config_path,
 };
 use project::{
     DirectoryLister, ProjectItem,
@@ -63,9 +63,9 @@ use rope::Rope;
 use search::project_search::ProjectSearchBar;
 use settings::{
     BaseKeymap, DEFAULT_KEYMAP_PATH, DefaultOpenBehavior, InvalidSettingsError, KeybindSource,
-    KeymapFile, KeymapFileLoadResult, SPECIFIC_OVERRIDES_KEYMAP_PATH, Settings,
-    SettingsFile, SettingsStore, initial_local_debug_tasks_content,
-    initial_project_settings_content, initial_tasks_content, update_settings_file,
+    KeymapFile, KeymapFileLoadResult, SPECIFIC_OVERRIDES_KEYMAP_PATH, Settings, SettingsFile,
+    SettingsStore, initial_local_debug_tasks_content, initial_project_settings_content,
+    initial_tasks_content, update_settings_file,
 };
 #[cfg(debug_assertions)]
 use workspace::workspace_error::{ErrorAction, ErrorSeverity, WorkspaceError};
@@ -94,12 +94,11 @@ use workspace::{
 use workspace::{CloseProject, CloseWindow, RestoreBanner, with_active_or_new_workspace};
 use workspace::{Pane, notifications::DetachAndPromptErr};
 use wu_actions::{
-    About, OpenBrowser, OpenDocs, OpenProjectTasks, OpenServerSettings, OpenSettingsFile, OpenWuUrl,
-    Quit,
+    About, OpenBrowser, OpenDocs, OpenProjectTasks, OpenServerSettings, OpenSettingsFile,
+    OpenWuUrl, Quit,
 };
 
 const DOCS_URL: &str = "https://wu.farshed.me/docs";
-
 
 actions!(
     wu,
@@ -1995,7 +1994,7 @@ fn open_project_settings_file(
     if let Some(task) = open_local_file(
         workspace,
         local_settings_file_relative_path(),
-        Some(legacy_local_settings_file_relative_path()),
+        legacy_local_settings_file_relative_path(),
         initial_project_settings_content(),
         window,
         cx,
@@ -2013,7 +2012,7 @@ fn open_project_tasks_file(
     if let Some(task) = open_local_file(
         workspace,
         local_tasks_file_relative_path(),
-        Some(legacy_local_tasks_file_relative_path()),
+        legacy_local_tasks_file_relative_path(),
         initial_tasks_content(),
         window,
         cx,
@@ -2043,7 +2042,7 @@ fn open_worktree_setup_tasks_file(
     let Some(open_task) = open_local_file(
         workspace,
         local_tasks_file_relative_path(),
-        Some(legacy_local_tasks_file_relative_path()),
+        legacy_local_tasks_file_relative_path(),
         settings::initial_worktree_setup_tasks_content(),
         window,
         cx,
@@ -2081,7 +2080,7 @@ fn open_project_debug_tasks_file(
     if let Some(task) = open_local_file(
         workspace,
         local_debug_file_relative_path(),
-        Some(legacy_local_debug_file_relative_path()),
+        legacy_local_debug_file_relative_path(),
         initial_local_debug_tasks_content(),
         window,
         cx,
@@ -2093,7 +2092,7 @@ fn open_project_debug_tasks_file(
 fn open_local_file(
     workspace: &mut Workspace,
     settings_relative_path: &'static RelPath,
-    legacy_settings_relative_path: Option<&'static RelPath>,
+    legacy_settings_relative_path: &'static RelPath,
     initial_contents: Cow<'static, str>,
     window: &mut Window,
     cx: &mut Context<Workspace>,
@@ -2110,8 +2109,9 @@ fn open_local_file(
             // Check if the file actually exists on disk (even if it's excluded from worktree)
             let file_exists_on_disk = |relative_path: &'static RelPath| {
                 let fs = fs.clone();
-                let full_path = worktree
-                    .read_with(cx, |tree, _| tree.abs_path().join(relative_path.as_std_path()));
+                let full_path = worktree.read_with(cx, |tree, _| {
+                    tree.abs_path().join(relative_path.as_std_path())
+                });
                 async move {
                     fs.metadata(&full_path)
                         .await
@@ -2121,15 +2121,20 @@ fn open_local_file(
                 }
             };
 
-            let mut settings_relative_path = settings_relative_path;
-            let mut file_exists = file_exists_on_disk(settings_relative_path).await;
-            // Fall back to the legacy `.zed` file when there is no `.wu` one yet.
-            if !file_exists && let Some(legacy_path) = legacy_settings_relative_path {
-                if file_exists_on_disk(legacy_path).await {
-                    settings_relative_path = legacy_path;
-                    file_exists = true;
-                }
-            }
+            let primary_exists = file_exists_on_disk(settings_relative_path).await;
+            let legacy_exists = file_exists_on_disk(legacy_settings_relative_path).await;
+            let settings_relative_path = resolve_local_config_path(
+                settings_relative_path,
+                legacy_settings_relative_path,
+                |candidate| {
+                    if candidate == legacy_settings_relative_path {
+                        legacy_exists
+                    } else {
+                        primary_exists
+                    }
+                },
+            );
+            let file_exists = primary_exists || legacy_exists;
 
             if !file_exists {
                 if let Some(dir_path) = settings_relative_path.parent()
@@ -5463,7 +5468,7 @@ mod tests {
         for theme_name in themes.list().into_iter().map(|meta| meta.name) {
             let theme = themes.get(&theme_name).unwrap();
             assert_eq!(theme.name, theme_name);
-            if theme.name.as_ref() == "One Dark" {
+            if theme.name.as_ref() == theme::DEFAULT_DARK_THEME {
                 has_default_theme = true;
             }
         }

@@ -16,6 +16,11 @@ pub struct ExtensionSettingsContent {
     /// Default: { "html": true }
     #[serde(default)]
     pub auto_install_extensions: HashMap<Arc<str>, bool>,
+    /// Which installed extensions may be updated to a newer version.
+    ///
+    /// Updates are only checked for when you open the Extensions page,
+    /// never in the background. Set an extension's id to `false` to keep
+    /// its current version.
     #[serde(default)]
     pub auto_update_extensions: HashMap<Arc<str>, bool>,
     /// The capabilities granted to extensions.

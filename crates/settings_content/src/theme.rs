@@ -342,8 +342,8 @@ pub enum ThemeSelection {
     },
 }
 
-pub const DEFAULT_LIGHT_THEME: &'static str = "One Light";
-pub const DEFAULT_DARK_THEME: &'static str = "One Dark";
+pub const DEFAULT_LIGHT_THEME: &'static str = "Catppuccin Latte";
+pub const DEFAULT_DARK_THEME: &'static str = "Catppuccin Mocha";
 
 impl Default for ThemeSelection {
     fn default() -> Self {
@@ -1107,7 +1107,6 @@ pub struct ThemeColorsContent {
     /// Deprecated in favor of `version_control_conflict_marker_theirs`.
     #[deprecated]
     pub version_control_conflict_theirs_background: Option<ThemeColor>,
-
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, MergeFrom, PartialEq)]

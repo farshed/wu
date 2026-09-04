@@ -16,9 +16,7 @@ use fs::{Fs, RealFs};
 use futures::{FutureExt, StreamExt, channel::oneshot};
 use git::GitHostingProviderRegistry;
 use git_ui::clone::clone_and_open;
-use gpui::{
-    App, AppContext, Application, AsyncApp, QuitMode, Task, TaskExt, UpdateGlobal as _,
-};
+use gpui::{App, AppContext, Application, AsyncApp, QuitMode, Task, TaskExt, UpdateGlobal as _};
 use gpui_platform;
 
 use gpui_tokio::Tokio;
@@ -50,9 +48,8 @@ use theme_settings::load_user_theme;
 use util::ResultExt;
 use uuid::Uuid;
 use workspace::{
-    AppState, MultiWorkspace, SerializedWorkspaceLocation, SessionWorkspace, Toast,
-    WorkspaceDb, WorkspaceSettings, WorkspaceStore, notifications::NotificationId,
-    restore_multiworkspace,
+    AppState, MultiWorkspace, SerializedWorkspaceLocation, SessionWorkspace, Toast, WorkspaceDb,
+    WorkspaceSettings, WorkspaceStore, notifications::NotificationId, restore_multiworkspace,
 };
 use wu::{
     OpenListener, OpenRequest, RawOpenRequest, app_menus, build_window_options,
@@ -218,7 +215,6 @@ fn install_panic_hook() {
 }
 
 fn main() {
-
     #[cfg(unix)]
     util::prevent_root_execution();
 
@@ -382,11 +378,19 @@ fn main() {
         #[cfg(target_os = "macos")]
         {
             use wu::mac_only_instance::*;
-            ensure_only_instance() != IsOnlyInstance::Yes
+            ensure_only_instance(open_listener.clone(), open_request_from_args(&args))
+                != IsOnlyInstance::Yes
         }
     };
     if failed_single_instance_check {
         println!("wu is already running");
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        if !args.paths_or_urls.is_empty() || !args.diff.is_empty() {
+            println!(
+                "Could not open {:?} {:?}, use the `wu` CLI to open paths in the running instance",
+                args.paths_or_urls, args.diff
+            );
+        }
         return;
     }
 
@@ -717,37 +721,9 @@ fn main() {
 
         cx.activate(true);
 
-        let urls: Vec<_> = args
-            .paths_or_urls
-            .iter()
-            .map(|arg| parse_url_arg(arg))
-            .collect();
-
-        // Check if any diff paths are directories to determine diff_all mode
-        let diff_all_mode = args
-            .diff
-            .chunks(2)
-            .any(|pair| Path::new(&pair[0]).is_dir() || Path::new(&pair[1]).is_dir());
-
-        let diff_paths: Vec<[String; 2]> = args
-            .diff
-            .chunks(2)
-            .map(|chunk| [chunk[0].clone(), chunk[1].clone()])
-            .collect();
-
-        #[cfg(target_os = "windows")]
-        let wsl = args.wsl;
-        #[cfg(not(target_os = "windows"))]
-        let wsl = None;
-
-        if !urls.is_empty() || !diff_paths.is_empty() {
-            open_listener.open(RawOpenRequest {
-                urls,
-                diff_paths,
-                wsl,
-                diff_all: diff_all_mode,
-                ..Default::default()
-            })
+        let open_request = open_request_from_args(&args);
+        if !open_request.is_empty() {
+            open_listener.open(open_request);
         }
 
         let (current_session_id, last_session_id) = {
@@ -802,6 +778,10 @@ fn main() {
             let restore_finished = restore_finished.clone();
             async move |cx| {
                 restore_finished.await;
+                cx.update(|cx| KeyValueStore::global(cx))
+                    .delete_kvp(workspace::RESTART_WORKSPACE_IDS_KEY.to_string())
+                    .await
+                    .log_err();
                 // The restored workspaces are rebound to this session through debounced
                 // serialization. Flush it so the rows carry the new session id before that
                 // id becomes the stored one; a crash before this point leaves the previous
@@ -1314,11 +1294,14 @@ pub(crate) async fn restorable_workspace_locations(
 
     // A restart (e.g. to apply an update) records the ids of the workspaces
     // that were open. Reopen exactly those, regardless of session bookkeeping.
+    // The key is removed once the startup restore has run, whichever path
+    // handled it, so a crash while restoring does not lose the list.
     let kvp = cx.update(|cx| db::kvp::KeyValueStore::global(cx));
-    if let Ok(Some(ids_json)) = kvp.read_kvp(workspace::RESTART_WORKSPACE_IDS_KEY) {
-        kvp.delete_kvp(workspace::RESTART_WORKSPACE_IDS_KEY.to_string())
-            .await
-            .log_err();
+    if !matches!(
+        restore_behavior,
+        workspace::RestoreOnStartupBehavior::EmptyTab
+    ) && let Ok(Some(ids_json)) = kvp.read_kvp(workspace::RESTART_WORKSPACE_IDS_KEY)
+    {
         if let Ok(ids) = serde_json::from_str::<Vec<workspace::WorkspaceId>>(&ids_json) {
             let workspaces = db
                 .workspace_locations_by_ids(ids, app_state.fs.as_ref())
@@ -1515,6 +1498,38 @@ struct Args {
     #[cfg(target_os = "windows")]
     #[arg(long, hide = true)]
     etw_socket: Option<String>,
+}
+
+fn open_request_from_args(args: &Args) -> RawOpenRequest {
+    let urls = args
+        .paths_or_urls
+        .iter()
+        .map(|arg| parse_url_arg(arg))
+        .collect();
+
+    let diff_all = args
+        .diff
+        .chunks(2)
+        .any(|pair| Path::new(&pair[0]).is_dir() || Path::new(&pair[1]).is_dir());
+
+    let diff_paths = args
+        .diff
+        .chunks(2)
+        .map(|chunk| [chunk[0].clone(), chunk[1].clone()])
+        .collect();
+
+    #[cfg(target_os = "windows")]
+    let wsl = args.wsl.clone();
+    #[cfg(not(target_os = "windows"))]
+    let wsl = None;
+
+    RawOpenRequest {
+        urls,
+        diff_paths,
+        diff_all,
+        wsl,
+        ..Default::default()
+    }
 }
 
 fn parse_url_arg(arg: &str) -> String {

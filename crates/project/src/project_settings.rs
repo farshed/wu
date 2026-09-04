@@ -10,8 +10,8 @@ use paths::{
     EDITORCONFIG_NAME, debug_task_file_name, legacy_local_debug_file_relative_path,
     legacy_local_settings_file_relative_path, legacy_local_tasks_file_relative_path,
     local_debug_file_relative_path, local_settings_file_relative_path,
-    local_tasks_file_relative_path,
-    local_vscode_launch_file_relative_path, local_vscode_tasks_file_relative_path, task_file_name,
+    local_tasks_file_relative_path, local_vscode_launch_file_relative_path,
+    local_vscode_tasks_file_relative_path, resolve_local_config_path, task_file_name,
 };
 use rpc::{
     AnyProtoClient, TypedEnvelope,
@@ -1025,45 +1025,58 @@ impl SettingsObserver {
         }
 
         let snapshot = worktree.read(cx).snapshot();
-        let mut settings_contents = Vec::new();
+        let mut settings_updates: Vec<(Arc<RelPath>, LocalSettingsKind, Option<PathBuf>)> =
+            Vec::new();
         for (path, _, change) in changes.iter() {
             let mut load_path = path.clone();
             let mut removed = change == &PathChange::Removed;
-            let (settings_dir, kind) = if let Some(file) =
-                local_settings_files.iter().find(|file| path.ends_with(file.path))
-            {
-                // A removed `.wu` file falls back to its `.zed` counterpart when one exists.
-                if removed && let Some(legacy_path) = file.legacy_path {
-                    let Some(project_dir) =
-                        strip_components(path, file.path.components().count())
-                    else {
-                        continue;
-                    };
+            let matched_file = local_settings_files.iter().find_map(|file| {
+                let matched_path = [Some(file.path), file.legacy_path]
+                    .into_iter()
+                    .flatten()
+                    .find(|candidate| path.ends_with(candidate))?;
+                let project_dir = strip_components(path, matched_path.components().count())?;
+                Some((file, project_dir))
+            });
+            let (settings_dir, kind) = if let Some((file, project_dir)) = matched_file {
+                if let Some(legacy_path) = file.legacy_path {
+                    let exists = |candidate: &RelPath| snapshot.entry_for_path(candidate).is_some();
+                    let file_path: Arc<RelPath> = project_dir.join(file.path).into();
                     let legacy_file_path: Arc<RelPath> = project_dir.join(legacy_path).into();
-                    if snapshot.entry_for_path(&legacy_file_path).is_some() {
-                        load_path = legacy_file_path;
-                        removed = false;
+                    let active_path = resolve_local_config_path(
+                        file_path.clone(),
+                        legacy_file_path.clone(),
+                        exists,
+                    );
+                    // A `.zed` file shadowed by its `.wu` counterpart has no effect. Its
+                    // removal still falls through so the `.zed` directory gets cleared,
+                    // e.g. when `.zed` was renamed to `.wu` in one batch.
+                    if active_path == file_path
+                        && *path != file_path
+                        && exists(&file_path)
+                        && !removed
+                    {
+                        continue;
                     }
+                    let shadowed_path = if active_path == file_path {
+                        legacy_file_path
+                    } else {
+                        file_path
+                    };
+                    // Tasks and debug configs are keyed by their `.wu` or `.zed` directory,
+                    // so the directory that lost precedence has to be cleared explicitly.
+                    if let Some(shadowed_dir) =
+                        strip_components(&shadowed_path, file.directory_depth)
+                        && strip_components(&active_path, file.directory_depth).as_ref()
+                            != Some(&shadowed_dir)
+                        && (exists(&shadowed_path) || shadowed_path == *path)
+                    {
+                        settings_updates.push((shadowed_dir, file.kind, None));
+                    }
+                    removed = !exists(&active_path);
+                    load_path = active_path;
                 }
-                let Some(settings_dir) = strip_components(&load_path, file.directory_depth)
-                else {
-                    continue;
-                };
-                (settings_dir, file.kind)
-            } else if let Some((file, legacy_path)) = local_settings_files.iter().find_map(|file| {
-                file.legacy_path
-                    .filter(|legacy_path| path.ends_with(legacy_path))
-                    .map(|legacy_path| (file, legacy_path))
-            }) {
-                // A `.zed` file is only used when there is no `.wu` counterpart.
-                let Some(project_dir) = strip_components(path, legacy_path.components().count())
-                else {
-                    continue;
-                };
-                if snapshot.entry_for_path(&project_dir.join(file.path)).is_some() {
-                    continue;
-                }
-                let Some(settings_dir) = strip_components(path, file.directory_depth) else {
+                let Some(settings_dir) = strip_components(&load_path, file.directory_depth) else {
                     continue;
                 };
                 (settings_dir, file.kind)
@@ -1093,17 +1106,26 @@ impl SettingsObserver {
                 continue;
             };
 
-            let fs = fs.clone();
-            let abs_path = worktree.read(cx).absolutize(&load_path);
-            settings_contents.push(async move {
-                (
-                    settings_dir,
-                    kind,
-                    if removed {
-                        None
-                    } else {
-                        Some(
-                            async move {
+            let abs_path = (!removed).then(|| worktree.read(cx).absolutize(&load_path));
+            settings_updates.push((settings_dir, kind, abs_path));
+        }
+
+        if settings_updates.is_empty() {
+            return;
+        }
+
+        let settings_contents = settings_updates
+            .into_iter()
+            .map(|(settings_dir, kind, abs_path)| {
+                let fs = fs.clone();
+                async move {
+                    (
+                        settings_dir,
+                        kind,
+                        match abs_path {
+                            None => None,
+                            Some(abs_path) => Some(
+                                async move {
                                 let content = fs.load(&abs_path).await?;
                                 if abs_path.ends_with(local_vscode_tasks_file_relative_path().as_std_path()) {
                                     let vscode_tasks =
@@ -1144,15 +1166,12 @@ impl SettingsObserver {
                                 }
                             }
                             .await,
-                        )
-                    },
-                )
-            });
-        }
-
-        if settings_contents.is_empty() {
-            return;
-        }
+                            ),
+                        },
+                    )
+                }
+            })
+            .collect::<Vec<_>>();
 
         let worktree = worktree.clone();
         cx.spawn(async move |this, cx| {
