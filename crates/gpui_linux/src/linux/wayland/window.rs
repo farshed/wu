@@ -1754,7 +1754,6 @@ impl PlatformWindow for WaylandWindow {
         _msg: &str,
         _detail: Option<&str>,
         _answers: &[PromptButton],
-        _icon: Option<&str>,
     ) -> Option<Receiver<usize>> {
         None
     }

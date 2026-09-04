@@ -765,15 +765,12 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     /// element on web). Called only when the configuration changes, because
     /// reconfiguring a live input session can restart the IME connection.
     fn set_text_input_configuration(&mut self, _configuration: TextInputConfiguration) {}
-    /// `icon` is an SF Symbol name shown instead of the app icon; only macOS
-    /// uses it, other platforms ignore it.
     fn prompt(
         &self,
         level: PromptLevel,
         msg: &str,
         detail: Option<&str>,
         answers: &[PromptButton],
-        icon: Option<&str>,
     ) -> Option<oneshot::Receiver<usize>>;
     fn activate(&self);
     /// Requests that the operating system draw attention to this window.

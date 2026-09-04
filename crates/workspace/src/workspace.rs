@@ -16176,8 +16176,8 @@ mod tests {
             parsed["theme"],
             serde_json::json!({
                 "mode": "system",
-                "light": "One Light",
-                "dark": "One Dark"
+                "light": settings::DEFAULT_LIGHT_THEME,
+                "dark": settings::DEFAULT_DARK_THEME
             })
         );
 

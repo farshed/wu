@@ -168,8 +168,6 @@ pub struct CloseConfirmation {
     pub message: SharedString,
     /// Label of the button that closes the item anyway.
     pub confirm_button: SharedString,
-    /// SF Symbol name shown as the dialog icon on macOS.
-    pub icon: Option<SharedString>,
 }
 
 pub trait Item: Focusable + EventEmitter<Self::Event> + Render + Sized {

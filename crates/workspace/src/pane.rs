@@ -1915,15 +1915,14 @@ impl Pane {
         window: &mut Window,
         cx: &mut App,
     ) -> Task<bool> {
-        let answer = window.prompt_with_icon(
+        let answer = window.prompt(
             PromptLevel::Warning,
             &confirmation.message,
             None,
-            &["Cancel", confirmation.confirm_button.as_ref()],
-            confirmation.icon.as_deref(),
+            &[confirmation.confirm_button.as_ref(), "Cancel"],
             cx,
         );
-        cx.spawn(async move |_| matches!(answer.await, Ok(1)))
+        cx.spawn(async move |_| matches!(answer.await, Ok(0)))
     }
 
     // Usually when you close an item that has unsaved changes, we prompt you to

@@ -5796,23 +5796,6 @@ impl Window {
     where
         T: Clone + Into<PromptButton>,
     {
-        self.prompt_with_icon(level, message, detail, answers, None, cx)
-    }
-
-    /// Like [`Self::prompt`], but with an icon replacing the app icon in the
-    /// dialog. `icon` is an SF Symbol name; it only has an effect on macOS.
-    pub fn prompt_with_icon<T>(
-        &mut self,
-        level: PromptLevel,
-        message: &str,
-        detail: Option<&str>,
-        answers: &[T],
-        icon: Option<&str>,
-        cx: &mut App,
-    ) -> oneshot::Receiver<usize>
-    where
-        T: Clone + Into<PromptButton>,
-    {
         let prompt_builder = cx.prompt_builder.take();
         let Some(prompt_builder) = prompt_builder else {
             unreachable!("Re-entrant window prompting is not supported by GPUI");
@@ -5826,7 +5809,7 @@ impl Window {
         let receiver = match &prompt_builder {
             PromptBuilder::Default => self
                 .platform_window
-                .prompt(level, message, detail, &answers, icon)
+                .prompt(level, message, detail, &answers)
                 .unwrap_or_else(|| {
                     self.build_custom_prompt(&prompt_builder, level, message, detail, &answers, cx)
                 }),

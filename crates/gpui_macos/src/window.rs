@@ -1511,7 +1511,6 @@ impl PlatformWindow for MacWindow {
         msg: &str,
         detail: Option<&str>,
         answers: &[PromptButton],
-        icon: Option<&str>,
     ) -> Option<oneshot::Receiver<usize>> {
         // NSAlert's first button keeps Return and Cancel keeps Escape, but the keyboard
         // focus (and therefore Space) defaults to Cancel, leaving the middle button of
@@ -1538,23 +1537,6 @@ impl PlatformWindow for MacWindow {
             if let Some(detail) = detail {
                 let _: () = msg_send![alert, setInformativeText: ns_string(detail)];
             }
-            // SF Symbol images need macOS 11, but the deployment target is 10.15.
-            let supports_system_symbols: BOOL = msg_send![
-                class!(NSImage),
-                respondsToSelector: sel!(imageWithSystemSymbolName:accessibilityDescription:)
-            ];
-            if let Some(symbol_name) = icon.filter(|_| supports_system_symbols == YES) {
-                let image: id = msg_send![
-                    class!(NSImage),
-                    imageWithSystemSymbolName: ns_string(symbol_name)
-                    accessibilityDescription: nil
-                ];
-                // Keeps the app icon when the symbol name is unknown.
-                if !image.is_null() {
-                    let _: () = msg_send![alert, setIcon: image];
-                }
-            }
-
             let mut initial_focus_button: Option<id> = None;
             for (ix, answer) in answers.iter().enumerate() {
                 let button: id = msg_send![alert, addButtonWithTitle: ns_string(answer.label())];

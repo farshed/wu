@@ -1768,7 +1768,6 @@ impl Item for TerminalView {
         Some(workspace::item::CloseConfirmation {
             message: "Do you want to terminate running processes in this window?".into(),
             confirm_button: "Terminate".into(),
-            icon: Some("terminal".into()),
         })
     }
 

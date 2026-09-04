@@ -672,7 +672,6 @@ impl PlatformWindow for WebWindow {
         _msg: &str,
         _detail: Option<&str>,
         _answers: &[PromptButton],
-        _icon: Option<&str>,
     ) -> Option<futures::channel::oneshot::Receiver<usize>> {
         None
     }
