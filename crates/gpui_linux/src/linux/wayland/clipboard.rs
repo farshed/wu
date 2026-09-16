@@ -12,9 +12,9 @@ use wayland_protocols::wp::primary_selection::zv1::client::zwp_primary_selection
 
 use crate::linux::{
     WaylandClientStatePtr,
-    platform::{PIPE_READ_TIMEOUT, read_fd_with_timeout},
+    platform::{PIPE_READ_TIMEOUT, paths_from_uri_list, read_fd_with_timeout, uri_list_from_paths},
 };
-use gpui::{ClipboardEntry, ClipboardItem, Image, ImageFormat, hash};
+use gpui::{ClipboardEntry, ClipboardItem, ExternalPaths, Image, ImageFormat, hash};
 
 /// Text mime types that we'll offer to other programs.
 pub(crate) const TEXT_MIME_TYPES: [&str; 3] =
@@ -120,6 +120,28 @@ impl<T: ReceiveData> DataOffer<T> {
         Some(ClipboardItem::new_string(result))
     }
 
+    fn read_file_paths(&self, connection: &Connection) -> Option<ExternalPaths> {
+        if !self.has_mime_type(FILE_LIST_MIME_TYPE) {
+            return None;
+        }
+        let bytes = self.read_bytes(connection, FILE_LIST_MIME_TYPE)?;
+        let uri_list = String::from_utf8(bytes).ok()?;
+        let paths = paths_from_uri_list(&uri_list);
+        (!paths.is_empty()).then_some(ExternalPaths(paths))
+    }
+
+    fn read_item(&self, connection: &Connection) -> Option<ClipboardItem> {
+        if let Some(paths) = self.read_file_paths(connection) {
+            let mut entries = vec![ClipboardEntry::ExternalPaths(paths)];
+            if let Some(text) = self.read_text(connection) {
+                entries.extend(text.entries);
+            }
+            return Some(ClipboardItem { entries });
+        }
+        self.read_text(connection)
+            .or_else(|| self.read_image(connection))
+    }
+
     fn read_image(&self, connection: &Connection) -> Option<ClipboardItem> {
         for format in ImageFormat::iter() {
             let mime_type = format.mime_type();
@@ -180,20 +202,26 @@ impl Clipboard {
         self.self_mime.clone()
     }
 
-    pub fn send(&self, _mime_type: String, fd: OwnedFd) {
-        if let Some(text) = self.contents.as_ref().and_then(|contents| contents.text()) {
-            self.send_bytes(fd, text.as_bytes().to_owned());
+    pub fn send(&self, mime_type: String, fd: OwnedFd) {
+        if let Some(bytes) = Self::bytes_for_mime_type(self.contents.as_ref(), &mime_type) {
+            self.send_bytes(fd, bytes);
         }
     }
 
-    pub fn send_primary(&self, _mime_type: String, fd: OwnedFd) {
-        if let Some(text) = self
-            .primary_contents
-            .as_ref()
-            .and_then(|contents| contents.text())
+    pub fn send_primary(&self, mime_type: String, fd: OwnedFd) {
+        if let Some(bytes) = Self::bytes_for_mime_type(self.primary_contents.as_ref(), &mime_type)
         {
-            self.send_bytes(fd, text.as_bytes().to_owned());
+            self.send_bytes(fd, bytes);
         }
+    }
+
+    fn bytes_for_mime_type(contents: Option<&ClipboardItem>, mime_type: &str) -> Option<Vec<u8>> {
+        let contents = contents?;
+        if mime_type == FILE_LIST_MIME_TYPE {
+            let paths = contents.external_paths()?;
+            return Some(uri_list_from_paths(paths.paths()).into_bytes());
+        }
+        contents.text().map(String::into_bytes)
     }
 
     pub fn read(&mut self) -> Option<ClipboardItem> {
@@ -206,9 +234,7 @@ impl Clipboard {
             return self.contents.clone();
         }
 
-        let item = offer
-            .read_text(&self.connection)
-            .or_else(|| offer.read_image(&self.connection))?;
+        let item = offer.read_item(&self.connection)?;
 
         self.cached_read = Some(item.clone());
         Some(item)
@@ -224,9 +250,7 @@ impl Clipboard {
             return self.primary_contents.clone();
         }
 
-        let item = offer
-            .read_text(&self.connection)
-            .or_else(|| offer.read_image(&self.connection))?;
+        let item = offer.read_item(&self.connection)?;
 
         self.cached_primary_read = Some(item.clone());
         Some(item)

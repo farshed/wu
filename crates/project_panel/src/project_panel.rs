@@ -18,7 +18,7 @@ use git;
 use git::status::GitSummary;
 use git_ui_core::file_diff_view::FileDiffView;
 use gpui::{
-    Action, AnyElement, App, AsyncWindowContext, Bounds, ClipboardEntry as GpuiClipboardEntry,
+    Action, AnyElement, App, AsyncWindowContext, Bounds,
     ClipboardItem, Context, CursorStyle, DismissEvent, Div, DragMoveEvent, Entity, EventEmitter,
     ExternalDragPayload, ExternalPaths, FileDragPaths, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement, KeyContext, ListHorizontalSizingBehavior, ListSizingBehavior, Modifiers,
@@ -3434,7 +3434,10 @@ impl ProjectPanel {
     }
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(external_paths) = self.external_paths_from_system_clipboard(cx) {
+        if let Some(external_paths) = self
+            .external_paths_from_system_clipboard(cx)
+            .filter(|external_paths| !self.system_clipboard_mirrors_internal(external_paths, cx))
+        {
             let target_entry_id = self
                 .selection
                 .map(|s| s.entry_id)
@@ -3496,6 +3499,8 @@ impl ProjectPanel {
 
             let item_count = paste_tasks.len();
             let workspace = self.workspace.clone();
+            let paths_before_move = clip_is_cut
+                .then(|| self.absolute_paths_for_entries(clipboard_entries.items(), cx));
 
             cx.spawn_in(window, async move |project_panel, mut cx| {
                 let mut last_succeed = None;
@@ -3525,8 +3530,9 @@ impl ProjectPanel {
                 }
 
                 project_panel
-                    .update(cx, |this, _| {
+                    .update(cx, |this, cx| {
                         this.undo_manager.record(changes).log_err();
+                        this.refresh_system_clipboard_after_move(paths_before_move, cx);
                     })
                     .ok();
 
@@ -4230,37 +4236,83 @@ impl ProjectPanel {
     }
 
     fn write_entries_to_system_clipboard(&self, entries: &BTreeSet<SelectedEntry>, cx: &mut App) {
+        let paths = self.absolute_paths_for_entries(entries, cx);
+        if paths.is_empty() {
+            return;
+        }
+        if self.project.read(cx).is_local() {
+            cx.write_to_clipboard(ClipboardItem::new_external_paths(paths));
+        } else {
+            let text = paths
+                .iter()
+                .map(|path| path.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("\n");
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        }
+    }
+
+    /// After a cut-paste the moved entries live at new paths. Update the system
+    /// clipboard to match, unless something else was copied in the meantime.
+    fn refresh_system_clipboard_after_move(
+        &self,
+        paths_before_move: Option<Vec<PathBuf>>,
+        cx: &mut App,
+    ) {
+        let Some(paths_before_move) = paths_before_move else {
+            return;
+        };
+        let Some(clipboard) = self.clipboard.as_ref() else {
+            return;
+        };
+        let still_ours = self
+            .external_paths_from_system_clipboard(cx)
+            .is_some_and(|external| Self::same_paths(&paths_before_move, external.paths()));
+        if still_ours {
+            let entries = clipboard.items().clone();
+            self.write_entries_to_system_clipboard(&entries, cx);
+        }
+    }
+
+    fn absolute_paths_for_entries(
+        &self,
+        entries: &BTreeSet<SelectedEntry>,
+        cx: &App,
+    ) -> Vec<PathBuf> {
         let project = self.project.read(cx);
-        let paths: Vec<String> = entries
+        entries
             .iter()
             .filter_map(|entry| {
                 let worktree = project.worktree_for_id(entry.worktree_id, cx)?;
                 let worktree = worktree.read(cx);
                 let worktree_entry = worktree.entry_for_id(entry.entry_id)?;
-                Some(
-                    worktree
-                        .abs_path()
-                        .join(worktree_entry.path.as_std_path())
-                        .to_string_lossy()
-                        .to_string(),
-                )
+                Some(worktree.abs_path().join(worktree_entry.path.as_std_path()))
             })
-            .collect();
-        if !paths.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(paths.join("\n")));
-        }
+            .collect()
     }
 
     fn external_paths_from_system_clipboard(&self, cx: &App) -> Option<ExternalPaths> {
-        let clipboard_item = cx.read_from_clipboard()?;
-        for entry in clipboard_item.entries() {
-            if let GpuiClipboardEntry::ExternalPaths(paths) = entry {
-                if !paths.paths().is_empty() {
-                    return Some(paths.clone());
-                }
-            }
+        cx.read_from_clipboard()?.external_paths().cloned()
+    }
+
+    /// Only the in-memory clipboard knows whether entries were cut or copied.
+    fn system_clipboard_mirrors_internal(&self, external_paths: &ExternalPaths, cx: &App) -> bool {
+        let Some(clipboard) = self.clipboard.as_ref() else {
+            return false;
+        };
+        let internal = self.absolute_paths_for_entries(clipboard.items(), cx);
+        Self::same_paths(&internal, external_paths.paths())
+    }
+
+    fn same_paths(left: &[PathBuf], right: &[PathBuf]) -> bool {
+        if left.is_empty() || left.len() != right.len() {
+            return false;
         }
-        None
+        let mut left = left.to_vec();
+        let mut right = right.to_vec();
+        left.sort();
+        right.sort();
+        left == right
     }
 
     fn has_pasteable_content(&self, cx: &App) -> bool {

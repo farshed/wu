@@ -47,7 +47,8 @@ use x11rb::{
     wrapper::ConnectionExt as _,
 };
 
-use gpui::{ClipboardItem, Image, ImageFormat, hash};
+use crate::linux::platform::{paths_from_uri_list, uri_list_from_paths};
+use gpui::{ClipboardEntry, ClipboardItem, ExternalPaths, Image, ImageFormat, hash};
 use strum::IntoEnumIterator;
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -78,7 +79,7 @@ x11rb::atom_manager! {
         TEXT_MIME_UNKNOWN: b"text/plain",
 
         // HTML: b"text/html",
-        // URI_LIST: b"text/uri-list",
+        URI_LIST: b"text/uri-list",
 
         PNG__MIME: ImageFormat::mime_type(ImageFormat::Png ).as_bytes(),
         JPEG_MIME: ImageFormat::mime_type(ImageFormat::Jpeg).as_bytes(),
@@ -990,6 +991,26 @@ impl Clipboard {
         self.inner.write(data, selection, wait)
     }
 
+    pub(crate) fn set_item(
+        &self,
+        item: &ClipboardItem,
+        selection: ClipboardKind,
+        wait: WaitConfig,
+    ) -> Result<()> {
+        let mut data = Vec::new();
+        if let Some(paths) = item.external_paths() {
+            data.push(ClipboardData {
+                bytes: uri_list_from_paths(paths.paths()).into_bytes(),
+                format: self.inner.atoms.URI_LIST,
+            });
+        }
+        data.push(ClipboardData {
+            bytes: item.text().unwrap_or_default().into_bytes(),
+            format: self.inner.atoms.UTF8_STRING,
+        });
+        self.inner.write(data, selection, wait)
+    }
+
     fn image_format_atom(&self, format: ImageFormat) -> Atom {
         match format {
             ImageFormat::Png => self.inner.atoms.PNG__MIME,
@@ -1020,6 +1041,34 @@ impl Clipboard {
     }
 
     pub(crate) fn get_any(&self, selection: ClipboardKind) -> Result<ClipboardItem> {
+        let Some(paths) = self.get_file_paths(selection) else {
+            return self.get_text_or_image(selection);
+        };
+        let mut entries = vec![ClipboardEntry::ExternalPaths(paths)];
+        if let Ok(text) = self.get_text_or_image(selection) {
+            entries.extend(
+                text.entries
+                    .into_iter()
+                    .filter(|entry| matches!(entry, ClipboardEntry::String(_))),
+            );
+        }
+        Ok(ClipboardItem { entries })
+    }
+
+    fn get_file_paths(&self, selection: ClipboardKind) -> Option<ExternalPaths> {
+        let data = match self.inner.read(&[self.inner.atoms.URI_LIST], selection) {
+            Ok(data) => data,
+            Err(err) => {
+                log::trace!("clipboard has no file list: {err:?}");
+                return None;
+            }
+        };
+        let uri_list = String::from_utf8(data.bytes).ok()?;
+        let paths = paths_from_uri_list(&uri_list);
+        (!paths.is_empty()).then_some(ExternalPaths(paths))
+    }
+
+    fn get_text_or_image(&self, selection: ClipboardKind) -> Result<ClipboardItem> {
         let image_entries = ImageFormat::iter()
             .map(|format| (self.image_format_atom(format), format))
             .collect::<Vec<_>>();

@@ -3,8 +3,9 @@ use std::sync::LazyLock;
 use anyhow::Result;
 use collections::FxHashMap;
 use itertools::Itertools;
+use std::os::windows::ffi::OsStrExt;
 use windows::Win32::{
-    Foundation::{HANDLE, HGLOBAL},
+    Foundation::{HANDLE, HGLOBAL, POINT},
     System::{
         DataExchange::{
             CloseClipboard, CountClipboardFormats, EmptyClipboard, EnumClipboardFormats,
@@ -14,9 +15,9 @@ use windows::Win32::{
         Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock},
         Ole::{CF_DIB, CF_HDROP, CF_UNICODETEXT},
     },
-    UI::Shell::{DragQueryFileW, HDROP},
+    UI::Shell::{DROPFILES, DragQueryFileW, HDROP},
 };
-use windows::core::{Owned, PCWSTR};
+use windows::core::{BOOL, Owned, PCWSTR};
 
 use gpui::{
     ClipboardEntry, ClipboardItem, ClipboardString, ExternalPaths, Image, ImageFormat, hash,
@@ -78,7 +79,7 @@ pub(crate) fn write_to_clipboard(item: ClipboardItem) {
             match entry {
                 ClipboardEntry::String(string) => write_string(string)?,
                 ClipboardEntry::Image(image) => write_image(image)?,
-                ClipboardEntry::ExternalPaths(_) => {}
+                ClipboardEntry::ExternalPaths(paths) => write_files(paths)?,
             }
         }
         Ok(())
@@ -211,6 +212,32 @@ fn write_image(item: &Image) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn write_files(paths: &ExternalPaths) -> Result<()> {
+    let mut names: Vec<u16> = Vec::new();
+    for path in paths.paths() {
+        names.extend(path.as_os_str().encode_wide());
+        names.push(0);
+    }
+    names.push(0);
+
+    let header = DROPFILES {
+        pFiles: std::mem::size_of::<DROPFILES>() as u32,
+        pt: POINT::default(),
+        fNC: BOOL(0),
+        fWide: BOOL(1),
+    };
+    let header_bytes = unsafe {
+        std::slice::from_raw_parts(
+            &header as *const DROPFILES as *const u8,
+            std::mem::size_of::<DROPFILES>(),
+        )
+    };
+    let mut bytes = Vec::with_capacity(header_bytes.len() + names.len() * 2);
+    bytes.extend_from_slice(header_bytes);
+    bytes.extend(names.iter().flat_map(|unit| unit.to_ne_bytes()));
+    set_clipboard_bytes(&bytes, CF_HDROP.0 as u32)
 }
 
 fn convert_to_png(bytes: &[u8], format: ImageFormat) -> Option<Vec<u8>> {

@@ -840,6 +840,26 @@ pub(super) fn get_xkb_compose_state(cx: &xkb::Context) -> Option<xkb::compose::S
 }
 
 #[cfg(any(feature = "wayland", feature = "x11"))]
+pub(super) fn uri_list_from_paths(paths: &[PathBuf]) -> String {
+    let mut uri_list = String::new();
+    for path in paths {
+        if let Ok(url) = url::Url::from_file_path(path) {
+            uri_list.push_str(url.as_str());
+            uri_list.push_str("\r\n");
+        }
+    }
+    uri_list
+}
+
+pub(super) fn paths_from_uri_list(uri_list: &str) -> smallvec::SmallVec<[PathBuf; 2]> {
+    uri_list
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .filter_map(|line| url::Url::parse(line.trim()).ok())
+        .filter_map(|url| url.to_file_path().ok())
+        .collect()
+}
+
 pub(super) const PIPE_READ_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[cfg(any(feature = "wayland", feature = "x11"))]

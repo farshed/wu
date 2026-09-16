@@ -2440,6 +2440,31 @@ impl ClipboardItem {
         }
     }
 
+    /// Create a new ClipboardItem holding file paths, plus their newline-separated
+    /// text form so plain-text consumers can still paste them.
+    pub fn new_external_paths(paths: impl IntoIterator<Item = PathBuf>) -> Self {
+        let paths: SmallVec<[PathBuf; 2]> = paths.into_iter().collect();
+        let text = paths
+            .iter()
+            .map(|path| path.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("\n");
+        Self {
+            entries: vec![
+                ClipboardEntry::ExternalPaths(crate::ExternalPaths(paths)),
+                ClipboardEntry::String(ClipboardString::new(text)),
+            ],
+        }
+    }
+
+    /// Returns the file paths in this item, if it has any.
+    pub fn external_paths(&self) -> Option<&crate::ExternalPaths> {
+        self.entries.iter().find_map(|entry| match entry {
+            ClipboardEntry::ExternalPaths(paths) if !paths.paths().is_empty() => Some(paths),
+            _ => None,
+        })
+    }
+
     /// Concatenates together all the ClipboardString entries in the item.
     /// Returns None if there were no ClipboardString entries.
     pub fn text(&self) -> Option<String> {

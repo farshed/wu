@@ -2356,11 +2356,9 @@ async fn test_paste_external_paths(cx: &mut gpui::TestAppContext) {
     let panel = workspace.update_in(cx, ProjectPanel::new);
     cx.run_until_parked();
 
-    cx.write_to_clipboard(ClipboardItem {
-        entries: vec![GpuiClipboardEntry::ExternalPaths(ExternalPaths(
-            smallvec::smallvec![PathBuf::from(path!("/external/new_file.rs"))],
-        ))],
-    });
+    cx.write_to_clipboard(ClipboardItem::new_external_paths([PathBuf::from(path!(
+        "/external/new_file.rs"
+    ))]));
 
     select_path(&panel, "root/subdir", cx);
     panel.update_in(cx, |panel, window, cx| {
@@ -2374,6 +2372,64 @@ async fn test_paste_external_paths(cx: &mut gpui::TestAppContext) {
             "v root",
             "    v subdir",
             "          new_file.rs  <== selected",
+        ],
+    );
+}
+
+#[gpui::test]
+async fn test_paste_prefers_newer_system_clipboard_over_stale_copy(
+    cx: &mut gpui::TestAppContext,
+) {
+    init_test(cx);
+
+    let fs = FakeFs::new(cx.executor());
+    fs.insert_tree(
+        path!("/root"),
+        json!({
+            "file_a.txt": "",
+            "subdir": {}
+        }),
+    )
+    .await;
+    fs.insert_tree(
+        path!("/external"),
+        json!({
+            "new_file.rs": "fn main() {}"
+        }),
+    )
+    .await;
+
+    let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
+    let window = cx.add_window(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
+    let workspace = window
+        .read_with(cx, |mw, _| mw.workspace().clone())
+        .unwrap();
+    let cx = &mut VisualTestContext::from_window(window.into(), cx);
+    let panel = workspace.update_in(cx, ProjectPanel::new);
+    cx.run_until_parked();
+
+    select_path(&panel, "root/file_a.txt", cx);
+    panel.update_in(cx, |panel, window, cx| {
+        panel.copy(&Default::default(), window, cx);
+    });
+
+    cx.write_to_clipboard(ClipboardItem::new_external_paths([PathBuf::from(path!(
+        "/external/new_file.rs"
+    ))]));
+
+    select_path(&panel, "root/subdir", cx);
+    panel.update_in(cx, |panel, window, cx| {
+        panel.paste(&Default::default(), window, cx);
+    });
+    cx.executor().run_until_parked();
+
+    assert_eq!(
+        visible_entries_as_strings(&panel, 0..50, cx),
+        &[
+            "v root",
+            "    v subdir",
+            "          new_file.rs  <== selected",
+            "      file_a.txt",
         ],
     );
 }

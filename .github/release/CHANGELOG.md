@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+- Files copied in the project panel can now be pasted into another Wu window or into other apps. A Cut pasted into a different window is copied, not moved.
+
 ## 1.0.8 - 2026-09-12
 
 - Material Icon Theme is now the default icon theme, with light and dark variants that follow the theme mode.

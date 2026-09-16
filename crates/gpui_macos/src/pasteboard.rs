@@ -169,42 +169,63 @@ impl Pasteboard {
                 [ClipboardEntry::Image(image)] => {
                     self.write_image(image);
                 }
-                [ClipboardEntry::ExternalPaths(_)] => {}
                 _ => {
-                    // Agus NB: We're currently only writing string entries to the clipboard when we have more than one.
-                    //
-                    // This was the existing behavior before I refactored the outer clipboard code:
-                    // https://github.com/zed-industries/zed/blob/65f7412a0265552b06ce122655369d6cc7381dd6/crates/gpui/src/platform/mac/platform.rs#L1060-L1110
-                    //
-                    // Note how `any_images` is always `false`. We should fix that, but that's orthogonal to the refactor.
-
-                    let mut combined = ClipboardString {
-                        text: String::new(),
-                        metadata: None,
-                    };
+                    // Images are only written when they are the sole entry.
+                    let mut combined: Option<ClipboardString> = None;
+                    let mut paths = Vec::new();
 
                     for entry in item.entries {
                         match entry {
                             ClipboardEntry::String(text) => {
+                                let combined = combined.get_or_insert_with(|| ClipboardString {
+                                    text: String::new(),
+                                    metadata: None,
+                                });
                                 combined.text.push_str(&text.text());
                                 if combined.metadata.is_none() {
                                     combined.metadata = text.metadata;
                                 }
                             }
-                            _ => {}
+                            ClipboardEntry::ExternalPaths(external_paths) => {
+                                paths.extend(external_paths.0);
+                            }
+                            ClipboardEntry::Image(_) => {}
                         }
                     }
 
-                    self.write_plaintext(&combined);
+                    self.inner.clearContents();
+                    if let Some(combined) = combined.as_ref() {
+                        self.set_plaintext(combined);
+                    }
+                    if !paths.is_empty() {
+                        self.set_file_paths(&paths);
+                    }
                 }
             }
+        }
+    }
+
+    unsafe fn set_file_paths(&self, paths: &[PathBuf]) {
+        unsafe {
+            let ns_paths: Vec<id> = paths
+                .iter()
+                .map(|path| ns_string(&path.to_string_lossy()))
+                .collect();
+            let ns_array = NSArray::arrayWithObjects(nil, &ns_paths);
+            self.inner
+                .setPropertyList_forType(ns_array, NSFilenamesPboardType);
         }
     }
 
     fn write_plaintext(&self, string: &ClipboardString) {
         unsafe {
             self.inner.clearContents();
+            self.set_plaintext(string);
+        }
+    }
 
+    unsafe fn set_plaintext(&self, string: &ClipboardString) {
+        unsafe {
             let text_bytes = NSData::dataWithBytes_length_(
                 nil,
                 string.text.as_ptr() as *const c_void,
@@ -368,6 +389,19 @@ mod tests {
                 .inner
                 .setData_forType(bytes, NSPasteboardTypeString);
         }
+    }
+
+    #[test]
+    fn test_write_external_paths() {
+        let pasteboard = Pasteboard::unique();
+        let paths = vec![PathBuf::from("/tmp/one.txt"), PathBuf::from("/tmp/two")];
+        let item = ClipboardItem::new_external_paths(paths.clone());
+        pasteboard.write(item.clone());
+
+        let read = pasteboard.read().expect("expected pasteboard contents");
+        assert_eq!(read.external_paths().map(|p| p.paths()), Some(paths.as_slice()));
+        assert_eq!(read.text().as_deref(), Some("/tmp/one.txt\n/tmp/two"));
+        assert_eq!(read, item);
     }
 
     #[test]
