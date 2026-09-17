@@ -98,6 +98,15 @@ impl VsCodeSettings {
             .map(|s| s.to_owned())
     }
 
+    fn read_window_title_format(&self) -> Option<String> {
+        self.read_string("window.title")
+            .map(|template| translate_vscode_window_title_format(&template))
+            // If every placeholder is dropped during translation, keep Zed's
+            // default title behavior instead of importing a template that
+            // renders as nothing but whitespace.
+            .filter(|template| !template.trim().is_empty())
+    }
+
     fn read_bool(&self, setting: &str) -> Option<bool> {
         self.read_value(setting).and_then(|v| v.as_bool())
     }
@@ -173,6 +182,16 @@ impl VsCodeSettings {
         SettingsContent {
             auto_update: None,
             base_keymap: Some(BaseKeymapContent::VSCode),
+<<<<<<< a51db33c1c61b6350dc96f2b0044877dd737c03b
+=======
+            calls: None,
+            collaboration_panel: None,
+            command_palette: self
+                .read_u64("workbench.commandPalette.history")
+                .map(|history| CommandPaletteSettingsContent {
+                    use_command_history: Some(history > 0),
+                }),
+>>>>>>> ed5cb101cafb7dfe34a7be82b0a32e7dc4cd2982
             credentials_url: None,
             debugger: None,
             diagnostics: None,
@@ -237,6 +256,7 @@ impl VsCodeSettings {
                 "underline" | "underline-thin" => Some(CursorShape::Underline),
                 _ => None,
             }),
+            cursor_animation: None,
             current_line_highlight: self.read_enum("editor.renderLineHighlight", |s| match s {
                 "gutter" => Some(CurrentLineHighlight::Gutter),
                 "line" => Some(CurrentLineHighlight::Line),
@@ -746,6 +766,7 @@ impl VsCodeSettings {
             cursor_position_button: None,
             line_endings_button: None,
             active_encoding_button: None,
+            pending_keystrokes_indicator: None,
         })
     }
 
@@ -755,6 +776,7 @@ impl VsCodeSettings {
             auto_reveal_entries: self.read_bool("explorer.autoReveal"),
             bold_folder_labels: None,
             button: None,
+            title_tooltip_delay: None,
             default_width: None,
             dock: None,
             drag_and_drop: None,
@@ -919,10 +941,6 @@ impl VsCodeSettings {
             buffer_line_height: None,
             buffer_font_features: None,
             git_commit_buffer_font_size: None,
-            markdown_preview_font_family: None,
-            markdown_preview_code_font_family: None,
-            markdown_preview_font_size: None,
-            markdown_preview_theme: None,
             theme: None,
             icon_theme: None,
             ui_density: None,
@@ -972,6 +990,7 @@ impl VsCodeSettings {
             } else {
                 None
             },
+            on_new_window: None,
             on_last_window_closed: None,
             pane_split_direction_horizontal: None,
             pane_split_direction_vertical: None,
@@ -991,6 +1010,8 @@ impl VsCodeSettings {
                     FullscreenMode::Simple
                 }
             }),
+            window_title_format: self.read_window_title_format(),
+            window_title_separator: self.read_string("window.titleSeparator"),
             when_closing_with_no_tabs: self.read_bool("window.closeWhenEmpty").map(|b| {
                 if b {
                     CloseWindowWhenNoItems::CloseWindow
@@ -1061,6 +1082,50 @@ impl VsCodeSettings {
     }
 }
 
+fn translate_vscode_window_title_format(template: &str) -> String {
+    let mut translated = String::new();
+    let mut start = 0;
+
+    // Workspace owns the runtime template parser, so the VS Code importer keeps
+    // its own small placeholder scan here instead of depending on that crate.
+    while let Some(offset) = template[start..].find("${") {
+        let variable_start = start + offset;
+        translated.push_str(&template[start..variable_start]);
+
+        let content_start = variable_start + 2;
+        let Some(content_end_offset) = template[content_start..].find('}') else {
+            translated.push_str(&template[variable_start..]);
+            return translated;
+        };
+
+        let content_end = content_start + content_end_offset;
+        let variable = &template[content_start..content_end];
+        match variable {
+            "projectName" | "fileName" | "filePath" | "relativePath" | "fileStem"
+            | "remoteHost" | "appName" | "branch" | "separator" => {
+                translated.push_str(&template[variable_start..=content_end]);
+            }
+            // Keep VS Code alias support in the importer so native Zed settings
+            // only expose the documented placeholder names.
+            "rootName" => translated.push_str("${projectName}"),
+            "activeEditorShort" => translated.push_str("${fileName}"),
+            "activeEditorMedium" => translated.push_str("${relativePath}"),
+            "activeEditorLong" => translated.push_str("${filePath}"),
+            "activeRepositoryBranchName" => translated.push_str("${branch}"),
+            // VS Code's `${remoteName}` is a provider label such as `SSH`, while
+            // Zed's `${remoteName}` resolves to the connection's name or host,
+            // so the token is dropped rather than imported with mismatched
+            // semantics.
+            _ => {}
+        }
+
+        start = content_end + 1;
+    }
+
+    translated.push_str(&template[start..]);
+    translated
+}
+
 fn skip_default<T: Default + PartialEq>(value: T) -> Option<T> {
     if value == T::default() {
         None
@@ -1098,6 +1163,26 @@ mod tests {
     }
 
     #[test]
+    fn test_import_command_palette_history() {
+        for (content, expected) in [
+            (r#"{ "workbench.commandPalette.history": 0 }"#, Some(false)),
+            (r#"{ "workbench.commandPalette.history": 1 }"#, Some(true)),
+            (r#"{ "workbench.commandPalette.history": 50 }"#, Some(true)),
+            ("{}", None),
+        ] {
+            let settings = VsCodeSettings::from_str(content, VsCodeSettingsSource::VsCode)
+                .unwrap()
+                .settings_content();
+            assert_eq!(
+                settings
+                    .command_palette
+                    .and_then(|settings| settings.use_command_history),
+                expected,
+            );
+        }
+    }
+
+    #[test]
     fn test_import_reveal_if_open() {
         let settings = VsCodeSettings::from_str(
             r#"{ "workbench.editor.revealIfOpen": true }"#,
@@ -1107,5 +1192,52 @@ mod tests {
         .settings_content();
 
         assert_eq!(settings.workspace.reveal_if_open, Some(true));
+    }
+
+    #[test]
+    fn test_import_window_title_format() {
+        let imported_title = |content: &str| {
+            VsCodeSettings::from_str(content, VsCodeSettingsSource::VsCode)
+                .unwrap()
+                .settings_content()
+                .workspace
+                .window_title_format
+        };
+
+        assert_eq!(imported_title("{}"), None);
+
+        // VS Code variables are translated to their Zed equivalents.
+        assert_eq!(
+            imported_title(
+                r#"{ "window.title": "${rootName} ${activeRepositoryBranchName} ${activeEditorMedium}" }"#,
+            ),
+            Some("${projectName} ${branch} ${relativePath}".to_string())
+        );
+
+        // Zed-native variables pass through unchanged.
+        assert_eq!(
+            imported_title(r#"{ "window.title": "${projectName}${separator}${filePath}" }"#),
+            Some("${projectName}${separator}${filePath}".to_string())
+        );
+
+        // VS Code's `${remoteName}` is a provider label such as `SSH`, which
+        // doesn't match Zed's connection-name semantics, so it is dropped.
+        assert_eq!(
+            imported_title(r#"{ "window.title": "${remoteName}: ${rootName}" }"#),
+            Some(": ${projectName}".to_string())
+        );
+
+        // Templates that translate to nothing but whitespace fall back to
+        // Zed's default title instead of overriding it.
+        assert_eq!(
+            imported_title(r#"{ "window.title": " ${activeFolderShort} " }"#),
+            None
+        );
+
+        // Literal text around unsupported variables is still imported.
+        assert_eq!(
+            imported_title(r#"{ "window.title": "${activeFolderShort} — literal" }"#),
+            Some(" — literal".to_string())
+        );
     }
 }

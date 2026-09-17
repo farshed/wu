@@ -8362,6 +8362,16 @@ async fn test_manipulate_text(cx: &mut TestAppContext) {
         «    hello_world\t\tˇ»
     "});
 
+    cx.set_state(indoc! {"
+        «hello world
+        ˇ»goodbye
+    "});
+    cx.update_editor(|e, window, cx| e.convert_to_snake_case(&ConvertToSnakeCase, window, cx));
+    cx.assert_editor_state(indoc! {"
+        «hello_world
+        ˇ»goodbye
+    "});
+
     // Test selections with `line_mode() = true`.
     cx.update_editor(|editor, _window, _cx| editor.selections.set_line_mode(true));
     cx.set_state(indoc! {"
@@ -8609,6 +8619,40 @@ async fn test_rotate_selections(cx: &mut TestAppContext) {
         ˇliˇne123
         ˇline23
         ˇline3
+    "});
+}
+
+#[gpui::test]
+async fn test_rotate_selections_nonconsecutive_lines(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let mut cx = EditorTestContext::new(cx).await;
+
+    cx.set_state(indoc! {"
+        ˇline1
+        line2
+        liˇne3
+        line4ˇ
+    "});
+
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_forward(&RotateSelectionsForward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        line4ˇ
+        line2
+        ˇline1
+        liˇne3
+    "});
+
+    cx.update_editor(|e, window, cx| {
+        e.rotate_selections_backward(&RotateSelectionsBackward, window, cx)
+    });
+    cx.assert_editor_state(indoc! {"
+        ˇline1
+        line2
+        liˇne3
+        line4ˇ
     "});
 }
 
