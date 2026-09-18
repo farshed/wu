@@ -21,9 +21,9 @@ Wu is a fork of [Zed](https://github.com/zed-industries/zed). It inherits Zed's 
 
 ---
 
-![Wu screenshot dark](assets/images/screenshot-dark.png)
+![Wu screenshot dark](https://wu.farshed.me/screenshot-dark.png)
 
-![Wu screenshot light](assets/images/screenshot-light.png)
+![Wu screenshot light](https://wu.farshed.me/screenshot-light.png)
 
 ## Docs
 
