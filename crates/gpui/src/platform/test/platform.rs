@@ -3,11 +3,20 @@ use crate::NoopTextSystem;
 #[cfg(any(test, feature = "test-support"))]
 use crate::PathPromptOptions;
 use crate::{
+<<<<<<< a51db33c1c61b6350dc96f2b0044877dd737c03b
     AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, DummyKeyboardMapper,
     ForegroundExecutor, Keymap, Platform, PlatformDisplay, PlatformHeadlessRenderer,
     PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem, PromptButton, SharedString,
     SystemNotification, SystemNotificationResponse, Task, TestDisplay, TestWindow, ThermalState,
     WindowAppearance, WindowParams,
+=======
+    AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, DevicePixels,
+    DummyKeyboardMapper, ForegroundExecutor, Keymap, OwnedMenu, Platform, PlatformDisplay,
+    PlatformHeadlessRenderer, PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem,
+    PromptButton, ScreenCaptureFrame, ScreenCaptureSource, ScreenCaptureStream, SharedString,
+    SourceMetadata, SystemNotification, SystemNotificationResponse, Task, TestDisplay, TestWindow,
+    ThermalState, WindowAppearance, WindowParams, size,
+>>>>>>> ed5cb101cafb7dfe34a7be82b0a32e7dc4cd2982
 };
 use anyhow::Result;
 #[cfg(any(test, feature = "test-support"))]
@@ -43,6 +52,7 @@ pub(crate) struct TestPlatform {
         RefCell<Option<oneshot::Sender<(Option<PathBuf>, Vec<std::ffi::OsString>)>>>,
     headless_renderer_factory: Option<Box<dyn Fn() -> Option<Box<dyn PlatformHeadlessRenderer>>>>,
     weak: Weak<Self>,
+    menus: RefCell<Vec<OwnedMenu>>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -120,6 +130,7 @@ impl TestPlatform {
             system_notifications: Default::default(),
             text_system,
             headless_renderer_factory,
+            menus: Default::default(),
         })
     }
 
@@ -516,7 +527,14 @@ impl Platform for TestPlatform {
         self.system_notifications.borrow_mut().response_callback = Some(callback);
     }
 
-    fn set_menus(&self, _menus: Vec<crate::Menu>, _keymap: &Keymap) {}
+    fn set_menus(&self, menus: Vec<crate::Menu>, _keymap: &Keymap) {
+        *self.menus.borrow_mut() = menus.into_iter().map(|menu| menu.owned()).collect()
+    }
+
+    fn get_menus(&self) -> Option<Vec<OwnedMenu>> {
+        Some(self.menus.borrow().clone())
+    }
+
     fn set_dock_menu(&self, _menu: Vec<crate::MenuItem>, _keymap: &Keymap) {}
 
     fn add_recent_document(&self, _paths: &Path) {}

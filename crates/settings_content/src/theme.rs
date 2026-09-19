@@ -206,6 +206,7 @@ pub struct ThemeSettingsContent {
     #[schemars(default = "default_font_features")]
     pub buffer_font_features: Option<FontFeaturesContent>,
     pub git_commit_buffer_font_size: Option<FontSize>,
+<<<<<<< a51db33c1c61b6350dc96f2b0044877dd737c03b
     /// The name of a font to use for rendering in the markdown preview.
     /// Falls back to the UI font if unset.
     pub markdown_preview_font_family: Option<FontFamilyName>,
@@ -219,6 +220,9 @@ pub struct ThemeSettingsContent {
     /// Falls back to the main editor theme if unset.
     pub markdown_preview_theme: Option<ThemeSelection>,
     /// The name of the Wu theme to use.
+=======
+    /// The name of the Zed theme to use.
+>>>>>>> ed5cb101cafb7dfe34a7be82b0a32e7dc4cd2982
     pub theme: Option<ThemeSelection>,
     /// The name of the icon theme to use.
     pub icon_theme: Option<IconThemeSelection>,

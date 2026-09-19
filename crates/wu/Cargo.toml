@@ -1,8 +1,13 @@
 [package]
 description = "The fast, native VSCode alternative."
 edition.workspace = true
+<<<<<<< a51db33c1c61b6350dc96f2b0044877dd737c03b:crates/wu/Cargo.toml
 name = "wu"
 version = "1.0.8"
+=======
+name = "zed"
+version = "1.20.2"
+>>>>>>> ed5cb101cafb7dfe34a7be82b0a32e7dc4cd2982:crates/zed/Cargo.toml
 publish.workspace = true
 license = "GPL-3.0-or-later"
 default-run = "wu"
