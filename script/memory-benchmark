@@ -12,8 +12,13 @@
 # Usage: script/memory-benchmark
 #   RUNS=5 SETTLE_SECONDS=30 script/memory-benchmark   # override defaults
 #   WU_BIN=... ZED_BIN=... script/memory-benchmark     # override app paths
+#   Linux: script/memory-benchmark --help (PSS/RSS; requires an X11 display)
 
 set -euo pipefail
+
+if [[ "$(uname)" == "Linux" ]]; then
+  exec python3 "$(dirname "$0")/memory-benchmark-linux.py" "$@"
+fi
 
 if [[ "$(uname)" != "Darwin" ]]; then
   echo "This benchmark uses macOS's footprint(1) and only runs on macOS." >&2
