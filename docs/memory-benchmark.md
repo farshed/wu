@@ -2,7 +2,7 @@
 
 Wu used less settled process memory than Zed in every measured stage of this comparison: **9.4–9.9% less at idle, 6.0–10.6% less in the workspace workflow, and 1.8–2.7% less with rust-analyzer running.**
 
-Tested on September 19, 2026, using the official Linux ARM64 releases of [Wu 1.0.8](https://github.com/farshed/wu/releases/tag/v1.0.8) and [Zed 1.20.2](https://github.com/zed-industries/zed/releases/tag/v1.20.2).
+Tested using the official Linux ARM64 releases of [Wu 1.0.8](https://github.com/farshed/wu/releases/tag/v1.0.8) and [Zed 1.20.2](https://github.com/zed-industries/zed/releases/tag/v1.20.2).
 
 > These are software-rendered Linux VPS results. Both editors ran real graphical interfaces through Xvfb and Mesa llvmpipe, which renders on the CPU. The numbers are not estimates of memory use on a hardware-GPU desktop.
 
@@ -71,4 +71,4 @@ Software-rendering allocations contribute to these results. Hardware-GPU desktop
 
 ## Reproduce and inspect
 
-The [benchmark runner](../script/memory-benchmark) supports idle, workspace, and Rust scenarios on Linux. See the [detailed report](memory-benchmark.md) for prerequisites, commands, per-run results, sampled peaks, release hashes, and artifact locations. Raw measurements and screenshots are retained on the benchmark VPS; they are not bundled with this page.
+See the [benchmark runner](../script/memory-benchmark). It supports idle, workspace, and Rust scenarios on Linux.
