@@ -851,6 +851,7 @@ pub(super) fn uri_list_from_paths(paths: &[PathBuf]) -> String {
     uri_list
 }
 
+#[cfg(any(feature = "wayland", feature = "x11"))]
 pub(super) fn paths_from_uri_list(uri_list: &str) -> smallvec::SmallVec<[PathBuf; 2]> {
     uri_list
         .lines()
@@ -860,6 +861,7 @@ pub(super) fn paths_from_uri_list(uri_list: &str) -> smallvec::SmallVec<[PathBuf
         .collect()
 }
 
+#[cfg(any(feature = "wayland", feature = "x11"))]
 pub(super) const PIPE_READ_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[cfg(any(feature = "wayland", feature = "x11"))]
