@@ -128,8 +128,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-tags: true
+      - name: Fetch tags for the changelog link
+        run: git fetch --quiet --tags --force --depth=1 origin
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
