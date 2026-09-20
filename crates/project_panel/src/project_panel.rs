@@ -1,3 +1,4 @@
+mod file_info_modal;
 pub mod project_panel_settings;
 mod undo;
 mod utils;
@@ -18,15 +19,14 @@ use git;
 use git::status::GitSummary;
 use git_ui_core::file_diff_view::FileDiffView;
 use gpui::{
-    Action, AnyElement, App, AsyncWindowContext, Bounds,
-    ClipboardItem, Context, CursorStyle, DismissEvent, Div, DragMoveEvent, Entity, EventEmitter,
-    ExternalDragPayload, ExternalPaths, FileDragPaths, FocusHandle, Focusable, FontWeight, Hsla,
-    InteractiveElement, KeyContext, ListHorizontalSizingBehavior, ListSizingBehavior, Modifiers,
-    ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseExitEvent, ParentElement,
-    PathPromptOptions, Pixels, Point, PromptLevel, Render, ScrollStrategy, Stateful, Styled,
-    Subscription, Task, UniformListScrollHandle, WeakEntity, Window, actions, anchored, deferred,
-    div, hsla, linear_color_stop, linear_gradient, point, px, size, transparent_white,
-    uniform_list,
+    Action, AnyElement, App, AsyncWindowContext, Bounds, ClipboardItem, Context, CursorStyle,
+    DismissEvent, Div, DragMoveEvent, Entity, EventEmitter, ExternalDragPayload, ExternalPaths,
+    FileDragPaths, FocusHandle, Focusable, FontWeight, Hsla, InteractiveElement, KeyContext,
+    ListHorizontalSizingBehavior, ListSizingBehavior, Modifiers, ModifiersChangedEvent,
+    MouseButton, MouseDownEvent, MouseExitEvent, ParentElement, PathPromptOptions, Pixels, Point,
+    PromptLevel, Render, ScrollStrategy, Stateful, Styled, Subscription, Task,
+    UniformListScrollHandle, WeakEntity, Window, actions, anchored, deferred, div, hsla,
+    linear_color_stop, linear_gradient, point, px, size, transparent_white, uniform_list,
 };
 use language::DiagnosticSeverity;
 use markdown_preview::markdown_preview_view::MarkdownPreviewView;
@@ -345,6 +345,12 @@ struct SelectPrevDiagnostic {
     pub severity: GoToDiagnosticSeverityFilter,
 }
 
+const GET_INFO_LABEL: &str = if cfg!(target_os = "macos") {
+    "Get Info"
+} else {
+    "Properties"
+};
+
 actions!(
     project_panel,
     [
@@ -426,6 +432,8 @@ actions!(
         Redo,
         /// Opens a markdown preview for the selected file.
         OpenMarkdownPreview,
+        /// Shows the size, dates, and other details of the selected entry.
+        GetInfo,
     ]
 );
 
@@ -1151,6 +1159,7 @@ impl ProjectPanel {
                             })
                             .when(is_local, |menu| {
                                 menu.action("Open in Default App", Box::new(OpenWithSystem))
+                                    .action(GET_INFO_LABEL, Box::new(GetInfo))
                             })
                             .action("Open in Terminal", Box::new(OpenInTerminal))
                             .when(is_markdown, |menu| {
@@ -3499,8 +3508,8 @@ impl ProjectPanel {
 
             let item_count = paste_tasks.len();
             let workspace = self.workspace.clone();
-            let paths_before_move = clip_is_cut
-                .then(|| self.absolute_paths_for_entries(clipboard_entries.items(), cx));
+            let paths_before_move =
+                clip_is_cut.then(|| self.absolute_paths_for_entries(clipboard_entries.items(), cx));
 
             cx.spawn_in(window, async move |project_panel, mut cx| {
                 let mut last_succeed = None;
@@ -3937,6 +3946,20 @@ impl ProjectPanel {
             let abs_path = worktree.absolutize(&entry.path);
             cx.open_with_system(&abs_path);
         }
+    }
+
+    fn get_info(&mut self, _: &GetInfo, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((worktree, entry)) = self.selected_entry(cx) else {
+            return;
+        };
+        let abs_path = worktree.absolutize(&entry.path);
+        self.workspace
+            .update(cx, |workspace, cx| {
+                workspace.toggle_modal(window, cx, |_, cx| {
+                    file_info_modal::FileInfoModal::new(abs_path, cx)
+                });
+            })
+            .log_err();
     }
 
     fn open_in_terminal(
@@ -7293,6 +7316,7 @@ impl Render for ProjectPanel {
                     |el| {
                         el.on_action(cx.listener(Self::reveal_in_finder))
                             .on_action(cx.listener(Self::open_system))
+                            .on_action(cx.listener(Self::get_info))
                             .on_action(cx.listener(Self::open_in_terminal))
                     },
                 )

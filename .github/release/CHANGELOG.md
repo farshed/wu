@@ -8,6 +8,8 @@ release body.
 ## Unreleased
 
 - Files copied in the project panel can now be pasted into another Wu window or into other apps. A Cut pasted into a different window is copied, not moved.
+- Closing the last tab keeps the window open on every platform. Set `when_closing_with_no_tabs` to change this.
+- The project panel context menu has a Get Info item (Properties on Windows and Linux) that shows a file or folder's path, size, created and modified dates, and permissions. Folder sizes are calculated in the background.
 
 ## 1.0.8 - 2026-09-12
 

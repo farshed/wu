@@ -36,6 +36,8 @@ settings.workspace = true
 smallvec.workspace = true
 theme.workspace = true
 theme_settings.workspace = true
+time.workspace = true
+time_format.workspace = true
 rayon.workspace = true
 ui.workspace = true
 util.workspace = true
@@ -49,6 +51,7 @@ wu_actions.workspace = true
 notifications.workspace = true
 fs.workspace = true
 log.workspace = true
+walkdir.workspace = true
 
 [dev-dependencies]
 client = { workspace = true, features = ["test-support"] }
