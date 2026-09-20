@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+## 1.0.9 - 2026-09-20
+
 - Files copied in the project panel can now be pasted into another Wu window or into other apps.
 - Closing the last tab keeps the window open by default.
 - The project panel context menu has a Get Info item (Properties on Windows and Linux) that shows a file or folder's path, size, created and modified dates, and permissions.
