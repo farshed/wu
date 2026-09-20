@@ -324,14 +324,14 @@ impl Component for ThemePreviewTile {
 
         let one_dark = theme_registry.get("One Dark");
         let one_light = theme_registry.get("One Light");
-        let gruvbox_dark = theme_registry.get("Gruvbox Dark");
-        let gruvbox_light = theme_registry.get("Gruvbox Light");
+        let catppuccin_mocha = theme_registry.get("Catppuccin Mocha");
+        let catppuccin_latte = theme_registry.get("Catppuccin Latte");
 
         let themes_to_preview = vec![
             one_dark.clone().ok(),
             one_light.ok(),
-            gruvbox_dark.ok(),
-            gruvbox_light.ok(),
+            catppuccin_mocha.ok(),
+            catppuccin_latte.ok(),
         ]
         .into_iter()
         .flatten()
