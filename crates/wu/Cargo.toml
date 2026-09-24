@@ -1,8 +1,13 @@
 [package]
 description = "The fast, native VSCode alternative."
 edition.workspace = true
+<<<<<<< 420e0a9b406fe5c875d5d11aad310060c9a13066:crates/wu/Cargo.toml
 name = "wu"
 version = "1.0.9"
+=======
+name = "zed"
+version = "1.21.0"
+>>>>>>> 48ead6937b9dda83d018a9d95363aef1d6893a45:crates/zed/Cargo.toml
 publish.workspace = true
 license = "GPL-3.0-or-later"
 default-run = "wu"
@@ -11,11 +16,6 @@ default-run = "wu"
 workspace = true
 
 [features]
-inspector = [
-    "gpui/inspector",
-    "inspector_ui/inspector",
-    "ui/derive_inspector_reflection",
-]
 tracy = ["ztracing/tracy"]
 # LEAK_BACKTRACE=1 cargo run --features zed/track-project-leak --profile release-fast
 track-project-leak = ["gpui/leak-detection"]
@@ -123,6 +123,7 @@ language_tools.workspace = true
 languages = { workspace = true, features = ["load-grammars"] }
 libc.workspace = true
 line_ending_selector.workspace = true
+lsp_command_selector.workspace = true
 log.workspace = true
 lsp_locations.workspace = true
 markdown.workspace = true

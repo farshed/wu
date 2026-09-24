@@ -25,8 +25,11 @@ use language::{
 use lsp::DiagnosticSeverity;
 use multi_buffer::{BufferOffset, MultiBufferOffset, MultiBufferRow};
 use project::{
-    File, Project, ProjectItem as _, ProjectPath, git_store::GitStore, lsp_store::FormatTrigger,
-    project_settings::ProjectSettings, search::SearchQuery,
+    File, Project, ProjectItem as _, ProjectPath,
+    git_store::GitStore,
+    lsp_store::{FormatTrigger, LanguageServerShowDocumentRequest},
+    project_settings::ProjectSettings,
+    search::SearchQuery,
 };
 use rope::TextSummary;
 use settings::Settings;
@@ -41,10 +44,22 @@ use std::{
 };
 use text::{BufferSnapshot, OffsetRangeExt, ToPoint as _};
 use ui::{IconDecorationKind, prelude::*};
+<<<<<<< 420e0a9b406fe5c875d5d11aad310060c9a13066
 use util::{ResultExt, TryFutureExt, debug_panic, paths::PathExt};
 use workspace::item::{ItemSettings, SerializableItem, TabContentParams};
 use workspace::{
     ItemId, ItemNavHistory, ToolbarItemLocation, Workspace, WorkspaceId,
+=======
+use util::{
+    ResultExt, TryFutureExt, debug_panic,
+    paths::{PathExt, UrlExt as _},
+    rel_path::RelPath,
+};
+use workspace::item::{Dedup, ItemSettings, SerializableItem, TabContentParams};
+use workspace::{
+    CollaboratorId, ItemId, ItemNavHistory, OpenOptions, OpenVisible, ToolbarItemLocation, ViewId,
+    Workspace, WorkspaceId,
+>>>>>>> 48ead6937b9dda83d018a9d95363aef1d6893a45
     invalid_item_view::InvalidItemView,
     item::{Item, ItemBufferKind, ItemEvent, ProjectItem, SaveOptions},
     searchable::{
@@ -1919,6 +1934,68 @@ fn compute_modified_ranges(
         merged.push(expanded);
     }
     merged
+}
+
+pub(crate) fn handle_lsp_show_document(
+    workspace: &mut Workspace,
+    request: &LanguageServerShowDocumentRequest,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) -> Task<()> {
+    let request = request.clone();
+    if request.external {
+        cx.open_url(request.uri.as_str());
+        request.respond(true);
+        return Task::ready(());
+    }
+    let Ok(abs_path) = request.uri.to_file_path_ext(workspace.path_style(cx)) else {
+        log::error!(
+            "language server requested to show document with unsupported uri {}",
+            request.uri.as_str()
+        );
+        request.respond(false);
+        return Task::ready(());
+    };
+    let open_task = workspace.open_abs_path(
+        abs_path,
+        OpenOptions {
+            visible: Some(OpenVisible::None),
+            focus: Some(request.take_focus),
+            ..OpenOptions::default()
+        },
+        window,
+        cx,
+    );
+    cx.spawn_in(window, async move |_, cx| {
+        let success = match open_task.await {
+            Ok(item) => match item.downcast::<Editor>().zip(request.selection) {
+                Some((editor, selection)) => editor
+                    .update_in(cx, |editor, window, cx| {
+                        let snapshot = editor.buffer().read(cx).snapshot(cx);
+                        let range = language::range_from_lsp(selection);
+                        let start = snapshot.point_utf16_to_offset(
+                            snapshot.clip_point_utf16(range.start, Bias::Left),
+                        );
+                        let end = snapshot.point_utf16_to_offset(
+                            snapshot.clip_point_utf16(range.end, Bias::Left),
+                        );
+                        editor.change_selections(
+                            SelectionEffects::scroll(Autoscroll::center()),
+                            window,
+                            cx,
+                            |selections| selections.select_ranges([start..end]),
+                        );
+                    })
+                    .is_ok(),
+                None => true,
+            },
+            Err(error) => {
+                log::error!("failed to show document for a language server: {error:#}");
+                false
+            }
+        };
+        request.respond(success);
+    })
 }
 
 #[cfg(test)]
