@@ -53,7 +53,6 @@ use language::{Buffer, BufferEvent, File};
 use menu;
 use multi_buffer::ExcerptBoundaryInfo;
 use notifications::status_toast::StatusToast;
-use panel::PanelHeader;
 use project::git_store::GitAccess;
 use project::{
     Fs, Project, ProjectPath,
@@ -1144,6 +1143,17 @@ pub(crate) fn commit_message_editor(
     commit_editor.set_show_indent_guides(false, cx);
     let placeholder = placeholder.unwrap_or("Enter commit message".into());
     commit_editor.set_placeholder_text(&placeholder, window, cx);
+    commit_editor.set_custom_context_menu(|editor, _point, window, cx| {
+        let has_selection = editor.has_non_empty_selection(&editor.display_snapshot(cx));
+        let focus_handle = editor.focus_handle(cx);
+
+        Some(ContextMenu::build(window, cx, |menu, _, _| {
+            menu.context(focus_handle)
+                .action_disabled_when(!has_selection, "Cut", Box::new(editor::actions::Cut))
+                .action_disabled_when(!has_selection, "Copy", Box::new(editor::actions::Copy))
+                .action("Paste", Box::new(editor::actions::Paste))
+        }))
+    });
     commit_editor
 }
 
@@ -1752,12 +1762,15 @@ impl GitPanel {
         if self.commit_editor.read(cx).is_focused(window) {
             dispatch_context.add("CommitEditor");
         } else if self.focus_handle.contains_focused(window, cx) || self.context_menu.is_some() {
-            // Preserve the panel's `ChangesList` context while a context menu
-            // is open. Its focus handle may not appear as a descendant of the
-            // panel until the next frame, so `FocusHandle::contains_focused`
-            // would return `false`.
+            // Preserve the panel's list context while a context menu is open.
+            // Its focus handle may not appear as a descendant of the panel
+            // until the next frame, so `FocusHandle::contains_focused` would
+            // return `false`.
             dispatch_context.add("menu");
-            dispatch_context.add("ChangesList");
+            match self.active_tab {
+                GitPanelTab::Changes => dispatch_context.add("ChangesList"),
+                GitPanelTab::History => dispatch_context.add("HistoryList"),
+            }
         }
 
         dispatch_context
@@ -3724,6 +3737,375 @@ impl GitPanel {
         Some(format!("{} {}", action_text, file_name))
     }
 
+<<<<<<< 420e0a9b406fe5c875d5d11aad310060c9a13066
+=======
+    fn generate_commit_message_action(
+        &mut self,
+        _: &git::GenerateCommitMessage,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.generate_commit_message(cx);
+    }
+
+    fn split_patch(patch: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut current_patch = String::new();
+
+        for line in patch.lines() {
+            if line.starts_with("---") && !current_patch.is_empty() {
+                result.push(current_patch.trim_end_matches('\n').into());
+                current_patch = String::new();
+            }
+            current_patch.push_str(line);
+            current_patch.push('\n');
+        }
+
+        if !current_patch.is_empty() {
+            result.push(current_patch.trim_end_matches('\n').into());
+        }
+
+        result
+    }
+    fn truncate_iteratively(patch: &str, max_bytes: usize) -> String {
+        let mut current_size = patch.len();
+        if current_size <= max_bytes {
+            return patch.to_string();
+        }
+        let file_patches = Self::split_patch(patch);
+        let mut file_infos: Vec<TruncatedPatch> = file_patches
+            .iter()
+            .filter_map(|patch| TruncatedPatch::from_unified_diff(patch))
+            .collect();
+
+        if file_infos.is_empty() {
+            return patch.to_string();
+        }
+
+        current_size = file_infos.iter().map(|f| f.calculate_size()).sum::<usize>();
+        while current_size > max_bytes {
+            let file_idx = file_infos
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| f.hunks_to_keep > 1)
+                .max_by_key(|(_, f)| f.hunks_to_keep)
+                .map(|(idx, _)| idx);
+            match file_idx {
+                Some(idx) => {
+                    let file = &mut file_infos[idx];
+                    let size_before = file.calculate_size();
+                    file.hunks_to_keep -= 1;
+                    let size_after = file.calculate_size();
+                    let saved = size_before.saturating_sub(size_after);
+                    current_size = current_size.saturating_sub(saved);
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+
+        file_infos
+            .iter()
+            .map(|info| info.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    pub fn compress_commit_diff(diff_text: &str, max_bytes: usize) -> String {
+        if diff_text.len() <= max_bytes {
+            return diff_text.to_string();
+        }
+
+        let mut compressed = diff_text
+            .lines()
+            .map(|line| {
+                if line.len() > 256 {
+                    format!("{}...[truncated]\n", &line[..line.floor_char_boundary(256)])
+                } else {
+                    format!("{}\n", line)
+                }
+            })
+            .collect::<Vec<_>>()
+            .concat();
+
+        if compressed.len() <= max_bytes {
+            return compressed;
+        }
+
+        compressed = Self::truncate_iteratively(&compressed, max_bytes);
+
+        compressed
+    }
+
+    async fn load_project_rules(
+        project: &Entity<Project>,
+        repo_work_dir: &Arc<Path>,
+        cx: &mut AsyncApp,
+    ) -> Option<String> {
+        let rules_path = cx.update(|cx| {
+            for worktree in project.read(cx).worktrees(cx) {
+                let worktree_abs_path = worktree.read(cx).abs_path();
+                if !worktree_abs_path.starts_with(&repo_work_dir) {
+                    continue;
+                }
+
+                let worktree_snapshot = worktree.read(cx).snapshot();
+                for rules_name in RULES_FILE_NAMES {
+                    if let Ok(rel_path) = RelPath::from_unix_str(rules_name) {
+                        if let Some(entry) = worktree_snapshot.entry_for_path(rel_path) {
+                            if entry.is_file() {
+                                return Some(ProjectPath {
+                                    worktree_id: worktree.read(cx).id(),
+                                    path: entry.path.clone(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        })?;
+
+        let buffer = project
+            .update(cx, |project, cx| project.open_buffer(rules_path, cx))
+            .await
+            .ok()?;
+
+        let content = buffer
+            .read_with(cx, |buffer, _| buffer.text())
+            .trim()
+            .to_string();
+
+        if content.is_empty() {
+            None
+        } else {
+            Some(content)
+        }
+    }
+
+    fn build_commit_message_prompt(
+        prompt: &str,
+        user_agents_md: Option<&str>,
+        rules_content: Option<&str>,
+        instructions: Option<&str>,
+        subject: &str,
+        diff_text: &str,
+    ) -> String {
+        let user_agents_md_section = match user_agents_md {
+            Some(user_agents_md) => format!(
+                "\n\nThe user has provided the following rules that you should follow when writing the commit message. Project-specific rules may override these instructions when they conflict:\n\
+                <rules>\n{user_agents_md}\n</rules>\n"
+            ),
+            None => String::new(),
+        };
+
+        let rules_section = match rules_content {
+            Some(rules) => format!(
+                "\n\nThe user has provided the following rules specific to this project that you should follow when writing the commit message:\n\
+                <project_rules>\n{rules}\n</project_rules>\n"
+            ),
+            None => String::new(),
+        };
+
+        let instructions_section = match instructions {
+            Some(instructions) if !instructions.trim().is_empty() => format!(
+                "\n\nThe user has provided the following instructions for writing commit messages that you should follow:\n\
+                <commit_message_instructions>\n{instructions}\n</commit_message_instructions>\n"
+            ),
+            _ => String::new(),
+        };
+
+        let subject_section = if subject.trim().is_empty() {
+            String::new()
+        } else {
+            format!("\nHere is the user's subject line:\n{subject}")
+        };
+
+        format!(
+            "{prompt}{user_agents_md_section}{rules_section}{instructions_section}{subject_section}\nHere are the changes in this commit:\n{diff_text}"
+        )
+    }
+
+    /// Generates a commit message using an LLM.
+    pub fn generate_commit_message(&mut self, cx: &mut Context<Self>) {
+        if !self.can_commit() || !AgentSettings::get_global(cx).enabled(cx) {
+            return;
+        }
+
+        let Some(ConfiguredModel { provider, model }) =
+            LanguageModelRegistry::read_global(cx).commit_message_model(cx)
+        else {
+            return;
+        };
+
+        let Some(repo) = self.active_repository.as_ref() else {
+            return;
+        };
+
+        telemetry::event!("Git Commit Message Generated");
+
+        let diff = repo.update(cx, |repo, cx| {
+            if self.has_staged_changes() {
+                repo.diff(DiffType::HeadToIndex, cx)
+            } else {
+                repo.diff(DiffType::HeadToWorktree, cx)
+            }
+        });
+
+        let temperature = AgentSettings::temperature_for_model(&model, cx);
+
+        let include_project_rules =
+            AgentSettings::get_global(cx).commit_message_include_project_rules;
+
+        let instructions = AgentSettings::get_global(cx)
+            .commit_message_instructions
+            .clone();
+        let project = self.project.clone();
+        let repo_work_dir = repo.read(cx).work_directory_abs_path.clone();
+
+        self.generate_commit_message_task = Some(cx.spawn(async move |this, mut cx| {
+            async move {
+                let _defer = cx.on_drop(&this, |this, _cx| {
+                    this.generate_commit_message_task.take();
+                });
+
+                if let Some(task) = cx.update(|cx| {
+                    if !provider.is_authenticated(cx) {
+                        Some(provider.authenticate(cx))
+                    } else {
+                        None
+                    }
+                }) {
+                    task.await.log_err();
+                }
+
+                let mut diff_text = match diff.await {
+                    Ok(result) => match result {
+                        Ok(text) => text,
+                        Err(e) => {
+                            Self::show_commit_message_error(&this, &e, cx);
+                            return anyhow::Ok(());
+                        }
+                    },
+                    Err(e) => {
+                        Self::show_commit_message_error(&this, &e, cx);
+                        return anyhow::Ok(());
+                    }
+                };
+
+                const MAX_DIFF_BYTES: usize = 20_000;
+                diff_text = Self::compress_commit_diff(&diff_text, MAX_DIFF_BYTES);
+
+                let rules_content = if include_project_rules {
+                    Self::load_project_rules(&project, &repo_work_dir, &mut cx).await
+                } else {
+                    None
+                };
+                let user_agents_md = if include_project_rules {
+                    cx.update(|cx| {
+                        UserAgentsMd::global(cx)
+                            .and_then(|user_agents_md| user_agents_md.content().cloned())
+                    })
+                } else {
+                    None
+                };
+
+                let prompt = include_str!("../src/commit_message_prompt.txt");
+
+                let subject = this.update(cx, |this, cx| {
+                    this.commit_editor
+                        .read(cx)
+                        .text(cx)
+                        .lines()
+                        .next()
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_default()
+                })?;
+
+                let text_empty = subject.trim().is_empty();
+
+                let content = Self::build_commit_message_prompt(
+                    &prompt,
+                    user_agents_md.as_deref(),
+                    rules_content.as_deref(),
+                    instructions.as_deref(),
+                    &subject,
+                    &diff_text,
+                );
+
+                let request = LanguageModelRequest {
+                    thread_id: None,
+                    prompt_id: None,
+                    intent: Some(CompletionIntent::GenerateGitCommitMessage),
+                    messages: vec![LanguageModelRequestMessage {
+                        role: Role::User,
+                        content: vec![content.into()],
+                        cache: false,
+                        reasoning_details: None,
+                    }],
+                    tools: Vec::new(),
+                    tool_choice: None,
+                    stop: Vec::new(),
+                    temperature,
+                    thinking_allowed: false,
+                    thinking_effort: None,
+                    speed: None,
+                    compact_at_tokens: None,
+                    max_output_tokens: None,
+                };
+
+                let stream = model.stream_completion_text(request, cx);
+                match stream.await {
+                    Ok(mut messages) => {
+                        if !text_empty {
+                            this.update(cx, |this, cx| {
+                                this.commit_message_buffer(cx).update(cx, |buffer, cx| {
+                                    let insert_position = buffer.anchor_before(buffer.len());
+                                    buffer.edit(
+                                        [(insert_position..insert_position, "\n")],
+                                        None,
+                                        cx,
+                                    )
+                                });
+                            })?;
+                        }
+
+                        while let Some(message) = messages.stream.next().await {
+                            match message {
+                                Ok(text) => {
+                                    this.update(cx, |this, cx| {
+                                        this.commit_message_buffer(cx).update(cx, |buffer, cx| {
+                                            let insert_position =
+                                                buffer.anchor_before(buffer.len());
+                                            buffer.edit(
+                                                [(insert_position..insert_position, text)],
+                                                None,
+                                                cx,
+                                            );
+                                        });
+                                    })?;
+                                }
+                                Err(e) => {
+                                    Self::show_commit_message_error(&this, &e, cx);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        Self::show_commit_message_error(&this, &e, cx);
+                    }
+                }
+
+                anyhow::Ok(())
+            }
+            .log_err()
+            .await
+        }));
+    }
+
+>>>>>>> 48ead6937b9dda83d018a9d95363aef1d6893a45
     fn get_fetch_options(
         &self,
         window: &mut Window,
@@ -8438,8 +8820,6 @@ impl Panel for GitPanel {
     }
 }
 
-impl PanelHeader for GitPanel {}
-
 pub fn panel_editor_container(_window: &mut Window, cx: &mut App) -> Div {
     v_flex()
         .size_full()
@@ -8979,8 +9359,8 @@ mod tests {
     use util::rel_path::rel_path;
 
     use workspace::{
-        ActivatePaneLeft, ActivatePaneRight, MultiWorkspace, ToolbarItemEvent, ToolbarItemLocation,
-        item::test::TestItem,
+        ActivatePaneLeft, ActivatePaneRight, ItemHandle as _, MultiWorkspace, ToolbarItemEvent,
+        ToolbarItemLocation, item::test::TestItem,
     };
 
     use super::*;
@@ -10635,6 +11015,11 @@ mod tests {
             .read_with(cx, |multi_workspace, _| multi_workspace.workspace().clone())
             .unwrap();
         let mut cx = VisualTestContext::from_window(window_handle.into(), cx);
+        let project_path = project.read_with(&cx, |project, cx| {
+            project
+                .find_project_path(path!("/project/partial.rs"), cx)
+                .expect("partial.rs should have a project path")
+        });
 
         cx.update(|_window, cx| {
             SettingsStore::update_global(cx, |store, cx| {
@@ -10670,7 +11055,10 @@ mod tests {
         cx.run_until_parked();
 
         workspace.read_with(&cx, |workspace, cx| {
-            assert!(workspace.active_item_as::<StagedDiff>(cx).is_some());
+            let staged_diff = workspace
+                .active_item_as::<StagedDiff>(cx)
+                .expect("StagedDiff should be active");
+            assert_eq!(staged_diff.project_path(cx), Some(project_path.clone()));
             assert_eq!(workspace.items_of_type::<StagedDiff>(cx).count(), 1);
             assert_eq!(workspace.items_of_type::<UnstagedDiff>(cx).count(), 0);
             assert_eq!(workspace.items_of_type::<ProjectDiff>(cx).count(), 0);
@@ -10695,6 +11083,7 @@ mod tests {
             let solo_diff = workspace
                 .active_item_as::<SoloDiffView>(cx)
                 .expect("SoloDiffView should be active");
+            assert_eq!(solo_diff.project_path(cx), Some(project_path.clone()));
             let searchable = solo_diff
                 .read(cx)
                 .as_searchable(&solo_diff, cx)
@@ -10739,7 +11128,10 @@ mod tests {
         cx.run_until_parked();
 
         workspace.read_with(&cx, |workspace, cx| {
-            assert!(workspace.active_item_as::<UnstagedDiff>(cx).is_some());
+            let unstaged_diff = workspace
+                .active_item_as::<UnstagedDiff>(cx)
+                .expect("UnstagedDiff should be active");
+            assert_eq!(unstaged_diff.project_path(cx), Some(project_path));
             assert_eq!(workspace.items_of_type::<StagedDiff>(cx).count(), 1);
             assert_eq!(workspace.items_of_type::<UnstagedDiff>(cx).count(), 1);
             assert_eq!(workspace.items_of_type::<ProjectDiff>(cx).count(), 0);
@@ -12674,6 +13066,10 @@ mod tests {
                 !context.contains("ChangesList"),
                 "should not have ChangesList context when commit editor is focused"
             );
+            assert!(
+                !context.contains("HistoryList"),
+                "should not have HistoryList context when commit editor is focused"
+            );
         });
 
         // Case 2: Focus the panel's focus handle directly — should have "menu" and "ChangesList".
@@ -12699,12 +13095,35 @@ mod tests {
                 "should have ChangesList context when changes list is focused"
             );
             assert!(
+                !context.contains("HistoryList"),
+                "should not have HistoryList context when changes list is focused"
+            );
+            assert!(
                 !context.contains("CommitEditor"),
                 "should not have CommitEditor context when changes list is focused"
             );
         });
 
-        // Case 3: Switch back to commit editor and verify context switches correctly
+        // Case 3: Switch to the History tab and verify its list context.
+        panel.update_in(cx, |panel, window, cx| {
+            panel.active_tab = GitPanelTab::History;
+            let context = panel.dispatch_context(window, cx);
+            assert!(
+                context.contains("menu"),
+                "should have menu context when history list is focused"
+            );
+            assert!(
+                context.contains("HistoryList"),
+                "should have HistoryList context when history list is focused"
+            );
+            assert!(
+                !context.contains("ChangesList"),
+                "should not have ChangesList context when history list is focused"
+            );
+            panel.active_tab = GitPanelTab::Changes;
+        });
+
+        // Case 4: Switch back to commit editor and verify context switches correctly
         panel.update_in(cx, |panel, window, cx| {
             panel.focus_editor(&FocusEditor, window, cx);
         });
@@ -12721,7 +13140,7 @@ mod tests {
             );
         });
 
-        // Case 4: Re-focus changes list and verify it transitions back correctly
+        // Case 5: Re-focus changes list and verify it transitions back correctly
         panel.update_in(cx, |panel, window, cx| {
             panel.focus_handle.focus(window, cx);
         });
@@ -12785,6 +13204,104 @@ mod tests {
             assert!(context.contains("menu"));
             assert!(!context.contains("CommitEditor"));
         })
+    }
+
+    #[gpui::test]
+    async fn test_commit_editor_context_menu_clipboard_actions(cx: &mut TestAppContext) {
+        init_test(cx);
+        let fs = FakeFs::new(cx.background_executor.clone());
+        let project = Project::test(fs, [], cx).await;
+
+        for in_panel in [true, false] {
+            let window_handle = cx.add_window(|window, cx| {
+                let buffer = cx.new(|cx| Buffer::local("commit message", cx));
+                commit_message_editor(buffer, None, project.clone(), in_panel, window, cx)
+            });
+            let editor = window_handle.root(cx).expect("commit editor should exist");
+            let cx = &mut VisualTestContext::from_window(window_handle.into(), cx);
+            editor.update_in(cx, |editor, window, cx| {
+                editor.focus_handle(cx).focus(window, cx);
+                editor.select_all(&Default::default(), window, cx);
+            });
+            cx.run_until_parked();
+
+            let position = editor.read_with(cx, |editor, _| {
+                editor
+                    .last_bounds()
+                    .expect("editor should be rendered")
+                    .origin
+                    + gpui::point(px(10.), px(10.))
+            });
+            let open_menu = |cx: &mut VisualTestContext| {
+                cx.simulate_mouse_down(position, gpui::MouseButton::Right, Modifiers::none());
+                // MouseContextMenu waits two frames before focusing its deferred element.
+                for _ in 0..2 {
+                    cx.update(|window, cx| {
+                        window.simulate_next_frame(cx);
+                    });
+                }
+                editor.update_in(cx, |editor, window, cx| {
+                    assert!(editor.has_mouse_context_menu());
+                    assert!(editor.mouse_menu_is_focused(window, cx));
+                });
+            };
+            open_menu(cx);
+            editor.update_in(cx, |editor, window, cx| {
+                assert!(
+                    editor.mouse_menu_is_focused(window, cx),
+                    "menu should have focus"
+                );
+                assert!(
+                    editor.has_non_empty_selection(&editor.display_snapshot(cx)),
+                    "selection should remain"
+                );
+            });
+            cx.dispatch_action(menu::SelectFirst);
+            cx.dispatch_action(menu::SelectNext);
+            cx.dispatch_action(menu::Confirm);
+            assert!(
+                editor.read_with(cx, |editor, _| !editor.has_mouse_context_menu()),
+                "menu should close after Copy"
+            );
+            assert_eq!(
+                cx.read_from_clipboard().and_then(|item| item.text()),
+                Some("commit message".to_string())
+            );
+
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string("replacement".to_string()));
+            open_menu(cx);
+            cx.dispatch_action(menu::SelectLast);
+            cx.dispatch_action(menu::Confirm);
+            assert_eq!(
+                editor.read_with(cx, |editor, cx| editor.text(cx)),
+                "replacement"
+            );
+
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(" suffix".to_string()));
+            open_menu(cx);
+            cx.dispatch_action(menu::SelectFirst);
+            cx.dispatch_action(menu::Confirm);
+            assert_eq!(
+                editor.read_with(cx, |editor, cx| editor.text(cx)),
+                "replacement suffix",
+                "with no selection, menu navigation should skip disabled Cut and Copy and select Paste"
+            );
+            editor.update_in(cx, |editor, window, cx| {
+                editor.select_all(&Default::default(), window, cx);
+            });
+            open_menu(cx);
+            cx.dispatch_action(menu::SelectFirst);
+            cx.dispatch_action(menu::Confirm);
+            assert_eq!(
+                cx.read_from_clipboard().and_then(|item| item.text()),
+                Some("replacement suffix".to_string())
+            );
+            assert_eq!(editor.read_with(cx, |editor, cx| editor.text(cx)), "");
+            assert!(editor.read_with(cx, |editor, _| !editor.has_mouse_context_menu()));
+            editor.update_in(cx, |editor, window, _| {
+                assert!(editor.is_focused(window));
+            });
+        }
     }
 
     #[gpui::test]

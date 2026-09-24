@@ -206,6 +206,7 @@ pub struct ThemeSettingsContent {
     #[schemars(default = "default_font_features")]
     pub buffer_font_features: Option<FontFeaturesContent>,
     pub git_commit_buffer_font_size: Option<FontSize>,
+<<<<<<< 420e0a9b406fe5c875d5d11aad310060c9a13066
     /// The name of a font to use for rendering in the markdown preview.
     /// Falls back to the UI font if unset.
     pub markdown_preview_font_family: Option<FontFamilyName>,
@@ -219,6 +220,9 @@ pub struct ThemeSettingsContent {
     /// Falls back to the main editor theme if unset.
     pub markdown_preview_theme: Option<ThemeSelection>,
     /// The name of the Wu theme to use.
+=======
+    /// The name of the Zed theme to use.
+>>>>>>> 48ead6937b9dda83d018a9d95363aef1d6893a45
     pub theme: Option<ThemeSelection>,
     /// The name of the icon theme to use.
     pub icon_theme: Option<IconThemeSelection>,
@@ -845,6 +849,10 @@ pub struct ThemeColorsContent {
 
     #[serde(rename = "editor.foreground")]
     pub editor_foreground: Option<ThemeColor>,
+
+    /// Text color used for CodeLens items in the editor.
+    #[serde(rename = "editor.code_lens.foreground")]
+    pub editor_code_lens_foreground: Option<ThemeColor>,
 
     #[serde(rename = "editor.background")]
     pub editor_background: Option<ThemeColor>,
