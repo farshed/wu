@@ -131,46 +131,19 @@ def visible_windows(process_id, environment):
 def prepare_workload(directory, arguments):
     project = directory / "workload"
     project.mkdir()
-    if arguments.scenario == "workspace":
-        archive = subprocess.check_output(["git", "-C", str(arguments.repository), "archive", "HEAD"])
-        subprocess.run(["tar", "-x", "-C", str(project)], input=archive, check=True)
-        files = [
-            "crates/rope/src/rope.rs", "crates/rope/src/chunk.rs",
-            "crates/rope/src/point.rs", "crates/rope/src/point_utf16.rs",
-            "crates/rope/src/offset_utf16.rs", "crates/rope/src/unclipped.rs",
-            "crates/editor/src/editor.rs", "crates/workspace/src/workspace.rs",
-        ]
-        files.extend(str(path.relative_to(project)) for path in sorted((project / "crates/languages/src").glob("*.rs"))[:12])
-        (project / "benchmark-edit.rs").write_text("fn main() {}\n")
-        large_file = project / "benchmark-large.log"
-        with large_file.open("w") as output:
-            for number in range(200000):
-                output.write(f"2026-09-19T00:00:00Z INFO request={number:06d} method=GET route=/api/projects status=200 duration_ms=12 benchmark_record\n")
-    else:
-        source = project / "src"
-        source.mkdir()
-        (project / ".gitignore").write_text("/target/\n")
-        (project / "Cargo.toml").write_text(
-            '[package]\nname = "memory_workload"\nversion = "0.1.0"\nedition = "2024"\n'
-        )
-        (source / "account.rs").write_text(
-            "pub fn invoice_total(value: u64) -> u64 { value * 2 }\n"
-            "#[test]\nfn invoice_test() { assert_eq!(invoice_total(10), 20); }\n"
-        )
-        modules = []
-        for number in range(30):
-            module = f"service_{number:02d}"
-            modules.append(f"mod {module};\n")
-            (source / f"{module}.rs").write_text("".join(
-                f"pub fn calculate_{index}(value: u64) -> u64 {{\n"
-                f"    (0..10).map(|offset| value.wrapping_add(offset + {index})).sum()\n}}\n"
-                for index in range(100)
-            ))
-        (source / "main.rs").write_text(
-            '#![allow(dead_code)]\nmod account;\n' + "".join(modules)
-            + 'fn main() {\n    let total = account::invoice_total(10);\n    println!("{total}");\n}\n'
-        )
-        files = [f"src/service_{number:02d}.rs" for number in range(10)] + ["src/main.rs"]
+    archive = subprocess.check_output(["git", "-C", str(arguments.repository), "archive", "HEAD"])
+    subprocess.run(["tar", "-x", "-C", str(project)], input=archive, check=True)
+    files = [
+        "crates/rope/src/rope.rs", "crates/rope/src/chunk.rs",
+        "crates/rope/src/point.rs", "crates/rope/src/point_utf16.rs",
+        "crates/rope/src/offset_utf16.rs", "crates/rope/src/unclipped.rs",
+        "crates/editor/src/editor.rs", "crates/workspace/src/workspace.rs",
+    ]
+    files.extend(str(path.relative_to(project)) for path in sorted((project / "crates/languages/src").glob("*.rs"))[:12])
+    (project / "benchmark-edit.rs").write_text("fn main() {}\n")
+    with (project / "benchmark-large.log").open("w") as output:
+        for number in range(200000):
+            output.write(f"2026-09-19T00:00:00Z INFO request={number:06d} method=GET route=/api/projects status=200 duration_ms=12 benchmark_record\n")
     subprocess.run(["git", "init", "-q", str(project)], check=True)
     subprocess.run(["git", "-C", str(project), "add", "."], check=True)
     subprocess.run([
@@ -183,25 +156,25 @@ def prepare_workload(directory, arguments):
         if path.is_file() and ".git" not in path.relative_to(project).parts:
             with path.open("rb") as source:
                 manifest["source_sha256"][str(path.relative_to(project))] = hashlib.file_digest(source, "sha256").hexdigest()
-    if arguments.scenario == "workspace":
-        manifest["repository_commit"] = subprocess.check_output(
-            ["git", "-C", str(arguments.repository), "rev-parse", "HEAD"], text=True,
-        ).strip()
+    manifest["repository_commit"] = subprocess.check_output(
+        ["git", "-C", str(arguments.repository), "rev-parse", "HEAD"], text=True,
+    ).strip()
     (directory / "workload.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return project, files
 
 
 class Workload:
-    def __init__(self, process, environment, project, files, directory, arguments):
+    def __init__(self, process, environment, project, files, directory, arguments, vscode=False):
         self.process = process
         self.environment = environment
         self.project = project
         self.files = files
         self.directory = directory
         self.arguments = arguments
+        self.vscode = vscode
         self.window = visible_windows(process.pid, environment)[0]
         executable = Path(os.readlink(f"/proc/{process.pid}/exe"))
-        self.launcher = executable.parent.parent / "bin" / executable.name.removesuffix("-editor")
+        self.launcher = executable.parent / "bin/code" if vscode else executable.parent.parent / "bin" / executable.name.removesuffix("-editor")
 
     def keys(self, *keys):
         subprocess.run(
@@ -240,9 +213,11 @@ class Workload:
 
     def open_file(self, relative_path):
         self.keys("Escape")
+        command = [str(self.launcher), "--user-data-dir", str(self.directory / "profile")]
+        command.extend(["--reuse-window", "--no-sandbox"] if self.vscode else ["--existing"])
+        command.append(str(self.project / relative_path))
         subprocess.run(
-            [str(self.launcher), "--user-data-dir", str(self.directory / "profile"),
-             "--existing", str(self.project / relative_path)],
+            command,
             env=self.environment, check=True, timeout=30,
         )
         self.wait_for(
@@ -254,12 +229,10 @@ class Workload:
     def multiple_files(self):
         for relative_path in self.files:
             self.open_file(relative_path)
-        if self.arguments.scenario == "rust":
-            time.sleep(20)
         self.screenshot("multiple-files")
 
     def edit(self):
-        relative_path = "src/main.rs" if self.arguments.scenario == "rust" else "benchmark-edit.rs"
+        relative_path = "benchmark-edit.rs"
         self.open_file(relative_path)
         for number in range(20):
             self.keys("ctrl+End", "Return")
@@ -297,22 +270,15 @@ class Workload:
         self.keys("Return", "Escape")
         self.screenshot("large-file")
 
-    def terminal(self, build=False):
+    def terminal(self):
         marker = self.directory / "terminal-complete"
         script = self.directory / "terminal-workload.py"
-        if build:
-            script.write_text(
-                "import pathlib, subprocess\n"
-                f"subprocess.run(['cargo', 'test', '--offline'], cwd={str(self.project)!r}, check=True)\n"
-                f"pathlib.Path({str(marker)!r}).write_text('success')\n"
-            )
-        else:
-            script.write_text(
-                "import pathlib\n"
-                "for number in range(20000):\n"
-                "    print(f'{number:06d} INFO processing request: status=200 elapsed=12ms')\n"
-                f"pathlib.Path({str(marker)!r}).write_text('success')\n"
-            )
+        script.write_text(
+            "import pathlib\n"
+            "for number in range(20000):\n"
+            "    print(f'{number:06d} INFO processing request: status=200 elapsed=12ms')\n"
+            f"pathlib.Path({str(marker)!r}).write_text('success')\n"
+        )
         self.keys("Escape", "ctrl+grave")
         time.sleep(1)
         self.type_text(f"{shlex.quote(sys.executable)} {shlex.quote(str(script))}", terminal=True)
@@ -324,52 +290,12 @@ class Workload:
                 raise RuntimeError("Terminal workload did not complete successfully")
             time.sleep(0.2)
         time.sleep(1)
-        self.screenshot("terminal-build" if build else "terminal-output")
+        self.screenshot("terminal-output")
 
     def recover(self):
-        self.keys("ctrl+grave", "Escape", "ctrl+k", "w")
+        self.keys("ctrl+grave", "Escape", "ctrl+k", "ctrl+w" if self.vscode else "w")
         time.sleep(2)
         self.screenshot("closed-tabs")
-
-    def language_features(self):
-        self.open_file("src/main.rs")
-        deadline = time.monotonic() + 120
-        while True:
-            self.keys("ctrl+Home", "ctrl+f", "ctrl+a")
-            self.type_text("invoice_total")
-            self.keys("Return", "Escape", "F12")
-            time.sleep(1)
-            if "account.rs" in self.title():
-                break
-            if time.monotonic() > deadline:
-                raise RuntimeError("rust-analyzer go-to-definition never reached account.rs")
-        self.screenshot("go-to-definition")
-        self.open_file("src/main.rs")
-        original = (self.project / "src/main.rs").read_text()
-        self.keys("ctrl+End")
-        self.type_text("\nfn completion_probe() {\n    let value = String::")
-        self.keys("ctrl+space")
-        time.sleep(2)
-        self.screenshot("completion-menu")
-        self.keys("Escape", "ctrl+a")
-        self.type_text(original + '\nconst BENCH_ERROR: u32 = "incorrect";\n')
-        self.keys("ctrl+s")
-        time.sleep(4)
-        self.keys("ctrl+shift+m")
-        time.sleep(2)
-        self.screenshot("diagnostics")
-
-    def fix_diagnostics(self):
-        self.open_file("src/main.rs")
-        contents = (self.project / "src/main.rs").read_text()
-        self.keys("ctrl+a")
-        self.type_text(contents.replace('const BENCH_ERROR: u32 = "incorrect";', ""))
-        self.keys("ctrl+s")
-        self.wait_for(
-            lambda: "BENCH_ERROR" not in (self.project / "src/main.rs").read_text(),
-            "Diagnostic error was not removed",
-        )
-        self.terminal(build=True)
 
 
 def measure_phase(name, action, process, known, arguments, directory, started):
@@ -414,7 +340,9 @@ def measure(binary, name, run_number, arguments, output):
     directory = output / f"{run_number:02d}-{name}"
     directory.mkdir()
     profile = directory / "profile"
-    (profile / "config").mkdir(parents=True)
+    vscode = name == "VSCode"
+    configuration = profile / ("User" if vscode else "config")
+    configuration.mkdir(parents=True)
     # Freeze release versions and prevent benchmark telemetry from being sent.
     settings = {"auto_update": False, "telemetry": {"diagnostics": False, "metrics": False}}
     project, files = (arguments.path, [])
@@ -422,14 +350,22 @@ def measure(binary, name, run_number, arguments, output):
         project, files = prepare_workload(directory, arguments)
         settings.update({
             "preview_tabs": {"enabled": False}, "format_on_save": "off",
-            "enable_language_server": arguments.scenario == "rust",
+            "enable_language_server": False,
             "terminal": {"max_scroll_history_lines": 10000},
         })
-        if arguments.scenario == "rust":
-            settings["lsp"] = {"rust-analyzer": {"binary": {"path": str(arguments.rust_analyzer)}}}
     if arguments.trust_project or arguments.scenario != "idle":
         settings["session"] = {"trust_all_worktrees": True}
-    (profile / "config" / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
+    if vscode:
+        settings = {
+            "update.mode": "none", "telemetry.telemetryLevel": "off",
+            "extensions.autoUpdate": False, "extensions.autoCheckUpdates": False,
+            "workbench.startupEditor": "none" if project else "welcomePage",
+            "workbench.welcomePage.experimentalOnboarding": False,
+            "workbench.editor.enablePreview": False, "editor.formatOnSave": False,
+            "terminal.integrated.scrollback": 10000,
+            "security.workspace.trust.enabled": not (arguments.trust_project or project),
+        }
+    (configuration / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
     environment = dict(os.environ)
     environment.pop("WAYLAND_DISPLAY", None)
     for category in ("CONFIG", "DATA", "CACHE", "STATE"):
@@ -439,13 +375,22 @@ def measure(binary, name, run_number, arguments, output):
         "ZED_WINDOW_SIZE": "1280,800",
         "ZED_WINDOW_POSITION": "0,0",
     })
-    if arguments.scenario == "rust":
-        environment["RUSTUP_TOOLCHAIN"] = arguments.rust_toolchain
     if arguments.scenario != "idle":
         # The per-profile CLI connection avoids racing the file picker's search UI.
         environment.pop("ZED_STATELESS", None)
     command = [str(binary), "--user-data-dir", str(profile)]
+    if vscode:
+        environment["LIBGL_ALWAYS_SOFTWARE"] = "1"
+        environment.pop("ELECTRON_RUN_AS_NODE", None)
+        command.extend([
+            "--extensions-dir", str(directory / "extensions"), "--new-window",
+            "--shared-data-dir", str(directory / "shared-data"),
+            "--no-sandbox", "--skip-release-notes", "--ozone-platform=x11",
+            "--use-gl=angle", "--use-angle=gl", "--ignore-gpu-blocklist=true",
+        ])
     if project:
+        if vscode:
+            command.append("--")
         command.append(str(project))
     known = {}
     with (directory / "stdout.log").open("w") as log:
@@ -471,7 +416,12 @@ def measure(binary, name, run_number, arguments, output):
                     ["xdotool", "windowsize", "--sync", window, "1280", "800"],
                     env=environment, check=True, timeout=10,
                 )
-            if not project:
+                if vscode:
+                    subprocess.run(
+                        ["xdotool", "windowmove", "--sync", window, "0", "0"],
+                        env=environment, check=True, timeout=10,
+                    )
+            if not project and not vscode:
                 time.sleep(2)
                 for window in windows:
                     subprocess.run(
@@ -479,6 +429,12 @@ def measure(binary, name, run_number, arguments, output):
                          "key", "--clearmodifiers", "ctrl+Return"],
                         env=environment, check=True, timeout=10,
                     )
+            if vscode and project:
+                workload = Workload(process, environment, project, files, directory, arguments, vscode)
+                workload.wait_for(
+                    lambda: project.name in workload.title(),
+                    "VS Code did not open the benchmark project", timeout=30,
+                )
             deadline = time.monotonic() + arguments.settle
             while time.monotonic() < deadline:
                 if process.poll() is not None:
@@ -486,29 +442,16 @@ def measure(binary, name, run_number, arguments, output):
                 owned_processes(process.pid, known)
                 time.sleep(min(0.2, max(0, deadline - time.monotonic())))
             if arguments.scenario != "idle":
-                workload = Workload(process, environment, project, files, directory, arguments)
-                if arguments.scenario == "workspace":
-                    actions = [
-                        ("multiple_files", workload.multiple_files), ("editing", workload.edit),
-                        ("project_search", workload.search), ("large_file", workload.large_file),
-                        ("terminal", workload.terminal), ("closed_tabs", workload.recover),
-                    ]
-                else:
-                    actions = [
-                        ("rust_files", workload.multiple_files),
-                        ("rust_editing", workload.edit),
-                        ("language_features", workload.language_features),
-                        ("cargo_test", workload.fix_diagnostics),
-                    ]
+                workload = Workload(process, environment, project, files, directory, arguments, vscode)
+                actions = [
+                    ("multiple_files", workload.multiple_files), ("editing", workload.edit),
+                    ("project_search", workload.search), ("large_file", workload.large_file),
+                    ("terminal", workload.terminal), ("closed_tabs", workload.recover),
+                ]
                 phases = [
                     measure_phase(phase_name, action, process, known, arguments, directory, started)
                     for phase_name, action in actions
                 ]
-                if arguments.scenario == "rust" and not any(
-                    "rust-analyzer" in child["command"]
-                    for phase in phases for sample in phase["samples"] for child in sample["processes"]
-                ):
-                    raise RuntimeError("No rust-analyzer process was measured")
                 result = {"editor": name, "run": run_number, "command": command, "phases": phases}
                 (directory / "measurements.json").write_text(json.dumps(result, indent=2) + "\n")
                 return result
@@ -549,7 +492,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Compare total editor process-tree PSS and RSS on Linux.",
         epilog="Run under xvfb-run -a -s '-screen 0 1280x800x24' dbus-run-session --. "
-        "Use actual libexec/*-editor binaries, not the CLI launchers. "
+        "Use actual libexec/*-editor or VS Code's top-level code binary, not CLI launchers. "
         "PSS apportions shared pages; RSS can count them multiple times. "
         "The display server, harness, unmapped file cache and kernel memory are excluded.",
     )
@@ -558,16 +501,16 @@ def main():
     parser.add_argument("--samples", type=int, default=10)
     parser.add_argument("--interval", type=float, default=1)
     parser.add_argument("--window-timeout", type=float, default=60)
-    parser.add_argument("--scenario", choices=("idle", "workspace", "rust"), default="idle")
+    parser.add_argument("--scenario", choices=("idle", "workspace"), default="idle")
     parser.add_argument("--phase-settle", type=float, default=5)
     parser.add_argument("--repository", type=Path, default=Path(__file__).resolve().parent.parent)
-    parser.add_argument("--rust-analyzer", type=Path)
-    parser.add_argument("--rust-toolchain")
     parser.add_argument("--path", type=Path, default=os.getenv("OPEN_PATH"))
     parser.add_argument("--trust-project", action="store_true", help="Trust the supplied project in the isolated benchmark profiles")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--wu", type=Path, default=os.getenv("WU_BIN", str(Path.home() / ".local/wu.app/libexec/wu-editor")))
     parser.add_argument("--zed", type=Path, default=os.getenv("ZED_BIN", str(Path.home() / ".local/zed.app/libexec/zed-editor")))
+    parser.add_argument("--vscode", type=Path, default=os.getenv("VSCODE_BIN", str(Path.home() / ".local/vscode/code")))
+    parser.add_argument("--editors", nargs="+", choices=("Wu", "Zed", "VSCode"), default=["Wu", "Zed"])
     arguments = parser.parse_args()
     if arguments.runs < 1 or arguments.samples < 1 or arguments.settle < 0 or arguments.interval <= 0:
         parser.error("Runs/samples/interval must be positive; settle must be nonnegative")
@@ -576,7 +519,8 @@ def main():
     for executable in ("xdotool", "xwininfo"):
         if not shutil.which(executable):
             parser.error(f"Missing required command: {executable}")
-    binaries = {"Wu": arguments.wu.resolve(), "Zed": arguments.zed.resolve()}
+    available = {"Wu": arguments.wu, "Zed": arguments.zed, "VSCode": arguments.vscode}
+    binaries = {name: available[name].resolve() for name in arguments.editors}
     for binary in binaries.values():
         if not binary.is_file() or not os.access(binary, os.X_OK):
             parser.error(f"Not executable: {binary}")
@@ -586,16 +530,6 @@ def main():
         for executable in ("import", "xclip"):
             if not shutil.which(executable):
                 parser.error(f"Active workloads require {executable}")
-    if arguments.scenario == "rust":
-        if not arguments.rust_toolchain:
-            arguments.rust_toolchain = subprocess.check_output(
-                ["rustup", "show", "active-toolchain"], text=True,
-            ).split()[0]
-        if arguments.rust_analyzer is None:
-            arguments.rust_analyzer = Path(subprocess.check_output(
-                ["rustup", "which", "--toolchain", arguments.rust_toolchain, "rust-analyzer"], text=True,
-            ).strip())
-        arguments.rust_analyzer = arguments.rust_analyzer.absolute()
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output = (arguments.output or Path.home() / ".local/state/wu-memory-benchmark" / timestamp).resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -610,18 +544,14 @@ def main():
     for name, binary in binaries.items():
         with binary.open("rb") as executable:
             digest = hashlib.file_digest(executable, "sha256").hexdigest()
-        launcher = binary.parent.parent / "bin" / name.lower()
-        version = subprocess.check_output(
-            [str(launcher), "--version"], text=True, timeout=15,
-        ).strip() if launcher.is_file() else None
+        if name == "VSCode":
+            launcher = binary.parent / "bin/code"
+            version_command = [str(launcher), "--no-sandbox", "--user-data-dir", str(output / "version-profile"), "--version"]
+        else:
+            launcher = binary.parent.parent / "bin" / name.lower()
+            version_command = [str(launcher), "--version"]
+        version = subprocess.check_output(version_command, text=True, timeout=15).strip() if launcher.is_file() else None
         report["binaries"][name] = {"path": str(binary), "sha256": digest, "version": version}
-    if arguments.scenario == "rust":
-        with arguments.rust_analyzer.open("rb") as executable:
-            digest = hashlib.file_digest(executable, "sha256").hexdigest()
-        report["rust_analyzer"] = {
-            "sha256": digest, "toolchain": arguments.rust_toolchain,
-            "version": subprocess.check_output([str(arguments.rust_analyzer), "--version"], text=True).strip(),
-        }
     report_path = output / "results.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n")
     print(f"Artifacts: {output}", flush=True)
@@ -668,8 +598,9 @@ def main():
     print("\nMedian of run medians:")
     for name, summary in report["summary"].items():
         print(f"{name}: PSS {summary['Pss'] / 1024:.1f} MiB; RSS {summary['Rss'] / 1024:.1f} MiB")
-    difference = (1 - report["summary"]["Wu"]["Pss"] / report["summary"]["Zed"]["Pss"]) * 100
-    print(f"Wu PSS reduction relative to Zed: {difference:.1f}%")
+    if "Wu" in report["summary"] and "Zed" in report["summary"]:
+        difference = (1 - report["summary"]["Wu"]["Pss"] / report["summary"]["Zed"]["Pss"]) * 100
+        print(f"Wu PSS reduction relative to Zed: {difference:.1f}%")
 
 
 if __name__ == "__main__":
