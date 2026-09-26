@@ -10,27 +10,27 @@ Tested on September 26, 2026, using the official Linux ARM64 releases of [Wu 1.0
 
 All values are **MiB of total process-tree PSS**, where lower is better. PSS accounts proportionally for shared memory instead of counting shared pages repeatedly. Totals include the editor and its running child processes, including language servers, terminal shells, and compilers.
 
-Each value is the median of three independent runs' settled-memory medians. Percentage reductions are relative to Zed and calculated before rounding. Active stages run sequentially within each suite, so later rows include memory retained from earlier actions—not just the cost of that individual feature.
+Each value is the median of three independent runs' settled-memory medians. Percentage reductions are relative to the named editor and calculated before rounding. Active stages run sequentially within each suite, so later rows include memory retained from earlier actions—not just the cost of that individual feature.
 
 ### Idle
 
-| Scenario | Wu | Zed | VS Code | Wu reduction vs. Zed |
-| --- | ---: | ---: | ---: | ---: |
-| Welcome window | 382.5 | 420.4 | 743.5 | 9.0% |
-| Repository open, no source file open | 381.2 | 423.7 | 725.2 | 10.0% |
+| Scenario | Wu | Zed | VS Code | Wu reduction vs. Zed | Wu reduction vs. VS Code |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Welcome window | 382.5 | 420.4 | 743.5 | 9.0% | 48.5% |
+| Repository open, no source file open | 381.2 | 423.7 | 725.2 | 10.0% | 47.4% |
 
 ### Workspace workflow
 
 A snapshot of Wu's source repository, with language servers disabled to measure editor operations separately from language-server work.
 
-| Stage | Wu | Zed | VS Code | Wu reduction vs. Zed |
-| --- | ---: | ---: | ---: | ---: |
-| Open 20 source files | 516.9 | 554.3 | 826.2 | 6.7% |
-| Edit, save, and scroll | 518.8 | 557.2 | 797.6 | 6.9% |
-| Search the repository | 582.9 | 1395.3 | 823.6 | 58.2% |
-| Navigate and search a large log | 832.7 | 1633.9 | 1326.3 | 49.0% |
-| Generate terminal output | 862.8 | 1664.4 | 1405.5 | 48.2% |
-| Close tabs, retaining project state | 860.9 | 1631.0 | 1007.1 | 47.2% |
+| Stage | Wu | Zed | VS Code | Wu reduction vs. Zed | Wu reduction vs. VS Code |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Open 20 source files | 516.9 | 554.3 | 826.2 | 6.7% | 37.4% |
+| Edit, save, and scroll | 518.8 | 557.2 | 797.6 | 6.9% | 35.0% |
+| Search the repository | 582.9 | 1395.3 | 823.6 | 58.2% | 29.2% |
+| Navigate and search a large log | 832.7 | 1633.9 | 1326.3 | 49.0% | 37.2% |
+| Generate terminal output | 862.8 | 1664.4 | 1405.5 | 48.2% | 38.6% |
+| Close tabs, retaining project state | 860.9 | 1631.0 | 1007.1 | 47.2% | 14.5% |
 
 The workflow performs 20 verified edit/save cycles, three targeted repository searches, navigation and search in a 200,000-line log (21.9 MiB), and 20,000 lines of integrated-terminal output. The terminal retains 10,000 lines of scrollback.
 
