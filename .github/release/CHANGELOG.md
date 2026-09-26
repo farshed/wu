@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+## 1.0.10 - 2026-09-26
+
 - Project search uses much less memory. Files in the results are only parsed for syntax highlighting once they're shown on screen.
 - Breadcrumbs and sticky headers fill in as soon as a newly opened file finishes parsing, instead of waiting for the cursor to move.
 - Selected files in lists like the project panel stand out more in the Catppuccin themes.
