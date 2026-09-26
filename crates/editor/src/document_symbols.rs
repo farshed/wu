@@ -48,8 +48,19 @@ impl Editor {
                     .unwrap_or_default()
             })
         } else {
-            let buffer_snapshot = buffer.read(cx).snapshot();
             let syntax = cx.theme().syntax().clone();
+            if let Some(first_parse) =
+                buffer.update(cx, |buffer, cx| buffer.wait_for_first_parse(cx))
+            {
+                return cx.spawn(async move |_, cx| {
+                    first_parse.await;
+                    let buffer_snapshot = buffer.read_with(cx, |buffer, _| buffer.snapshot());
+                    cx.background_executor()
+                        .spawn(async move { buffer_snapshot.outline(Some(&syntax)).items })
+                        .await
+                });
+            }
+            let buffer_snapshot = buffer.read(cx).snapshot();
             cx.background_executor()
                 .spawn(async move { buffer_snapshot.outline(Some(&syntax)).items })
         }

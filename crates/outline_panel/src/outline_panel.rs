@@ -138,6 +138,7 @@ pub struct OutlinePanel {
     cached_entries_update_pending: bool,
     reveal_selection_task: Task<anyhow::Result<()>>,
     outline_fetch_tasks: HashMap<BufferId, Task<()>>,
+    search_buffers_awaiting_parse: HashSet<BufferId>,
     buffers: HashMap<BufferId, BufferOutlines>,
     cached_entries: Vec<CachedEntry>,
     filter_editor: Entity<Editor>,
@@ -170,6 +171,7 @@ struct HighlightArguments {
     multi_buffer_snapshot: MultiBufferSnapshot,
     match_range: Range<editor::Anchor>,
     search_data: Arc<OnceLock<SearchData>>,
+    highlight: bool,
 }
 
 impl SearchState {
@@ -212,7 +214,7 @@ impl SearchState {
                     }
 
                     let highlight_data = &search_data.highlights_data;
-                    if highlight_data.get().is_some() {
+                    if !highlight_arguments.highlight || highlight_data.get().is_some() {
                         continue;
                     }
                     let mut left_whitespaces_count = 0;
@@ -266,15 +268,13 @@ impl SearchState {
                         range.start = range.start.saturating_sub(left_whitespaces_count);
                         range.end = range.end.saturating_sub(left_whitespaces_count);
                     });
+                    // Highlights can be computed after the buffer changed, once it finished parsing.
+                    if context_text[left_whitespaces_count..] != search_data.context_text {
+                        highlight_ranges.clear();
+                    }
                     if highlight_data.set(highlight_ranges).ok().is_some() {
                         notify_tx.try_send(()).ok();
                     }
-
-                    let trimmed_text = context_text[left_whitespaces_count..].to_owned();
-                    debug_assert_eq!(
-                        trimmed_text, search_data.context_text,
-                        "Highlighted text that does not match the buffer text"
-                    );
                 }
             }),
             _search_match_notify: cx.spawn_in(window, async move |outline_panel, cx| {
@@ -917,6 +917,7 @@ impl OutlinePanel {
                 cached_entries_update_pending: false,
                 reveal_selection_task: Task::ready(Ok(())),
                 outline_fetch_tasks: HashMap::default(),
+                search_buffers_awaiting_parse: HashSet::default(),
                 buffers: HashMap::default(),
                 cached_entries: Vec::new(),
                 _subscriptions: vec![
@@ -2563,6 +2564,58 @@ impl OutlinePanel {
         )
     }
 
+    /// Search match highlights are computed once, so they must wait for the buffer's first parse.
+    fn search_match_awaits_first_parse(
+        &mut self,
+        multi_buffer_snapshot: &MultiBufferSnapshot,
+        match_range: &Range<editor::Anchor>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(buffer_id) = match_range.start.buffer_id() else {
+            return false;
+        };
+        if self.search_buffers_awaiting_parse.contains(&buffer_id) {
+            return true;
+        }
+        let Some(buffer) = self
+            .active_editor()
+            .and_then(|editor| editor.read(cx).buffer().read(cx).buffer(buffer_id))
+        else {
+            return false;
+        };
+        if buffer.read(cx).is_awaiting_first_parse()
+            && let Some(first_parse) =
+                buffer.update(cx, |buffer, cx| buffer.wait_for_first_parse(cx))
+        {
+            self.search_buffers_awaiting_parse.insert(buffer_id);
+            cx.spawn_in(window, async move |outline_panel, cx| {
+                first_parse.await;
+                outline_panel
+                    .update(cx, |outline_panel, cx| {
+                        outline_panel
+                            .search_buffers_awaiting_parse
+                            .remove(&buffer_id);
+                        cx.notify();
+                    })
+                    .ok();
+            })
+            .detach();
+            return true;
+        }
+        let snapshot_is_stale =
+            multi_buffer_snapshot
+                .buffer_for_id(buffer_id)
+                .is_some_and(|snapshot| {
+                    snapshot.non_text_state_update_count()
+                        < buffer.read(cx).non_text_state_update_count()
+                });
+        if snapshot_is_stale {
+            cx.notify();
+        }
+        snapshot_is_stale
+    }
+
     fn render_search_match(
         &mut self,
         multi_buffer_snapshot: Option<&MultiBufferSnapshot>,
@@ -2574,24 +2627,31 @@ impl OutlinePanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Stateful<Div>> {
-        let search_data = match render_data.get() {
-            Some(search_data) => search_data,
-            None => {
-                if let ItemsDisplayMode::Search(search_state) = &mut self.mode
-                    && let Some(multi_buffer_snapshot) = multi_buffer_snapshot
-                {
-                    search_state
-                        .highlight_search_match_tx
-                        .try_send(HighlightArguments {
-                            multi_buffer_snapshot: multi_buffer_snapshot.clone(),
-                            match_range: match_range.clone(),
-                            search_data: Arc::clone(render_data),
-                        })
-                        .ok();
-                }
-                return None;
+        let needs_highlights = render_data
+            .get()
+            .is_none_or(|search_data| search_data.highlights_data.get().is_none());
+        if needs_highlights && let Some(multi_buffer_snapshot) = multi_buffer_snapshot {
+            let awaits_first_parse = self.search_match_awaits_first_parse(
+                multi_buffer_snapshot,
+                match_range,
+                window,
+                cx,
+            );
+            if (render_data.get().is_none() || !awaits_first_parse)
+                && let ItemsDisplayMode::Search(search_state) = &mut self.mode
+            {
+                search_state
+                    .highlight_search_match_tx
+                    .try_send(HighlightArguments {
+                        multi_buffer_snapshot: multi_buffer_snapshot.clone(),
+                        match_range: match_range.clone(),
+                        search_data: Arc::clone(render_data),
+                        highlight: !awaits_first_parse,
+                    })
+                    .ok();
             }
-        };
+        }
+        let search_data = render_data.get()?;
         let search_matches = string_match
             .iter()
             .flat_map(|string_match| string_match.ranges())
@@ -3208,7 +3268,10 @@ impl OutlinePanel {
                     && outline_panel.update_search_matches(window, cx)
                 {
                     outline_panel.selected_entry.invalidate();
-                    outline_panel.update_cached_entries(Some(UPDATE_DEBOUNCE), window, cx);
+                    outline_panel.fetch_outdated_outlines(window, cx);
+                    if outline_panel.buffers_to_fetch(cx).is_empty() {
+                        outline_panel.update_cached_entries(Some(UPDATE_DEBOUNCE), window, cx);
+                    }
                 }
             },
         );
@@ -3635,10 +3698,12 @@ impl OutlinePanel {
     }
 
     fn buffers_to_fetch(&self, cx: &App) -> HashSet<BufferId> {
-        // Hide-symbols mode never renders outline rows, so fetching outlines would be wasted
-        // work; `update_fs_entries`'s completion only refreshes cached entries once this is
+        // Search and hide-symbols modes never render outline rows, so fetching outlines would be
+        // wasted work; `update_fs_entries`'s completion only refreshes cached entries once this is
         // empty, so the gate has to live here rather than in `fetch_outdated_outlines` alone.
-        if self.multi_buffer_active(cx) && self.hide_symbols_active(cx) {
+        if matches!(self.mode, ItemsDisplayMode::Search(_))
+            || (self.multi_buffer_active(cx) && self.hide_symbols_active(cx))
+        {
             return HashSet::default();
         }
         self.fs_entries
@@ -8802,6 +8867,207 @@ outline: fn main"
                 panel.hide_symbols_override, None,
                 "toggling symbols in a singleton view should be a no-op and not arm the override"
             );
+        });
+    }
+
+    #[gpui::test]
+    async fn test_project_search_matches_parse_only_when_shown(cx: &mut TestAppContext) {
+        init_test(cx);
+
+        let fs = FakeFs::new(cx.background_executor.clone());
+        let root = path!("/rust-analyzer");
+        populate_with_test_ra_project(&fs, root).await;
+        let project = Project::test(fs.clone(), [Path::new(root)], cx).await;
+        project.read_with(cx, |project, cx| {
+            project.languages().set_theme(cx.theme().clone());
+            project.languages().add(rust_lang());
+        });
+        let (window, workspace) = add_outline_panel(&project, cx).await;
+        let cx = &mut VisualTestContext::from_window(window.into(), cx);
+        let outline_panel = outline_panel(&workspace, cx);
+        outline_panel.update_in(cx, |outline_panel, window, cx| {
+            outline_panel.set_active(true, window, cx)
+        });
+
+        workspace.update_in(cx, |workspace, window, cx| {
+            ProjectSearchView::deploy_search(
+                workspace,
+                &workspace::DeploySearch::default(),
+                window,
+                cx,
+            )
+        });
+        let search_view = workspace.update_in(cx, |workspace, _window, cx| {
+            workspace
+                .active_pane()
+                .read(cx)
+                .items()
+                .find_map(|item| item.downcast::<ProjectSearchView>())
+                .expect("Project search view expected to appear after new search event trigger")
+        });
+        perform_project_search(&search_view, "param_names_for_lifetime_elision_hints", cx);
+        cx.executor()
+            .advance_clock(UPDATE_DEBOUNCE + Duration::from_millis(100));
+        cx.run_until_parked();
+        let unparsed_buffers = search_view.update(cx, |search_view, cx| {
+            search_view
+                .results_editor()
+                .read(cx)
+                .buffer()
+                .read(cx)
+                .all_buffers()
+                .into_iter()
+                .filter(|buffer| buffer.read(cx).is_parsing_deferred())
+                .count()
+        });
+        assert!(
+            unparsed_buffers > 0,
+            "search mode should not parse files that nothing displays"
+        );
+
+        cx.draw(Default::default(), size(px(1000.), px(2000.)), |_, _| {
+            div().size_full().child(outline_panel.clone())
+        });
+        cx.run_until_parked();
+        outline_panel.read_with(cx, |outline_panel, _| {
+            let rows_without_text = outline_panel
+                .cached_entries
+                .iter()
+                .filter(|cached_entry| match &cached_entry.entry {
+                    PanelEntry::Search(search_entry) => search_entry.render_data.get().is_none(),
+                    _ => false,
+                })
+                .count();
+            assert_eq!(
+                rows_without_text, 0,
+                "match text should not wait for parsing"
+            );
+        });
+
+        for _ in 0..3 {
+            cx.executor()
+                .advance_clock(UPDATE_DEBOUNCE + Duration::from_millis(100));
+            cx.run_until_parked();
+            cx.draw(Default::default(), size(px(1000.), px(2000.)), |_, _| {
+                div().size_full().child(outline_panel.clone())
+            });
+        }
+        cx.run_until_parked();
+
+        outline_panel.read_with(cx, |outline_panel, _| {
+            let highlight_counts = outline_panel
+                .cached_entries
+                .iter()
+                .filter_map(|cached_entry| match &cached_entry.entry {
+                    PanelEntry::Search(search_entry) => Some(
+                        search_entry
+                            .render_data
+                            .get()
+                            .and_then(|search_data| search_data.highlights_data.get())
+                            .map_or(0, |highlights| highlights.len()),
+                    ),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(highlight_counts.len(), 9);
+            assert!(
+                highlight_counts.iter().all(|count| *count > 0),
+                "every search match should be syntax highlighted: {highlight_counts:?}"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn test_outlines_are_fetched_when_search_mode_ends(cx: &mut TestAppContext) {
+        init_test(cx);
+
+        let fs = FakeFs::new(cx.background_executor.clone());
+        fs.insert_tree(
+            "/test",
+            json!({ "main.rs": "fn main() {\n    let value = 1;\n}\n" }),
+        )
+        .await;
+        let project = Project::test(fs.clone(), ["/test".as_ref()], cx).await;
+        project.read_with(cx, |project, _| project.languages().add(rust_lang()));
+        let (window, workspace) = add_outline_panel(&project, cx).await;
+        let cx = &mut VisualTestContext::from_window(window.into(), cx);
+
+        let editor = workspace
+            .update_in(cx, |workspace, window, cx| {
+                workspace.open_abs_path(
+                    PathBuf::from("/test/main.rs"),
+                    OpenOptions {
+                        visible: Some(OpenVisible::All),
+                        ..OpenOptions::default()
+                    },
+                    window,
+                    cx,
+                )
+            })
+            .await
+            .unwrap()
+            .downcast::<Editor>()
+            .unwrap();
+        let search_bar = workspace.update_in(cx, |_, window, cx| {
+            cx.new(|cx| {
+                let mut search_bar = BufferSearchBar::new(None, window, cx);
+                search_bar.set_active_pane_item(Some(&editor), window, cx);
+                search_bar.show(window, cx);
+                search_bar
+            })
+        });
+        search_bar
+            .update_in(cx, |search_bar, window, cx| {
+                search_bar.search("value", None, true, window, cx)
+            })
+            .await
+            .unwrap();
+        let outline_panel = outline_panel(&workspace, cx);
+        outline_panel.update_in(cx, |outline_panel, window, cx| {
+            outline_panel.set_active(true, window, cx)
+        });
+        cx.executor()
+            .advance_clock(UPDATE_DEBOUNCE + Duration::from_millis(500));
+        cx.run_until_parked();
+        let buffer_id = editor.read_with(cx, |editor, cx| {
+            editor
+                .buffer()
+                .read(cx)
+                .as_singleton()
+                .expect("single file editor")
+                .read(cx)
+                .remote_id()
+        });
+        outline_panel.update(cx, |outline_panel, _| {
+            assert!(matches!(outline_panel.mode, ItemsDisplayMode::Search(_)));
+            assert!(matches!(
+                outline_panel
+                    .buffers
+                    .get(&buffer_id)
+                    .map(|buffer| &buffer.outlines),
+                Some(OutlineState::NotFetched)
+            ));
+        });
+
+        search_bar
+            .update_in(cx, |search_bar, window, cx| {
+                search_bar.search("no_such_text", None, true, window, cx)
+            })
+            .await
+            .unwrap();
+        cx.executor()
+            .advance_clock(UPDATE_DEBOUNCE + Duration::from_millis(500));
+        cx.run_until_parked();
+        outline_panel.update(cx, |outline_panel, cx| {
+            assert!(matches!(outline_panel.mode, ItemsDisplayMode::Outline));
+            let entries = display_entries(
+                &project,
+                &snapshot(outline_panel, cx),
+                &outline_panel.cached_entries,
+                outline_panel.selected_entry(),
+                cx,
+            );
+            assert!(entries.contains("outline: fn main"), "{entries}");
         });
     }
 

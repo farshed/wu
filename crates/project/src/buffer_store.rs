@@ -676,6 +676,7 @@ impl LocalBufferStore {
         &self,
         path: Arc<RelPath>,
         worktree: Entity<Worktree>,
+        defer_parsing: bool,
         cx: &mut Context<BufferStore>,
     ) -> Task<Result<Entity<Buffer>>> {
         let load_file = worktree.update(cx, |worktree, cx| worktree.load_file(path.as_ref(), cx));
@@ -706,6 +707,9 @@ impl LocalBufferStore {
                             Buffer::build(text_buffer, Some(loaded.file), capability, cx);
                         buffer.set_encoding(loaded.encoding);
                         buffer.set_has_bom(loaded.has_bom);
+                        if defer_parsing {
+                            buffer.defer_parsing();
+                        }
                         buffer
                     })
                 }
@@ -903,6 +907,24 @@ impl BufferStore {
         project_path: ProjectPath,
         cx: &mut Context<Self>,
     ) -> Task<Result<Entity<Buffer>>> {
+        self.open_buffer_internal(project_path, false, cx)
+    }
+
+    /// Opens a buffer whose syntax isn't parsed until something displays it.
+    pub(crate) fn open_buffer_without_parsing(
+        &mut self,
+        project_path: ProjectPath,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<Entity<Buffer>>> {
+        self.open_buffer_internal(project_path, true, cx)
+    }
+
+    fn open_buffer_internal(
+        &mut self,
+        project_path: ProjectPath,
+        defer_parsing: bool,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<Entity<Buffer>>> {
         if let Some(buffer) = self.get_by_path(&project_path) {
             return Task::ready(Ok(buffer));
         }
@@ -919,7 +941,9 @@ impl BufferStore {
                     return Task::ready(Err(anyhow!("no such worktree")));
                 };
                 let load_buffer = match &self.state {
-                    BufferStoreState::Local(this) => this.open_buffer(path, worktree, cx),
+                    BufferStoreState::Local(this) => {
+                        this.open_buffer(path, worktree, defer_parsing, cx)
+                    }
                     BufferStoreState::Remote(this) => this.open_buffer(path, worktree, cx),
                 };
 

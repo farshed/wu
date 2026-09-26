@@ -7973,6 +7973,14 @@ impl Element for EditorElement {
                         .row_infos(start_row)
                         .take((start_row..end_row).len())
                         .collect::<Vec<RowInfo>>();
+                    let parsed_synchronously = self.editor.update(cx, |editor, cx| {
+                        editor.resume_parsing_for_rows(&row_infos, cx)
+                    });
+                    if parsed_synchronously {
+                        snapshot = self
+                            .editor
+                            .update(cx, |editor, cx| editor.snapshot(window, cx));
+                    }
                     let is_row_soft_wrapped = |row: usize| {
                         row_infos
                             .get(row)

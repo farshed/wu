@@ -3763,7 +3763,8 @@ impl Project {
                     self.worktree_store.clone(),
                     project_search::Search::MAX_SEARCH_RESULT_FILES + 1,
                     cx,
-                ),
+                )
+                .with_deferred_parsing(),
             }
         };
         searcher.into_handle(query, cx)

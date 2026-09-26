@@ -2074,6 +2074,59 @@ fn test_autoindent_with_soft_tabs(cx: &mut App) {
 }
 
 #[gpui::test]
+async fn test_deferred_parsing(cx: &mut TestAppContext) {
+    cx.update(|cx| init_settings(cx, |_| {}));
+
+    let buffer = cx.new(|cx| {
+        let mut buffer = Buffer::local("fn a() {}", cx);
+        buffer.defer_parsing();
+        buffer.set_language(Some(rust_lang()), cx);
+        buffer.edit([(8..8, "\nb()\n")], None, cx);
+        buffer
+    });
+    cx.run_until_parked();
+    buffer.read_with(cx, |buffer, _| {
+        assert!(buffer.is_parsing_deferred());
+        assert!(buffer.is_awaiting_first_parse());
+        assert_eq!(buffer.snapshot().syntax_layers().count(), 0);
+    });
+
+    let first_parse = buffer
+        .update(cx, |buffer, cx| buffer.wait_for_first_parse(cx))
+        .expect("a deferred buffer awaits its first parse");
+    first_parse.await;
+    buffer.update(cx, |buffer, cx| {
+        assert!(!buffer.is_parsing_deferred());
+        assert!(!buffer.is_awaiting_first_parse());
+        assert_eq!(buffer.snapshot().syntax_layers().count(), 1);
+        assert!(buffer.wait_for_first_parse(cx).is_none());
+    });
+}
+
+#[gpui::test]
+fn test_autoindent_edit_parses_a_deferred_buffer(cx: &mut App) {
+    init_settings(cx, |_| {});
+
+    cx.new(|cx| {
+        let mut buffer = Buffer::local("fn a() {}", cx);
+        buffer.defer_parsing();
+        buffer.set_language(Some(rust_lang()), cx);
+
+        buffer.edit([(8..8, "\n\n")], Some(AutoindentMode::EachLine), cx);
+        assert!(!buffer.is_parsing_deferred());
+        assert_eq!(buffer.text(), "fn a() {\n    \n}");
+
+        buffer.edit(
+            [(Point::new(1, 4)..Point::new(1, 4), "b()\n")],
+            Some(AutoindentMode::EachLine),
+            cx,
+        );
+        assert_eq!(buffer.text(), "fn a() {\n    b()\n    \n}");
+        buffer
+    });
+}
+
+#[gpui::test]
 fn test_autoindent_with_hard_tabs(cx: &mut App) {
     init_settings(cx, |settings| {
         settings.defaults.hard_tabs = Some(true);

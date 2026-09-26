@@ -7,6 +7,9 @@ release body.
 
 ## Unreleased
 
+- Project search uses much less memory. Files in the results are only parsed for syntax highlighting once they're shown on screen.
+- Breadcrumbs and sticky headers fill in as soon as a newly opened file finishes parsing, instead of waiting for the cursor to move.
+
 ## 1.0.9 - 2026-09-20
 
 - Files copied in the project panel can now be pasted into another Wu window or into other apps.

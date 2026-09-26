@@ -97,7 +97,6 @@ pub struct SearchPanel {
     fs: Arc<dyn Fs>,
     focus_handle: FocusHandle,
     search: Entity<ProjectSearch>,
-    results_editor: Entity<Editor>,
     query_editor: Entity<Editor>,
     replacement_editor: Entity<Editor>,
     included_files_editor: Entity<Editor>,
@@ -155,14 +154,6 @@ impl SearchPanel {
         cx.new(|cx| {
             let search =
                 cx.new(|cx| ProjectSearch::new(project.clone(), weak_workspace.clone(), cx));
-            let excerpts = search.read(cx).excerpts.clone();
-            let results_editor = cx.new(|cx| {
-                let mut editor =
-                    Editor::for_multibuffer(excerpts, Some(project.clone()), window, cx);
-                editor.set_searchable(false);
-                editor.set_in_project_search(true);
-                editor
-            });
             let query_editor = single_line_editor("Search", window, cx);
             query_editor.update(cx, |editor, _| {
                 editor.set_use_autoclose(false);
@@ -201,7 +192,6 @@ impl SearchPanel {
                 project,
                 focus_handle: cx.focus_handle(),
                 search,
-                results_editor,
                 query_editor,
                 replacement_editor,
                 included_files_editor,
@@ -775,13 +765,14 @@ impl SearchPanel {
             return;
         };
         let query = query.with_replacement(self.replacement_editor.read(cx).text(cx));
-        let excerpts = self.search.read(cx).excerpts.read(cx);
+        let excerpts = self.search.read(cx).excerpts.clone();
         let clean_buffers: HashSet<Entity<Buffer>> = ranges
             .iter()
-            .filter_map(|range| excerpts.buffer(range.start.buffer_id()?))
+            .filter_map(|range| excerpts.read(cx).buffer(range.start.buffer_id()?))
             .filter(|buffer| !buffer.read(cx).is_dirty())
             .collect();
-        self.results_editor.update(cx, |editor, cx| {
+        let replace_editor = cx.new(|cx| Editor::for_multibuffer(excerpts, None, window, cx));
+        replace_editor.update(cx, |editor, cx| {
             editor.replace_all(
                 &mut ranges.iter(),
                 &query,

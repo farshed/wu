@@ -9417,6 +9417,67 @@ async fn test_search_multiple_worktrees_with_inclusions(cx: &mut gpui::TestAppCo
 }
 
 #[gpui::test]
+async fn test_search_defers_parsing_of_the_buffers_it_opens(cx: &mut gpui::TestAppContext) {
+    init_test(cx);
+
+    let fs = FakeFs::new(cx.executor());
+    fs.insert_tree(
+        path!("/dir"),
+        json!({
+            "one.rs": "const ONE: usize = 1;",
+            "two.rs": "const TWO: usize = 2;",
+        }),
+    )
+    .await;
+    let project = Project::test(fs.clone(), [path!("/dir").as_ref()], cx).await;
+    project.read_with(cx, |project, _| project.languages().add(rust_lang()));
+    let open_buffer = project
+        .update(cx, |project, cx| {
+            project.open_local_buffer(path!("/dir/one.rs"), cx)
+        })
+        .await
+        .unwrap();
+    let open_buffer_id = open_buffer.read_with(cx, |buffer, _| buffer.remote_id());
+    cx.run_until_parked();
+
+    let query = SearchQuery::text(
+        "const",
+        false,
+        true,
+        false,
+        Default::default(),
+        Default::default(),
+        false,
+        None,
+    )
+    .unwrap();
+    let search = project.update(cx, |project, cx| project.search(query, cx));
+    let mut searched_buffers = Vec::new();
+    while let Ok(search_result) = search.rx.recv().await {
+        if let SearchResult::Buffer { buffer, .. } = search_result {
+            searched_buffers.push(buffer);
+        }
+    }
+    cx.run_until_parked();
+
+    assert_eq!(searched_buffers.len(), 2);
+    for buffer in searched_buffers {
+        buffer.read_with(cx, |buffer, _| {
+            assert_eq!(
+                buffer.language().map(|language| language.name()),
+                Some("Rust".into())
+            );
+            let was_already_open = buffer.remote_id() == open_buffer_id;
+            assert_eq!(buffer.is_parsing_deferred(), !was_already_open);
+            assert_eq!(
+                buffer.snapshot().syntax_layers().count(),
+                usize::from(was_already_open)
+            );
+        });
+    }
+}
+
+#[gpui::test]
 async fn test_search_in_gitignored_dirs(cx: &mut gpui::TestAppContext) {
     init_test(cx);
 

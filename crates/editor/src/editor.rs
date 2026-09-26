@@ -270,6 +270,12 @@ const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(500);
 const DELETED_FILE_PLACEHOLDER: &str = "File not found. It was deleted or moved.";
 const MAX_LINE_LEN: usize = 1024;
 const MIN_NAVIGATION_HISTORY_ROW_DELTA: i64 = 10;
+const VISIBLE_BUFFER_PARSE_BUDGET: Duration = if cfg!(any(test, feature = "test-support")) {
+    Duration::from_millis(500)
+} else {
+    Duration::from_millis(8)
+};
+const MAX_VISIBLE_BUFFER_LEN_TO_PARSE_SYNCHRONOUSLY: usize = 64 * 1024;
 const MAX_SELECTION_HISTORY_LEN: usize = 1024;
 const MIN_LANGUAGE_DETECTION_LEN: usize = 20;
 const LANGUAGE_DETECTION_DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(200);
@@ -1128,6 +1134,7 @@ pub struct Editor {
     sticky_headers_task: Task<()>,
     sticky_headers: Option<Vec<OutlineItem<Anchor>>>,
     pub(crate) colorize_brackets_task: Task<()>,
+    buffers_awaiting_first_parse: HashSet<BufferId>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -2424,6 +2431,7 @@ impl Editor {
             sticky_headers_task: Task::ready(()),
             sticky_headers: None,
             colorize_brackets_task: Task::ready(()),
+            buffers_awaiting_first_parse: HashSet::default(),
         };
 
         if let Some(project) = editor.project.clone() {
@@ -9738,6 +9746,13 @@ impl Editor {
                 });
             }
             multi_buffer::Event::Reparsed(buffer_id) => {
+                if self.buffers_awaiting_first_parse.remove(buffer_id) {
+                    let display_snapshot = self.display_snapshot(cx);
+                    self.refresh_outline_symbols_at_cursor(cx);
+                    self.refresh_sticky_headers(&display_snapshot, cx);
+                    self.refresh_matching_bracket_highlights(&display_snapshot, cx);
+                    self.refresh_inline_values(cx);
+                }
                 self.refresh_runnables(Some(*buffer_id), window, cx);
                 self.refresh_selected_text_highlights(&self.display_snapshot(cx), true, window, cx);
                 self.colorize_brackets(true, cx);
@@ -10901,6 +10916,43 @@ impl Editor {
                 });
             }
         });
+    }
+
+    pub(crate) fn resume_parsing_for_rows(
+        &mut self,
+        row_infos: &[RowInfo],
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let mut started_at = None;
+        let mut parsed_synchronously = false;
+        for buffer_id in row_infos
+            .iter()
+            .filter_map(|row_info| row_info.buffer_id)
+            .dedup()
+        {
+            let Some(buffer) = self.buffer.read(cx).buffer(buffer_id) else {
+                continue;
+            };
+            if !buffer.read(cx).is_awaiting_first_parse() {
+                continue;
+            }
+            self.buffers_awaiting_first_parse.insert(buffer_id);
+            if !buffer.read(cx).is_parsing_deferred() {
+                continue;
+            }
+            let block_budget =
+                if buffer.read(cx).len() > MAX_VISIBLE_BUFFER_LEN_TO_PARSE_SYNCHRONOUSLY {
+                    None
+                } else {
+                    let started_at = *started_at.get_or_insert_with(Instant::now);
+                    VISIBLE_BUFFER_PARSE_BUDGET
+                        .checked_sub(started_at.elapsed())
+                        .filter(|budget| !budget.is_zero())
+                };
+            parsed_synchronously |=
+                buffer.update(cx, |buffer, cx| buffer.resume_parsing(block_budget, cx));
+        }
+        parsed_synchronously
     }
 
     fn register_visible_buffers(&mut self, cx: &mut Context<Self>) {

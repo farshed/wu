@@ -22,6 +22,7 @@
 //!                             |                  V
 //!                             . --------  Project search tab
 //! ```
+use std::cell::RefCell;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,7 +37,7 @@ use gpui::{
     Modifiers, StyledText, Task, TextStyle, prelude::*,
 };
 use gpui::{Entity, FocusHandle, WeakEntity};
-use language::{Buffer, Language, LanguageAwareStyling};
+use language::{Buffer, BufferId, Language, LanguageAwareStyling};
 use picker::{Picker, PickerDelegate};
 use project::{Project, ProjectPath, Search};
 use project::{SearchResults, search::SearchQuery, search::SearchResult};
@@ -90,6 +91,7 @@ pub struct Delegate {
     pub(crate) collapsed_paths: HashSet<ProjectPath>,
     pub(crate) query_editor: Option<Entity<Editor>>,
     pub(crate) regex_language: Option<Arc<Language>>,
+    buffers_awaiting_first_parse: RefCell<HashSet<BufferId>>,
 }
 
 /// Wrapper with Eq is path + range equality
@@ -331,6 +333,7 @@ impl Delegate {
                 collapsed_paths: HashSet::default(),
                 query_editor: None,
                 regex_language: None,
+                buffers_awaiting_first_parse: RefCell::default(),
             });
 
             this
@@ -1058,6 +1061,38 @@ impl PickerDelegate for Delegate {
 }
 
 impl Delegate {
+    fn redraw_after_first_parse(&self, buffer: &Entity<Buffer>, cx: &mut Context<Picker<Self>>) {
+        let buffer_id = buffer.read(cx).remote_id();
+        if self
+            .buffers_awaiting_first_parse
+            .borrow()
+            .contains(&buffer_id)
+        {
+            return;
+        }
+        let Some(first_parse) = buffer.update(cx, |buffer, cx| buffer.wait_for_first_parse(cx))
+        else {
+            return;
+        };
+        self.buffers_awaiting_first_parse
+            .borrow_mut()
+            .insert(buffer_id);
+        cx.spawn(async move |picker, cx| {
+            first_parse.await;
+            picker
+                .update(cx, |picker, cx| {
+                    picker
+                        .delegate
+                        .buffers_awaiting_first_parse
+                        .borrow_mut()
+                        .remove(&buffer_id);
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
+    }
+
     fn render_match_impl(
         &self,
         ix: usize,
@@ -1178,6 +1213,7 @@ impl Delegate {
             }
             Entry::Match(match_index) => {
                 let search_match = self.matches.get(*match_index)?;
+                self.redraw_after_first_parse(&search_match.buffer, cx);
                 Some(
                     ListItem::new(ix)
                         .spacing(ListItemSpacing::Sparse)

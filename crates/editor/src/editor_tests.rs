@@ -44290,3 +44290,154 @@ async fn test_scroll_range_hold_freezes_before_first_settled_frame(cx: &mut Test
         );
     });
 }
+
+fn deferred_rust_buffer(text: &str, cx: &mut TestAppContext) -> Entity<Buffer> {
+    cx.new(|cx| {
+        let mut buffer = Buffer::local(text, cx);
+        buffer.defer_parsing();
+        buffer.set_language(Some(rust_lang()), cx);
+        buffer
+    })
+}
+
+fn multi_buffer_with_off_screen_buffer(
+    off_screen_text: &str,
+    cx: &mut TestAppContext,
+) -> (Entity<MultiBuffer>, Entity<Buffer>, Entity<Buffer>) {
+    let on_screen = deferred_rust_buffer(&"// filler\n".repeat(200), cx);
+    let off_screen = deferred_rust_buffer(off_screen_text, cx);
+    let multi_buffer = cx.new(|cx| {
+        let mut multi_buffer = MultiBuffer::new(ReadWrite);
+        multi_buffer.set_excerpts_for_path(
+            PathKey::sorted(0),
+            on_screen.clone(),
+            [Point::new(0, 0)..Point::new(200, 0)],
+            0,
+            cx,
+        );
+        multi_buffer.set_excerpts_for_path(
+            PathKey::sorted(1),
+            off_screen.clone(),
+            [Point::new(0, 0)..off_screen.read(cx).max_point()],
+            0,
+            cx,
+        );
+        multi_buffer
+    });
+    (multi_buffer, on_screen, off_screen)
+}
+
+fn redraw_window(cx: &mut VisualTestContext) {
+    cx.update(|window, cx| {
+        window.refresh();
+        let _ = window.draw(cx);
+    });
+}
+
+#[gpui::test]
+async fn test_breadcrumbs_refresh_after_a_deferred_buffer_is_parsed(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let buffer = deferred_rust_buffer("fn outer() {\n    inner();\n}\n", cx);
+    let multi_buffer = cx.new(|cx| MultiBuffer::singleton(buffer.clone(), cx));
+    let (editor, cx) = cx.add_window_view(|window, cx| {
+        let mut editor = build_editor(multi_buffer, window, cx);
+        editor.change_selections(SelectionEffects::no_scroll(), window, cx, |selections| {
+            selections.select_ranges([Point::new(1, 4)..Point::new(1, 4)])
+        });
+        assert!(buffer.read(cx).is_parsing_deferred());
+        editor
+    });
+
+    cx.run_until_parked();
+    editor.update(cx, |editor, _| {
+        let symbols = editor
+            .outline_symbols_at_cursor
+            .as_ref()
+            .map(|(_, symbols)| {
+                symbols
+                    .iter()
+                    .map(|symbol| symbol.text.to_string())
+                    .collect::<Vec<_>>()
+            });
+        assert_eq!(symbols, Some(vec!["fn outer".to_string()]));
+    });
+}
+
+#[gpui::test]
+async fn test_drawing_a_multibuffer_parses_only_buffers_on_screen(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let (multi_buffer, on_screen, off_screen) =
+        multi_buffer_with_off_screen_buffer("fn b() {}\n", cx);
+    let (_, cx) = cx.add_window_view(|window, cx| build_editor(multi_buffer.clone(), window, cx));
+
+    assert!(!on_screen.read_with(cx, |buffer, _| buffer.is_parsing_deferred()));
+    assert!(off_screen.read_with(cx, |buffer, _| buffer.is_parsing_deferred()));
+
+    multi_buffer.update(cx, |multi_buffer, cx| {
+        multi_buffer.remove_excerpts(PathKey::sorted(0), cx)
+    });
+    redraw_window(cx);
+    off_screen.read_with(cx, |buffer, _| {
+        assert!(!buffer.is_parsing_deferred());
+        assert_eq!(buffer.snapshot().syntax_layers().count(), 1);
+    });
+}
+
+#[gpui::test]
+async fn test_outline_items_of_a_deferred_buffer_wait_for_its_parse(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let (multi_buffer, _, off_screen) = multi_buffer_with_off_screen_buffer("fn b() {}\n", cx);
+    let off_screen_id = off_screen.read_with(cx, |buffer, _| buffer.remote_id());
+    let (editor, cx) = cx.add_window_view(|window, cx| build_editor(multi_buffer, window, cx));
+    assert!(off_screen.read_with(cx, |buffer, _| buffer.is_parsing_deferred()));
+
+    let outline_items = editor
+        .update(cx, |editor, cx| {
+            editor.buffer_outline_items(off_screen_id, cx)
+        })
+        .await;
+    assert_eq!(
+        outline_items
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["fn b"]
+    );
+}
+
+#[gpui::test]
+async fn test_breadcrumbs_refresh_when_a_first_parse_started_elsewhere_finishes(
+    cx: &mut TestAppContext,
+) {
+    init_test(cx, |_| {});
+
+    let buffer = deferred_rust_buffer("fn outer() {\n    inner();\n}\n", cx);
+    buffer.update(cx, |buffer, cx| buffer.resume_parsing(None, cx));
+    let multi_buffer = cx.new(|cx| MultiBuffer::singleton(buffer.clone(), cx));
+    let (editor, cx) = cx.add_window_view(|window, cx| {
+        let mut editor = build_editor(multi_buffer, window, cx);
+        editor.change_selections(SelectionEffects::no_scroll(), window, cx, |selections| {
+            selections.select_ranges([Point::new(1, 4)..Point::new(1, 4)])
+        });
+        assert!(buffer.read(cx).is_awaiting_first_parse());
+        assert!(!buffer.read(cx).is_parsing_deferred());
+        editor
+    });
+
+    cx.run_until_parked();
+    editor.update(cx, |editor, _| {
+        let symbols = editor
+            .outline_symbols_at_cursor
+            .as_ref()
+            .map(|(_, symbols)| {
+                symbols
+                    .iter()
+                    .map(|symbol| symbol.text.to_string())
+                    .collect::<Vec<_>>()
+            });
+        assert_eq!(symbols, Some(vec!["fn outer".to_string()]));
+    });
+}

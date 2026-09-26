@@ -48,6 +48,7 @@ enum SearchKind {
     Local {
         fs: Arc<dyn Fs>,
         worktrees: Vec<Entity<Worktree>>,
+        defer_parsing: bool,
     },
     /// Query remote host for candidates. As of writing, the host runs a local search in "buffers with matches only" mode.
     Remote {
@@ -125,11 +126,22 @@ impl Search {
             .collect::<Vec<_>>();
         worktrees.sort_by_key(|worktree| worktree.read(cx).id());
         Self {
-            kind: SearchKind::Local { fs, worktrees },
+            kind: SearchKind::Local {
+                fs,
+                worktrees,
+                defer_parsing: false,
+            },
             buffer_store,
             worktree_store,
             limit,
         }
+    }
+
+    pub(crate) fn with_deferred_parsing(mut self) -> Self {
+        if let SearchKind::Local { defer_parsing, .. } = &mut self.kind {
+            *defer_parsing = true;
+        }
+        self
     }
 
     pub(crate) fn remote(
@@ -238,6 +250,7 @@ impl Search {
                     SearchKind::Local {
                         fs,
                         ref mut worktrees,
+                        defer_parsing,
                     } => {
                         let (get_buffer_for_full_scan_tx, get_buffer_for_full_scan_rx) =
                             unbounded();
@@ -260,6 +273,7 @@ impl Search {
                                 get_buffer_for_full_scan_rx,
                                 grab_buffer_snapshot_tx,
                                 entryless_file_buffers,
+                                defer_parsing,
                                 cx.clone(),
                             )
                             .boxed_local(),
@@ -560,6 +574,7 @@ impl Search {
         rx: Receiver<(ProjectPath, MatchPositionHint)>,
         find_all_matches_tx: Sender<(Entity<Buffer>, MatchPositionHint)>,
         sorted_entryless_file_buffers: Vec<((u64, Arc<RelPath>), Entity<Buffer>)>,
+        defer_parsing: bool,
         mut cx: AsyncApp,
     ) {
         let mut entryless_file_buffers = sorted_entryless_file_buffers.into_iter().peekable();
@@ -575,7 +590,13 @@ impl Search {
                 let mut buffers = buffer_store.update(&mut cx, |this, cx| {
                     requested_paths
                         .into_iter()
-                        .map(|(path, _)| this.open_buffer(path, cx))
+                        .map(|(path, _)| {
+                            if defer_parsing {
+                                this.open_buffer_without_parsing(path, cx)
+                            } else {
+                                this.open_buffer(path, cx)
+                            }
+                        })
                         .collect::<FuturesOrdered<_>>()
                 });
                 let mut line_hints = line_hints.into_iter();

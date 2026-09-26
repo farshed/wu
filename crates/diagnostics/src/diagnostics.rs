@@ -496,8 +496,8 @@ impl ProjectDiagnosticsEditor {
         cx: &mut Context<Self>,
     ) -> Task<Result<()>> {
         let was_empty = self.multibuffer.read(cx).is_empty();
-        let buffer_snapshot = buffer.read(cx).snapshot();
-        let buffer_id = buffer_snapshot.remote_id();
+        let buffer_id = buffer.read(cx).remote_id();
+        let first_parse = buffer.update(cx, |buffer, cx| buffer.wait_for_first_parse(cx));
 
         let max_severity = if self.include_warnings {
             lsp::DiagnosticSeverity::WARNING
@@ -506,6 +506,10 @@ impl ProjectDiagnosticsEditor {
         };
 
         cx.spawn_in(window, async move |this, cx| {
+            if let Some(first_parse) = first_parse {
+                first_parse.await;
+            }
+            let buffer_snapshot = buffer.read_with(cx, |buffer, _| buffer.snapshot());
             let diagnostics = buffer_snapshot
                 .diagnostics_in_range::<_, text::Anchor>(
                     Point::zero()..buffer_snapshot.max_point(),

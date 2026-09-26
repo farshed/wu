@@ -121,6 +121,8 @@ pub struct Buffer {
     sync_parse_timeout: Option<Duration>,
     syntax_map: Mutex<SyntaxMap>,
     reparse: Option<Task<()>>,
+    parsing_deferred: bool,
+    first_parse_done: bool,
     parse_status: (watch::Sender<ParseStatus>, watch::Receiver<ParseStatus>),
     non_text_state_update_count: usize,
     diagnostics: TreeMap<LanguageServerId, DiagnosticSet>,
@@ -1148,6 +1150,8 @@ impl Buffer {
             capability,
             syntax_map,
             reparse: None,
+            parsing_deferred: false,
+            first_parse_done: false,
             non_text_state_update_count: 0,
             sync_parse_timeout: if cfg!(any(test, feature = "test-support")) {
                 Some(Duration::from_millis(10))
@@ -1553,6 +1557,7 @@ impl Buffer {
         }
         self.non_text_state_update_count += 1;
         self.syntax_map.lock().clear(&self.text);
+        self.first_parse_done = false;
         let old_language = std::mem::replace(&mut self.language, language);
         self.refresh_resolved_settings(cx);
         self.was_changed();
@@ -1864,6 +1869,63 @@ impl Buffer {
         self.syntax_map.lock().contains_unknown_injections()
     }
 
+    pub fn defer_parsing(&mut self) {
+        self.parsing_deferred = true;
+    }
+
+    pub fn is_parsing_deferred(&self) -> bool {
+        self.parsing_deferred
+    }
+
+    /// Returns whether a parse finished within `block_budget`.
+    pub fn resume_parsing(
+        &mut self,
+        block_budget: Option<Duration>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.parsing_deferred {
+            return false;
+        }
+        self.parsing_deferred = false;
+        self.reparse_with_budget(cx, block_budget);
+        self.language.is_some() && self.reparse.is_none()
+    }
+
+    pub fn is_awaiting_first_parse(&self) -> bool {
+        !self.first_parse_done
+            && self
+                .language
+                .as_ref()
+                .is_some_and(|language| language.grammar().is_some())
+    }
+
+    /// Resumes deferred parsing, returning a future that resolves once the first parse finishes.
+    pub fn wait_for_first_parse(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<impl Future<Output = ()> + use<>> {
+        if !self.is_awaiting_first_parse() {
+            return None;
+        }
+        self.resume_parsing(None, cx);
+        Some(self.parsing_idle())
+    }
+
+    fn parse_deferred_synchronously(&mut self, cx: &mut Context<Self>) {
+        self.parsing_deferred = false;
+        let Some(language) = self.language.clone() else {
+            return;
+        };
+        let text = self.text_snapshot();
+        let mut syntax_map = self.syntax_map.lock();
+        syntax_map.interpolate(&text);
+        let language_registry = syntax_map.language_registry();
+        let mut syntax_snapshot = syntax_map.snapshot();
+        drop(syntax_map);
+        syntax_snapshot.reparse(&text, language_registry, language);
+        self.did_finish_parsing(syntax_snapshot, None, false, cx);
+    }
+
     /// Sets the sync parse timeout for this buffer.
     ///
     /// Setting this to `None` disables sync parsing entirely.
@@ -1909,10 +1971,19 @@ impl Buffer {
     /// parsing in the background.
     #[ztracing::instrument(skip_all)]
     pub fn reparse(&mut self, cx: &mut Context<Self>, may_block: bool) {
+        let block_budget = if may_block {
+            self.sync_parse_timeout
+        } else {
+            None
+        };
+        self.reparse_with_budget(cx, block_budget);
+    }
+
+    fn reparse_with_budget(&mut self, cx: &mut Context<Self>, block_budget: Option<Duration>) {
         if self.text.version() != *self.tree_sitter_data.version() {
             Self::invalidate_tree_sitter_data(&mut self.tree_sitter_data, self.text.snapshot());
         }
-        if self.reparse.is_some() {
+        if self.reparse.is_some() || self.parsing_deferred {
             return;
         }
         let language = if let Some(language) = self.language.clone() {
@@ -1931,12 +2002,12 @@ impl Buffer {
         drop(syntax_map);
 
         self.parse_status.0.send(ParseStatus::Parsing).unwrap();
-        if may_block && let Some(sync_parse_timeout) = self.sync_parse_timeout {
+        if let Some(block_budget) = block_budget {
             if let Ok(()) = syntax_snapshot.reparse_with_timeout(
                 &text,
                 language_registry.clone(),
                 language.clone(),
-                sync_parse_timeout,
+                block_budget,
             ) {
                 self.did_finish_parsing(
                     syntax_snapshot,
@@ -1994,6 +2065,7 @@ impl Buffer {
     ) {
         self.non_text_state_update_count += 1;
         self.syntax_map.lock().did_parse(syntax_snapshot);
+        self.first_parse_done = true;
         self.was_changed();
 
         let parsing_complete = !parse_again || self.language.is_none();
@@ -2918,6 +2990,9 @@ impl Buffer {
             return None;
         }
 
+        if autoindent_mode.is_some() && self.parsing_deferred {
+            self.parse_deferred_synchronously(cx);
+        }
         self.start_transaction();
         self.pending_autoindent.take();
         let autoindent_request = autoindent_mode
