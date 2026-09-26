@@ -26,7 +26,7 @@ Wu is a fork of [Zed](https://github.com/zed-industries/zed). It inherits Zed's 
 - [Linux AArch64](https://github.com/farshed/wu/releases/latest/download/wu-linux-aarch64.tar.gz)
 - [Windows x86-64](https://github.com/farshed/wu/releases/latest/download/Wu-x86_64.exe)
 
-Or see [INSTALL.md](https://github.com/farshed/wu/blob/main/docs/INSTALL.md) for more.
+See [INSTALL.md](https://github.com/farshed/wu/blob/main/docs/INSTALL.md) for more.
 
 ## Docs
 
