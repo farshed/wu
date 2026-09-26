@@ -19,19 +19,24 @@ Wu is a fork of [Zed](https://github.com/zed-industries/zed). It inherits Zed's 
 - **Feels like VS Code out of the box.** UI and defaults are tuned so you don't have to relearn your editor.
 - **No account or telemetry.** Nothing to sign in to. Wu never sends your usage data anywhere.
 
----
+## Download
 
-![Wu screenshot dark](https://wu.farshed.me/screenshot-dark.png)
+- [macOS (Apple Silicon)](https://github.com/farshed/wu/releases/latest/download/Wu-aarch64.dmg)
+- [Linux x86-64](https://github.com/farshed/wu/releases/latest/download/wu-linux-x86_64.tar.gz)
+- [**Linux AArch64**](https://github.com/farshed/wu/releases/latest/download/wu-linux-aarch64.tar.gz)
+- [Windows x86-64](https://github.com/farshed/wu/releases/latest/download/Wu-x86_64.exe)
 
-![Wu screenshot light](https://wu.farshed.me/screenshot-light.png)
+Or see [INSTALL.md](https://github.com/farshed/wu/blob/main/docs/INSTALL.md) for more.
 
 ## Docs
 
 See [docs](https://wu.farshed.me).
 
-## Install
+---
 
-See [INSTALL.md](https://github.com/farshed/wu/blob/main/docs/INSTALL.md).
+![Wu screenshot dark](https://wu.farshed.me/screenshot-dark.png)
+
+![Wu screenshot light](https://wu.farshed.me/screenshot-light.png)
 
 ## Building
 
