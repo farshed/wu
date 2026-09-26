@@ -31,7 +31,7 @@ See [docs](https://wu.farshed.me).
 
 ## Install
 
-See [INSTALL.md](./INSTALL.md).
+See [INSTALL.md](https://github.com/farshed/wu/blob/main/docs/INSTALL.md).
 
 ## Building
 
