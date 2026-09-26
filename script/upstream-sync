@@ -21,7 +21,7 @@ set -euo pipefail
 target=${1:?usage: script/upstream-sync <zed-tag-or-sha>}
 
 UPSTREAM_URL=https://github.com/zed-industries/zed.git
-VERSION_FILE=UPSTREAM_VERSION
+VERSION_FILE=script/UPSTREAM_VERSION
 
 # Upstream changes under these paths are discarded and Wu's files kept as they
 # are. Crates that Wu removed (present at the last synced point, absent in HEAD)

@@ -22,7 +22,7 @@ jobs:
       - name: Find newest unsynced Zed stable tag
         id: tag
         run: |
-          synced=$(tr -d '[:space:]' < UPSTREAM_VERSION)
+          synced=$(tr -d '[:space:]' < script/UPSTREAM_VERSION)
           tag=$(git ls-remote --tags --refs https://github.com/zed-industries/zed.git 'v*' \
             | awk '{ print $2 }' | sed 's|refs/tags/||' \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
