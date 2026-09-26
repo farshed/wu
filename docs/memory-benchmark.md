@@ -11,7 +11,7 @@ Tested on September 26, 2026, using the official Linux ARM64 releases of [Wu 1.0
 
 ## Results
 
-All values are **MiB of total process-tree PSS**, where lower is better. Totals include the editor and its running child processes, including language servers and terminal shells.
+All values are **MiB of total process-tree PSS**, where lower is better. Totals include the editor and its running child processes, including terminal shells.
 
 Each value is the median of three independent runs' settled-memory medians. Active stages run sequentially within each suite, so later rows include memory retained from earlier actions.
 
@@ -24,7 +24,7 @@ Each value is the median of three independent runs' settled-memory medians. Acti
 
 ### Workspace workflow
 
-A snapshot of Wu's source repository, with language servers disabled to measure editor operations separately from language-server work.
+A snapshot of Wu's source repository, with language servers disabled to measure editor operations separately.
 
 | Stage | VS Code | Zed | Wu | Less than VS Code | Less than Zed |
 | --- | ---: | ---: | ---: | ---: | ---: |
