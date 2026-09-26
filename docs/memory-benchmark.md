@@ -1,6 +1,9 @@
 # Wu vs. Zed vs. VS Code: memory benchmarks
 
-Wu used less settled process memory than Zed in every measured stage of this comparison: **9.0–10.0% less at idle and 6.7–58.2% less in the workspace workflow.**
+Wu used less settled process memory than Zed and VS Code in every measured stage of this comparison:
+
+1. **Zed:** 9.0–10.0% less at idle and 6.7–58.2% less in the workspace workflow.
+2. **VS Code:** 48% less at idle and 14.5–38.6% less in the workspace workflow.
 
 Tested on September 26, 2026, using the official Linux ARM64 releases of [Wu 1.0.10](https://github.com/farshed/wu/releases/tag/v1.0.10) (`95d3219`), [Zed 1.21.0](https://github.com/zed-industries/zed/releases/tag/v1.21.0) (`33c9585`), and [VS Code 1.139.1](https://code.visualstudio.com/updates/v1_139) (`04c0d99`).
 
@@ -14,23 +17,23 @@ Each value is the median of three independent runs' settled-memory medians. Perc
 
 ### Idle
 
-| Scenario | Wu | Zed | VS Code | Wu reduction vs. Zed | Wu reduction vs. VS Code |
+| Scenario | VS Code | Zed | Wu | Less than VS Code | Less than Zed |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Welcome window | 382.5 | 420.4 | 743.5 | 9.0% | 48.5% |
-| Repository open, no source file open | 381.2 | 423.7 | 725.2 | 10.0% | 47.4% |
+| Welcome window | 743.5 | 420.4 | 382.5 | 48.5% | 9.0% |
+| Repository open, no source file open | 725.2 | 423.7 | 381.2 | 47.4% | 10.0% |
 
 ### Workspace workflow
 
 A snapshot of Wu's source repository, with language servers disabled to measure editor operations separately from language-server work.
 
-| Stage | Wu | Zed | VS Code | Wu reduction vs. Zed | Wu reduction vs. VS Code |
+| Stage | VS Code | Zed | Wu | Less than VS Code | Less than Zed |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Open 20 source files | 516.9 | 554.3 | 826.2 | 6.7% | 37.4% |
-| Edit, save, and scroll | 518.8 | 557.2 | 797.6 | 6.9% | 35.0% |
-| Search the repository | 582.9 | 1395.3 | 823.6 | 58.2% | 29.2% |
-| Navigate and search a large log | 832.7 | 1633.9 | 1326.3 | 49.0% | 37.2% |
-| Generate terminal output | 862.8 | 1664.4 | 1405.5 | 48.2% | 38.6% |
-| Close tabs, retaining project state | 860.9 | 1631.0 | 1007.1 | 47.2% | 14.5% |
+| Open 20 source files | 826.2 | 554.3 | 516.9 | 37.4% | 6.7% |
+| Edit, save, and scroll | 797.6 | 557.2 | 518.8 | 35.0% | 6.9% |
+| Search the repository | 823.6 | 1395.3 | 582.9 | 29.2% | 58.2% |
+| Navigate and search a large log | 1326.3 | 1633.9 | 832.7 | 37.2% | 49.0% |
+| Generate terminal output | 1405.5 | 1664.4 | 862.8 | 38.6% | 48.2% |
+| Close tabs, retaining project state | 1007.1 | 1631.0 | 860.9 | 14.5% | 47.2% |
 
 The workflow performs 20 verified edit/save cycles, three targeted repository searches, navigation and search in a 200,000-line log (21.9 MiB), and 20,000 lines of integrated-terminal output. The terminal retains 10,000 lines of scrollback.
 
