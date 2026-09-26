@@ -14,7 +14,7 @@ Wu is a fork of [Zed](https://github.com/zed-industries/zed). It inherits Zed's 
 ## Features
 
 - **Native and fast.** Written in Rust, rendered on the GPU. No Electron or webviews. Opens instantly and stays responsive on large views.
-- **Lightweight.** Base memory usage is even [lower](https://github.com/farshed/wu/blob/main/docs/memory-benchmark.md) than Zed.
+- **Lightweight.** Wu's memory footprint is [lower](https://github.com/farshed/wu/blob/main/docs/memory-benchmark.md) than VS Code and Zed.
 - **No built-in AI features.** Bring whichever agent or harness you already use.
 - **Feels like VS Code out of the box.** UI and defaults are tuned so you don't have to relearn your editor.
 - **No account or telemetry.** Nothing to sign in to. Wu never sends your usage data anywhere.
