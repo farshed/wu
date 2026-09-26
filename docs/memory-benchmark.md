@@ -2,18 +2,16 @@
 
 Wu used less settled process memory than Zed and VS Code in every measured stage of this comparison:
 
-1. **Zed:** 9.0–10.0% less at idle and 6.7–58.2% less in the workspace workflow.
-2. **VS Code:** 48% less at idle and 14.5–38.6% less in the workspace workflow.
+1. **Zed:** Wu used 9.0–10.0% less at idle and 6.7–58.2% less in the workspace workflow.
+2. **VS Code:** Wu used 48% less at idle and 14.5–38.6% less in the workspace workflow.
 
-Tested on September 26, 2026, using the official Linux ARM64 releases of [Wu 1.0.10](https://github.com/farshed/wu/releases/tag/v1.0.10) (`95d3219`), [Zed 1.21.0](https://github.com/zed-industries/zed/releases/tag/v1.21.0) (`33c9585`), and [VS Code 1.139.1](https://code.visualstudio.com/updates/v1_139) (`04c0d99`).
+Tested using the official Linux ARM64 releases of [Wu 1.0.10](https://github.com/farshed/wu/releases/tag/v1.0.10), [Zed 1.21.0](https://github.com/zed-industries/zed/releases/tag/v1.21.0), and [VS Code 1.139.1](https://code.visualstudio.com/updates/v1_139).
 
 > These are software-rendered Linux VPS results. All editors ran real graphical interfaces through Xvfb and Mesa llvmpipe, which renders on the CPU. The numbers are not estimates of memory use on a hardware-GPU desktop.
 
 ## Results
 
-All values are **MiB of total process-tree PSS**, where lower is better. Totals include the editor and its running child processes, including terminal shells.
-
-Each value is the median of three independent runs' settled-memory medians. Active stages run sequentially within each suite, so later rows include memory retained from earlier actions.
+All values are **MiB of total process-tree PSS**, where lower is better. Totals include the editor and its running child processes, including terminal shells. Each value is the median of three independent runs' settled-memory medians. Active stages run sequentially within each suite, so later rows include memory retained from earlier actions.
 
 ### Idle
 
@@ -45,12 +43,10 @@ The workflow performs 20 verified edit/save cycles, three targeted repository se
 - **Coverage:** 9 active editor sessions, 54 measured stages, and 2,435 samples, plus 18 idle sessions and 180 samples. All measured editor processes had zero swap PSS.
 - **Validation:** matching input-file hashes across fresh fixtures, saved-edit checks, successful terminal completion, per-process accounting checks, and rendered-window screenshots.
 
-The totals exclude the display server, benchmark harness, shared desktop services, unmapped filesystem cache, and kernel allocations. They measure editor process memory, not the entire desktop's RAM use. Filesystem caches were not flushed.
-
 ## Scope and limitations
 
 Software-rendering allocations contribute to these results. Hardware-GPU desktops, other operating systems, larger dependency graphs, signed-in AI features, debugging, and long editing sessions may behave differently.
 
 ## Reproduce and inspect
 
-The [benchmark runner](../script/memory-benchmark) supports idle and workspace on Linux. It requires Python 3.11+, Xvfb, `xauth`, `dbus-run-session`, `xdotool`, `xwininfo`, `xclip`, ImageMagick, and a working Vulkan driver.
+See the [benchmark runner](../script/memory-benchmark). It supports Linux and requires Python 3.11+, Xvfb, `xauth`, `dbus-run-session`, `xdotool`, `xwininfo`, `xclip`, ImageMagick, and a working Vulkan driver.
