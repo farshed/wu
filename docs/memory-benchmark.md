@@ -11,9 +11,9 @@ Tested on September 26, 2026, using the official Linux ARM64 releases of [Wu 1.0
 
 ## Results
 
-All values are **MiB of total process-tree PSS**, where lower is better. PSS accounts proportionally for shared memory instead of counting shared pages repeatedly. Totals include the editor and its running child processes, including language servers, terminal shells, and compilers.
+All values are **MiB of total process-tree PSS**, where lower is better. Totals include the editor and its running child processes, including language servers and terminal shells.
 
-Each value is the median of three independent runs' settled-memory medians. Percentage reductions are relative to the named editor and calculated before rounding. Active stages run sequentially within each suite, so later rows include memory retained from earlier actions—not just the cost of that individual feature.
+Each value is the median of three independent runs' settled-memory medians. Active stages run sequentially within each suite, so later rows include memory retained from earlier actions—not just the cost of that individual feature.
 
 ### Idle
 
