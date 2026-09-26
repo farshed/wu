@@ -2,7 +2,7 @@
   <img src="crates/wu/resources/app-icon.png" alt="Wu" width="128">
   <h1>Wu</h1>
   <p>The fast, native code editor that doesn't get in your way.</p>
-  <p><a href="https://github.com/farshed/wu/releases/latest"><strong>Download</strong></a></p>
+  <p><a href="#download"><strong>Download</strong></a></p>
 </div>
 
 ---
@@ -23,7 +23,7 @@ Wu is a fork of [Zed](https://github.com/zed-industries/zed). It inherits Zed's 
 
 - [macOS (Apple Silicon)](https://github.com/farshed/wu/releases/latest/download/Wu-aarch64.dmg)
 - [Linux x86-64](https://github.com/farshed/wu/releases/latest/download/wu-linux-x86_64.tar.gz)
-- [**Linux AArch64**](https://github.com/farshed/wu/releases/latest/download/wu-linux-aarch64.tar.gz)
+- [Linux AArch64](https://github.com/farshed/wu/releases/latest/download/wu-linux-aarch64.tar.gz)
 - [Windows x86-64](https://github.com/farshed/wu/releases/latest/download/Wu-x86_64.exe)
 
 Or see [INSTALL.md](https://github.com/farshed/wu/blob/main/docs/INSTALL.md) for more.
