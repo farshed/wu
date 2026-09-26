@@ -4,7 +4,7 @@ use crate::{
     SelectionEffects, ToPoint as _,
     display_map::HighlightKey,
     editor_settings::SeedQuerySetting,
-    persistence::{EditorDb, SerializedEditor},
+    persistence::{EditorDb, EditorViewState, SerializedEditor},
     scroll::{ScrollAnchor, ScrollOffset},
 };
 use anyhow::{Context as _, Result, anyhow};
@@ -23,7 +23,7 @@ use language::{
     language_settings::{FormatOnSave, LanguageSettings},
 };
 use lsp::DiagnosticSeverity;
-use multi_buffer::{BufferOffset, MultiBufferOffset, MultiBufferRow};
+use multi_buffer::{BufferOffset, MultiBufferOffset, MultiBufferRow, ToOffset as _};
 use project::{
     File, Project, ProjectItem as _, ProjectPath, git_store::GitStore, lsp_store::FormatTrigger,
     project_settings::ProjectSettings, search::SearchQuery,
@@ -53,7 +53,8 @@ use workspace::{
     },
 };
 use workspace::{
-    Pane, TabBarSettings, WorkspaceSettings, item::ProjectItemKind, searchable::SearchOptions,
+    Pane, RestoreOnStartupBehavior, TabBarSettings, WorkspaceSettings, item::ProjectItemKind,
+    searchable::SearchOptions,
 };
 use wu_actions::preview::{
     markdown::OpenPreview as OpenMarkdownPreview, svg::OpenPreview as OpenSvgPreview,
@@ -920,6 +921,30 @@ impl SerializableItem for Editor {
             buffer.read(cx).content_language_detection_enabled();
 
         let snapshot = buffer.read(cx).snapshot();
+        let initial_view = (WorkspaceSettings::get(None, cx).restore_on_startup
+            != RestoreOnStartupBehavior::EmptyTab)
+            .then(|| {
+                let multi_buffer_snapshot = self.buffer().read(cx).snapshot(cx);
+                let scroll_anchor = self
+                    .scroll_manager
+                    .native_anchor(&self.display_snapshot(cx), cx);
+                EditorViewState {
+                    scroll_top_row: scroll_anchor.anchor.to_point(&multi_buffer_snapshot).row,
+                    scroll_horizontal_offset: scroll_anchor.offset.x,
+                    scroll_vertical_offset: scroll_anchor.offset.y,
+                    selections: self
+                        .selections
+                        .disjoint_anchors_arc()
+                        .iter()
+                        .map(|selection| {
+                            (
+                                selection.start.to_offset(&multi_buffer_snapshot).0,
+                                selection.end.to_offset(&multi_buffer_snapshot).0,
+                            )
+                        })
+                        .collect(),
+                }
+            });
 
         let db = EditorDb::global(cx);
         Some(cx.background_spawn(async move {
@@ -944,7 +969,7 @@ impl SerializableItem for Editor {
                 mtime,
             };
             log::debug!("Serializing editor {item_id:?} in workspace {workspace_id:?}");
-            db.save_serialized_editor(item_id, workspace_id, editor)
+            db.save_serialized_editor_with_initial_view(item_id, workspace_id, editor, initial_view)
                 .await
                 .context("failed to save serialized editor")
         }))
@@ -1154,6 +1179,7 @@ impl SearchableItem for Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.clear_background_highlights(HighlightKey::SearchPanelMatches, cx);
         let existing_range = self
             .background_highlights
             .get(&HighlightKey::BufferSearchHighlights)

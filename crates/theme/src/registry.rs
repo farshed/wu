@@ -61,6 +61,7 @@ impl Global for GlobalThemeRegistry {}
 
 struct ThemeRegistryState {
     themes: HashMap<SharedString, Arc<Theme>>,
+    bundled_themes: HashMap<SharedString, Arc<Theme>>,
     icon_themes: HashMap<SharedString, Arc<IconTheme>>,
     /// Whether the extensions have been loaded yet.
     extensions_loaded: bool,
@@ -105,6 +106,7 @@ impl ThemeRegistry {
         let registry = Self {
             state: RwLock::new(ThemeRegistryState {
                 themes: HashMap::default(),
+                bundled_themes: HashMap::default(),
                 icon_themes: HashMap::default(),
                 extensions_loaded: false,
             }),
@@ -113,7 +115,7 @@ impl ThemeRegistry {
 
         // We're loading the Zed default theme, as we need a theme to be loaded
         // for tests.
-        registry.insert_theme_families([crate::fallback_themes::zed_default_themes()]);
+        registry.insert_bundled_theme_families([crate::fallback_themes::zed_default_themes()]);
 
         let default_icon_theme = crate::default_icon_theme();
         registry
@@ -156,6 +158,17 @@ impl ThemeRegistry {
         }
     }
 
+    /// Inserts theme families that ship with Wu. Removing a user or extension theme with the same
+    /// name restores the bundled one.
+    pub fn insert_bundled_theme_families(&self, families: impl IntoIterator<Item = ThemeFamily>) {
+        let mut state = self.state.write();
+        for theme in families.into_iter().flat_map(|family| family.themes) {
+            let theme = Arc::new(theme);
+            state.themes.insert(theme.name.clone(), theme.clone());
+            state.bundled_themes.insert(theme.name.clone(), theme);
+        }
+    }
+
     /// Registers theme families for use in tests.
     #[cfg(any(test, feature = "test-support"))]
     pub fn register_test_themes(&self, families: impl IntoIterator<Item = ThemeFamily>) {
@@ -183,10 +196,28 @@ impl ThemeRegistry {
 
     /// Removes the themes with the given names from the registry.
     pub fn remove_user_themes(&self, themes_to_remove: &[SharedString]) {
+        let mut state = self.state.write();
+        let state = &mut *state;
+        for name in themes_to_remove {
+            match state.bundled_themes.get(name) {
+                Some(bundled_theme) => {
+                    state.themes.insert(name.clone(), bundled_theme.clone());
+                }
+                None => {
+                    state.themes.remove(name);
+                }
+            }
+        }
+    }
+
+    /// Returns the bundled default dark theme, which is always available.
+    pub fn fallback_theme(&self) -> Arc<Theme> {
         self.state
-            .write()
-            .themes
-            .retain(|name, _| !themes_to_remove.contains(name))
+            .read()
+            .bundled_themes
+            .get(crate::DEFAULT_DARK_THEME)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(crate::fallback_themes::zed_default_dark()))
     }
 
     /// Removes all themes from the registry.
@@ -357,6 +388,31 @@ impl Default for ThemeRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removing_an_extension_theme_restores_the_bundled_theme_with_that_name() {
+        let registry = ThemeRegistry::new(Box::new(()));
+        let bundled_id = registry.get(crate::DEFAULT_DARK_THEME).unwrap().id.clone();
+
+        let mut extension_theme = crate::fallback_themes::zed_default_dark();
+        extension_theme.id = "extension".to_string();
+        let mut other_extension_theme = crate::fallback_themes::zed_default_dark();
+        other_extension_theme.id = "other".to_string();
+        other_extension_theme.name = "Extension Only".into();
+        registry.insert_themes([extension_theme, other_extension_theme]);
+        assert_eq!(
+            registry.get(crate::DEFAULT_DARK_THEME).unwrap().id,
+            "extension"
+        );
+
+        registry.remove_user_themes(&[crate::DEFAULT_DARK_THEME.into(), "Extension Only".into()]);
+        assert_eq!(
+            registry.get(crate::DEFAULT_DARK_THEME).unwrap().id,
+            bundled_id
+        );
+        assert!(registry.get("Extension Only").is_err());
+        assert_eq!(registry.fallback_theme().id, bundled_id);
+    }
 
     #[test]
     fn bundled_icon_themes_reference_existing_assets() {

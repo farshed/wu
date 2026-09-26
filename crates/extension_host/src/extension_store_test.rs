@@ -762,6 +762,86 @@ async fn test_extension_store(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+async fn test_uninstalling_an_extension_restores_the_bundled_theme_it_replaced(
+    cx: &mut TestAppContext,
+) {
+    init_test(cx);
+
+    let fs = FakeFs::new(cx.executor());
+    let http_client = FakeHttpClient::with_200_response();
+    fs.insert_tree(
+        "/the-extension-dir",
+        json!({
+            "installed": {
+                "catppuccin": {
+                    "extension.json": r#"{
+                        "id": "catppuccin",
+                        "name": "Catppuccin",
+                        "version": "1.0.0",
+                        "themes": {
+                            "Catppuccin Mocha": "themes/catppuccin.json"
+                        }
+                    }"#,
+                    "themes": {
+                        "catppuccin.json": r#"{
+                            "name": "Catppuccin",
+                            "author": "Someone",
+                            "themes": [
+                                {
+                                    "name": "Catppuccin Mocha",
+                                    "appearance": "dark",
+                                    "style": {}
+                                }
+                            ]
+                        }"#,
+                    }
+                }
+            }
+        }),
+    )
+    .await;
+
+    let proxy = Arc::new(ExtensionHostProxy::new());
+    let theme_registry = cx.update(|cx| ThemeRegistry::global(cx));
+    let bundled_theme_id = theme_registry
+        .get(theme::DEFAULT_DARK_THEME)
+        .unwrap()
+        .id
+        .clone();
+    theme_extension::init(proxy.clone(), theme_registry.clone(), cx.executor());
+    let store = cx.new(|cx| {
+        ExtensionStore::new(
+            PathBuf::from("/the-extension-dir"),
+            None,
+            proxy.clone(),
+            fs.clone(),
+            http_client.clone(),
+            http_client.clone(),
+            NodeRuntime::unavailable(),
+            cx,
+        )
+    });
+    cx.executor().advance_clock(RELOAD_DEBOUNCE_DURATION);
+    cx.run_until_parked();
+    assert_ne!(
+        theme_registry.get(theme::DEFAULT_DARK_THEME).unwrap().id,
+        bundled_theme_id
+    );
+
+    store.update(cx, |store, cx| {
+        store
+            .uninstall_extension("catppuccin".into(), cx)
+            .detach_and_log_err(cx);
+    });
+    cx.executor().advance_clock(RELOAD_DEBOUNCE_DURATION);
+    cx.run_until_parked();
+    assert_eq!(
+        theme_registry.get(theme::DEFAULT_DARK_THEME).unwrap().id,
+        bundled_theme_id
+    );
+}
+
+#[gpui::test]
 async fn test_extension_store_with_test_extension(cx: &mut TestAppContext) {
     init_test(cx);
     cx.executor().allow_parking();

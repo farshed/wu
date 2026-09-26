@@ -9,6 +9,10 @@ release body.
 
 - Project search uses much less memory. Files in the results are only parsed for syntax highlighting once they're shown on screen.
 - Breadcrumbs and sticky headers fill in as soon as a newly opened file finishes parsing, instead of waiting for the cursor to move.
+- Selected files in lists like the project panel stand out more in the Catppuccin themes.
+- Fixed a crash when uninstalling an extension whose theme has the same name as a built-in theme.
+- Opening a result from the search panel highlights the matches in that file the same way in-file search does.
+- Fixed cursor and scroll positions sometimes not being saved for files that were just opened.
 
 ## 1.0.9 - 2026-09-20
 

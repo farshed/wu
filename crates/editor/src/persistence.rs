@@ -3,6 +3,7 @@ use db::{
     query,
     sqlez::{
         bindable::{Bind, Column, StaticColumnCount},
+        connection::Connection,
         domain::Domain,
         statement::Statement,
     },
@@ -15,7 +16,15 @@ use std::{
     sync::Arc,
 };
 
+use util::ResultExt as _;
 use workspace::{ItemId, WorkspaceDb, WorkspaceId};
+
+pub(crate) struct EditorViewState {
+    pub(crate) scroll_top_row: u32,
+    pub(crate) scroll_horizontal_offset: f64,
+    pub(crate) scroll_vertical_offset: f64,
+    pub(crate) selections: Vec<(usize, usize)>,
+}
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub(crate) struct SerializedEditor {
@@ -351,7 +360,8 @@ impl EditorDb {
 DELETE FROM editor_selections WHERE editor_id = ?1 AND workspace_id = ?2;
 
 INSERT OR IGNORE INTO editor_selections (editor_id, workspace_id, start, end)
-VALUES {placeholders};
+SELECT column1, column2, column3, column4 FROM (VALUES {placeholders})
+WHERE EXISTS (SELECT 1 FROM editors WHERE item_id = ?1 AND workspace_id = ?2);
 "#
             );
 
@@ -369,6 +379,45 @@ VALUES {placeholders};
             .await?;
         }
         Ok(())
+    }
+
+    /// Saves the editor, storing its view state only when the editor is saved for the first time,
+    /// since scroll and selection saves are dropped until the editor exists in the database.
+    pub(crate) async fn save_serialized_editor_with_initial_view(
+        &self,
+        item_id: ItemId,
+        workspace_id: WorkspaceId,
+        serialized_editor: SerializedEditor,
+        initial_view: Option<EditorViewState>,
+    ) -> Result<()> {
+        self.write(move |conn| {
+            let editor_exists = conn.select_row_bound::<(ItemId, WorkspaceId), bool>(sql!(
+                SELECT EXISTS(SELECT item_id FROM editors WHERE item_id = ?1 AND workspace_id = ?2)
+            ))?((item_id, workspace_id))?
+            .unwrap_or(false);
+
+            conn.exec_bound(sql!(
+                INSERT INTO editors
+                    (item_id, workspace_id, path, buffer_path, contents, language, mtime_seconds, mtime_nanos)
+                VALUES
+                    (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                ON CONFLICT DO UPDATE SET
+                    item_id = ?1,
+                    workspace_id = ?2,
+                    path = ?3,
+                    buffer_path = ?4,
+                    contents = ?5,
+                    language = ?6,
+                    mtime_seconds = ?7,
+                    mtime_nanos = ?8
+            ))?((item_id, workspace_id, serialized_editor))?;
+
+            if !editor_exists && let Some(initial_view) = initial_view {
+                save_initial_view(conn, item_id, workspace_id, initial_view).log_err();
+            }
+            Ok(())
+        })
+        .await
     }
 
     pub async fn save_file_folds(
@@ -410,9 +459,141 @@ VALUES {placeholders};
     }
 }
 
+fn save_initial_view(
+    conn: &Connection,
+    item_id: ItemId,
+    workspace_id: WorkspaceId,
+    initial_view: EditorViewState,
+) -> Result<()> {
+    conn.exec_bound(sql!(
+        UPDATE editors
+        SET
+            scroll_top_row = ?3,
+            scroll_horizontal_offset = ?4,
+            scroll_vertical_offset = ?5
+        WHERE item_id = ?1 AND workspace_id = ?2
+    ))?((
+        item_id,
+        workspace_id,
+        initial_view.scroll_top_row,
+        initial_view.scroll_horizontal_offset,
+        initial_view.scroll_vertical_offset,
+    ))?;
+    for (start, end) in initial_view.selections {
+        conn.exec_bound(sql!(
+            INSERT INTO editor_selections (editor_id, workspace_id, start, end)
+            VALUES (?1, ?2, ?3, ?4)
+        ))?((item_id, workspace_id, start, end))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[gpui::test]
+    async fn test_selections_saved_before_their_editor_are_skipped(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| cx.set_global(db::AppDatabase::test_new()));
+        let db = cx.update(|cx| workspace::WorkspaceDb::global(cx));
+        let workspace_id = db.next_id().await.unwrap();
+        let editor_db = cx.update(|cx| EditorDb::global(cx));
+
+        editor_db
+            .save_editor_selections(4321, workspace_id, vec![(1, 2)])
+            .await
+            .unwrap();
+        assert_eq!(
+            editor_db.get_editor_selections(4321, workspace_id).unwrap(),
+            Vec::<(usize, usize)>::new()
+        );
+
+        editor_db
+            .save_serialized_editor(
+                4321,
+                workspace_id,
+                SerializedEditor {
+                    abs_path: Some(PathBuf::from("testing.txt")),
+                    contents: None,
+                    language: None,
+                    mtime: None,
+                },
+            )
+            .await
+            .unwrap();
+        editor_db
+            .save_editor_selections(4321, workspace_id, vec![(1, 2), (5, 8)])
+            .await
+            .unwrap();
+        assert_eq!(
+            editor_db.get_editor_selections(4321, workspace_id).unwrap(),
+            vec![(1, 2), (5, 8)]
+        );
+    }
+
+    #[gpui::test]
+    async fn test_initial_view_is_saved_only_with_a_new_editor(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| cx.set_global(db::AppDatabase::test_new()));
+        let db = cx.update(|cx| workspace::WorkspaceDb::global(cx));
+        let workspace_id = db.next_id().await.unwrap();
+        let editor_db = cx.update(|cx| EditorDb::global(cx));
+        let serialized_editor = SerializedEditor {
+            abs_path: Some(PathBuf::from("testing.txt")),
+            contents: None,
+            language: None,
+            mtime: None,
+        };
+        let initial_view = || EditorViewState {
+            scroll_top_row: 5,
+            scroll_horizontal_offset: 1.0,
+            scroll_vertical_offset: 2.0,
+            selections: vec![(3, 4)],
+        };
+
+        editor_db
+            .save_serialized_editor_with_initial_view(
+                1111,
+                workspace_id,
+                serialized_editor.clone(),
+                Some(initial_view()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            editor_db.get_scroll_position(1111, workspace_id).unwrap(),
+            Some((5, 1.0, 2.0))
+        );
+        assert_eq!(
+            editor_db.get_editor_selections(1111, workspace_id).unwrap(),
+            vec![(3, 4)]
+        );
+
+        editor_db
+            .save_scroll_position(1111, workspace_id, 8, 0.0, 0.0)
+            .await
+            .unwrap();
+        editor_db
+            .save_editor_selections(1111, workspace_id, vec![(7, 9)])
+            .await
+            .unwrap();
+        editor_db
+            .save_serialized_editor_with_initial_view(
+                1111,
+                workspace_id,
+                serialized_editor,
+                Some(initial_view()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            editor_db.get_scroll_position(1111, workspace_id).unwrap(),
+            Some((8, 0.0, 0.0))
+        );
+        assert_eq!(
+            editor_db.get_editor_selections(1111, workspace_id).unwrap(),
+            vec![(7, 9)]
+        );
+    }
 
     #[gpui::test]
     async fn test_save_and_get_serialized_editor(cx: &mut gpui::TestAppContext) {

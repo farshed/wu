@@ -11,7 +11,7 @@ use crate::{
 use anyhow::Result;
 use collections::{HashMap, HashSet};
 use editor::{
-    Anchor, Editor, EditorEvent, EditorSettings, SelectionEffects,
+    Anchor, Editor, EditorEvent, EditorSettings, HighlightKey, SelectionEffects,
     actions::{Backtab, SelectAll, Tab},
     scroll::Autoscroll,
 };
@@ -97,6 +97,8 @@ pub struct SearchPanel {
     fs: Arc<dyn Fs>,
     focus_handle: FocusHandle,
     search: Entity<ProjectSearch>,
+    highlighted_editors: Vec<WeakEntity<Editor>>,
+    highlight_generation: usize,
     query_editor: Entity<Editor>,
     replacement_editor: Entity<Editor>,
     included_files_editor: Entity<Editor>,
@@ -192,6 +194,8 @@ impl SearchPanel {
                 project,
                 focus_handle: cx.focus_handle(),
                 search,
+                highlighted_editors: Vec::new(),
+                highlight_generation: 0,
                 query_editor,
                 replacement_editor,
                 included_files_editor,
@@ -327,6 +331,7 @@ impl SearchPanel {
 
     fn search(&mut self, mode: SearchMode, cx: &mut Context<Self>) {
         self.debounced_search = None;
+        self.clear_match_highlights(cx);
         if self.query_text(cx).is_empty() {
             self.error = None;
             self.pending_replace_all = false;
@@ -815,6 +820,17 @@ impl SearchPanel {
         });
     }
 
+    fn clear_match_highlights(&mut self, cx: &mut Context<Self>) {
+        self.highlight_generation += 1;
+        for editor in self.highlighted_editors.drain(..) {
+            editor
+                .update(cx, |editor, cx| {
+                    editor.clear_background_highlights(HighlightKey::SearchPanelMatches, cx);
+                })
+                .ok();
+        }
+    }
+
     fn open_match(
         &mut self,
         file_index: usize,
@@ -827,15 +843,19 @@ impl SearchPanel {
         let Some(file) = self.files.get(file_index) else {
             return;
         };
-        let Some(range) = file.matches.get(match_index) else {
-            return;
-        };
         let snapshot = self.search.read(cx).excerpts.read(cx).snapshot(cx);
         let Some(buffer) = snapshot.buffer_for_id(file.buffer_id) else {
             return;
         };
-        let point_range = range.start.text_anchor_in(buffer).to_point(buffer)
-            ..range.end.text_anchor_in(buffer).to_point(buffer);
+        let match_ranges = file
+            .matches
+            .iter()
+            .map(|range| range.start.text_anchor_in(buffer)..range.end.text_anchor_in(buffer))
+            .collect::<Vec<_>>();
+        if match_index >= match_ranges.len() {
+            return;
+        }
+        let highlight_generation = self.highlight_generation;
         let project_path = file.project_path.clone();
         let Some(workspace) = self.workspace.upgrade() else {
             return;
@@ -855,20 +875,58 @@ impl SearchPanel {
                 cx,
             )
         });
-        cx.spawn_in(window, async move |_, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             let item = open.await?;
-            cx.update(|window, cx| {
-                if let Some(editor) = item.act_as::<Editor>(cx) {
-                    editor.update(cx, |editor, cx| {
-                        editor.change_selections(
-                            SelectionEffects::scroll(Autoscroll::center()),
-                            window,
+            let highlight_is_current = this.read_with(cx, |this, _| {
+                this.highlight_generation == highlight_generation
+            })?;
+            let highlighted_editor = cx.update(|window, cx| {
+                let editor = item.act_as::<Editor>(cx)?;
+                let highlighted = editor.update(cx, |editor, cx| {
+                    let snapshot = editor.buffer().read(cx).snapshot(cx);
+                    let editor_match_ranges = match_ranges
+                        .iter()
+                        .map(|range| snapshot.anchor_range_in_buffer(range.clone()))
+                        .collect::<Option<Vec<_>>>()?;
+                    let active_range = editor_match_ranges.get(match_index)?.clone();
+                    if highlight_is_current {
+                        editor.highlight_background(
+                            HighlightKey::SearchPanelMatches,
+                            &editor_match_ranges,
+                            move |index, theme| {
+                                if *index == match_index {
+                                    theme.colors().search_active_match_background
+                                } else {
+                                    theme.colors().search_match_background
+                                }
+                            },
                             cx,
-                            |selections| selections.select_ranges([point_range]),
                         );
-                    });
-                }
-            })
+                    }
+                    editor.unfold_ranges(std::slice::from_ref(&active_range), false, true, cx);
+                    let selection_range = editor.range_for_match(&active_range);
+                    editor.change_selections(
+                        SelectionEffects::scroll(Autoscroll::center()).from_search(true),
+                        window,
+                        cx,
+                        |selections| selections.select_anchor_ranges([selection_range]),
+                    );
+                    Some(highlight_is_current)
+                })?;
+                highlighted.then_some(editor)
+            })?;
+            if let Some(editor) = highlighted_editor {
+                this.update(cx, |this, _| {
+                    if !this
+                        .highlighted_editors
+                        .iter()
+                        .any(|highlighted| highlighted.entity_id() == editor.entity_id())
+                    {
+                        this.highlighted_editors.push(editor.downgrade());
+                    }
+                })?;
+            }
+            anyhow::Ok(())
         })
         .detach_and_log_err(cx);
         cx.notify();
@@ -1546,6 +1604,12 @@ impl Panel for SearchPanel {
         self.query_editor.focus_handle(cx)
     }
 
+    fn set_active(&mut self, active: bool, _: &mut Window, cx: &mut Context<Self>) {
+        if !active {
+            self.clear_match_highlights(cx);
+        }
+    }
+
     fn position(&self, _: &Window, cx: &App) -> DockPosition {
         match SearchPanelSettings::get_global(cx).dock {
             DockSide::Left => DockPosition::Left,
@@ -1741,6 +1805,168 @@ mod tests {
                 assert_eq!(selection.range(), Point::new(0, 37)..Point::new(0, 40));
                 assert!(editor.focus_handle(cx).is_focused(window));
             });
+        });
+    }
+
+    #[gpui::test]
+    async fn test_opened_match_is_highlighted_like_a_buffer_search(cx: &mut TestAppContext) {
+        let (_, workspace, panel, mut cx) = setup(cx).await;
+
+        panel.update_in(&mut cx, |panel, window, cx| {
+            panel.search_options = SearchOptions::CASE_SENSITIVE;
+            panel
+                .query_editor
+                .update(cx, |editor, cx| editor.set_text("ONE", window, cx));
+            panel.search(SearchMode::Manual, cx);
+        });
+        cx.run_until_parked();
+
+        panel.update_in(&mut cx, |panel, window, cx| {
+            let file_index = panel
+                .files
+                .iter()
+                .position(|file| file.file_name.as_ref() == "two.rs")
+                .expect("two.rs should have matches");
+            panel.open_match(file_index, 1, true, false, window, cx);
+        });
+        cx.run_until_parked();
+
+        let editor = workspace.update_in(&mut cx, |workspace, window, cx| {
+            let editor = workspace
+                .active_item(cx)
+                .and_then(|item| item.act_as::<Editor>(cx))
+                .expect("an editor should be open");
+            editor.update(cx, |editor, cx| {
+                assert!(editor.has_background_highlights(HighlightKey::SearchPanelMatches));
+                let search_match_background = cx.theme().colors().search_match_background;
+                let highlighted_ranges = editor
+                    .all_text_background_highlights(window, cx)
+                    .into_iter()
+                    .filter(|(_, color)| *color == search_match_background)
+                    .map(|(range, _)| range.start.column()..range.end.column())
+                    .collect::<Vec<_>>();
+                assert_eq!(highlighted_ranges, vec![24..27, 35..38]);
+            });
+            editor
+        });
+
+        panel.update_in(&mut cx, |panel, window, cx| {
+            panel
+                .query_editor
+                .update(cx, |editor, cx| editor.set_text("TWO", window, cx));
+            panel.search(SearchMode::Manual, cx);
+        });
+        cx.run_until_parked();
+        editor.read_with(&cx, |editor, _| {
+            assert!(!editor.has_background_highlights(HighlightKey::SearchPanelMatches));
+        });
+
+        panel.update_in(&mut cx, |panel, window, cx| {
+            let file_index = panel
+                .files
+                .iter()
+                .position(|file| file.file_name.as_ref() == "two.rs")
+                .expect("two.rs should have a match");
+            panel.open_match(file_index, 0, true, false, window, cx);
+        });
+        cx.run_until_parked();
+        editor.read_with(&cx, |editor, _| {
+            assert!(editor.has_background_highlights(HighlightKey::SearchPanelMatches));
+        });
+        panel.update_in(&mut cx, |panel, window, cx| {
+            panel.set_active(false, window, cx);
+        });
+        editor.read_with(&cx, |editor, _| {
+            assert!(
+                !editor.has_background_highlights(HighlightKey::SearchPanelMatches),
+                "hiding the panel clears the highlights"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn test_opened_match_behaves_like_a_buffer_search_match(cx: &mut TestAppContext) {
+        use workspace::searchable::{SearchToken, SearchableItem as _};
+
+        let (_, workspace, panel, mut cx) = setup(cx).await;
+        panel.update_in(&mut cx, |panel, window, cx| {
+            panel.search_options = SearchOptions::CASE_SENSITIVE;
+            panel
+                .query_editor
+                .update(cx, |editor, cx| editor.set_text("ONE", window, cx));
+            panel.search(SearchMode::Manual, cx);
+        });
+        cx.run_until_parked();
+        let file_index = panel.read_with(&cx, |panel, _| {
+            panel
+                .files
+                .iter()
+                .position(|file| file.file_name.as_ref() == "two.rs")
+                .expect("two.rs should have matches")
+        });
+        panel.update_in(&mut cx, |panel, window, cx| {
+            panel.open_match(file_index, 0, true, false, window, cx);
+        });
+        cx.run_until_parked();
+        let editor = workspace.update_in(&mut cx, |workspace, _, cx| {
+            workspace
+                .active_item(cx)
+                .and_then(|item| item.act_as::<Editor>(cx))
+                .expect("an editor should be open")
+        });
+
+        cx.executor()
+            .advance_clock(editor::SELECTION_HIGHLIGHT_DEBOUNCE_TIMEOUT);
+        cx.run_until_parked();
+        editor.read_with(&cx, |editor, _| {
+            assert!(
+                !editor.has_background_highlights(HighlightKey::SelectedTextHighlight),
+                "a match opened from search should not highlight other occurrences of its text"
+            );
+        });
+
+        editor.update_in(&mut cx, |editor, window, cx| {
+            editor.fold_ranges(
+                vec![Point::new(0, 35)..Point::new(0, 38)],
+                false,
+                window,
+                cx,
+            );
+        });
+        editor.update(&mut cx, |editor, cx| {
+            assert!(!editor.display_text(cx).contains("one::ONE;"));
+        });
+        panel.update_in(&mut cx, |panel, window, cx| {
+            panel.open_match(file_index, 1, true, false, window, cx);
+        });
+        cx.run_until_parked();
+        editor.update(&mut cx, |editor, cx| {
+            assert!(
+                editor.display_text(cx).contains("one::ONE;"),
+                "opening a folded match unfolds it"
+            );
+        });
+
+        editor.update_in(&mut cx, |editor, window, cx| {
+            editor.update_matches(&[], None, SearchToken::default(), window, cx);
+        });
+        editor.read_with(&cx, |editor, _| {
+            assert!(
+                !editor.has_background_highlights(HighlightKey::SearchPanelMatches),
+                "a find bar search replaces the panel highlights"
+            );
+        });
+
+        panel.update_in(&mut cx, |panel, window, cx| {
+            panel.open_match(file_index, 0, true, false, window, cx);
+            panel.set_active(false, window, cx);
+        });
+        cx.run_until_parked();
+        editor.read_with(&cx, |editor, _| {
+            assert!(
+                !editor.has_background_highlights(HighlightKey::SearchPanelMatches),
+                "highlights from an open that finished after the panel was hidden are skipped"
+            );
         });
     }
 

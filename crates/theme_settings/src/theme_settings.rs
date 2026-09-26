@@ -15,10 +15,10 @@ use anyhow::{Context as _, Result};
 use gpui::{App, Font, HighlightStyle, Pixels, Refineable, px};
 use gpui_util::ResultExt;
 use theme::{
-    AccentColors, Appearance, AppearanceContent, DEFAULT_DARK_THEME, DEFAULT_ICON_THEME_NAME,
-    GlobalTheme, LoadThemes, PlayerColor, PlayerColors, StatusColors, SyntaxTheme,
-    SystemAppearance, SystemColors, Theme, ThemeColors, ThemeFamily, ThemeRegistry,
-    ThemeSettingsProvider, ThemeStyles, default_color_scales, try_parse_color,
+    AccentColors, Appearance, AppearanceContent, DEFAULT_ICON_THEME_NAME, GlobalTheme, LoadThemes,
+    PlayerColor, PlayerColors, StatusColors, SyntaxTheme, SystemAppearance, SystemColors, Theme,
+    ThemeColors, ThemeFamily, ThemeRegistry, ThemeSettingsProvider, ThemeStyles,
+    default_color_scales, default_icon_theme, try_parse_color,
 };
 
 pub use crate::schema::{
@@ -160,7 +160,7 @@ fn configured_theme(cx: &mut App) -> Arc<Theme> {
             }
             themes
                 .get(default_theme(*system_appearance))
-                .unwrap_or_else(|_| themes.get(DEFAULT_DARK_THEME).unwrap())
+                .unwrap_or_else(|_| themes.fallback_theme())
         }
     };
     theme_settings.apply_theme_overrides(theme)
@@ -179,7 +179,9 @@ fn configured_icon_theme(cx: &mut App) -> Arc<theme::IconTheme> {
             if themes.extensions_loaded() {
                 log::error!("{err}");
             }
-            themes.get_icon_theme(DEFAULT_ICON_THEME_NAME).unwrap()
+            themes
+                .get_icon_theme(DEFAULT_ICON_THEME_NAME)
+                .unwrap_or_else(|_| default_icon_theme())
         }
     }
 }
@@ -220,7 +222,7 @@ pub fn load_bundled_themes(registry: &ThemeRegistry) {
         };
 
         let refined = refine_theme_family(theme_family);
-        registry.insert_theme_families([refined]);
+        registry.insert_bundled_theme_families([refined]);
     }
 }
 
