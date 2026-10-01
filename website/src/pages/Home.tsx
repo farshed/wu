@@ -5,6 +5,7 @@ import { Footer } from '../components/Footer';
 import { Header } from '../components/Header';
 import { Highlights } from '../components/Highlights';
 import { AppIcon, GithubIcon } from '../components/icons';
+import { InkBackground } from '../components/InkBackground';
 import { MemoryChart } from '../components/MemoryChart';
 import { RaycastWindow } from '../components/RaycastWindow';
 import { CenterSection, MediaSection, sectionBody, sectionTitle } from '../components/Section';
@@ -23,7 +24,8 @@ export function Home() {
     <>
       <Header downloadHref={downloadHref} />
       <main>
-        <section className="m-1 rounded-xl bg-linear-to-b from-hero-start to-hero-end px-8 pt-42 pb-26 max-sm:px-4 max-sm:pt-30 max-sm:pb-14">
+        <section className="relative isolate m-1 overflow-hidden rounded-xl bg-linear-to-b from-hero-start to-hero-end px-8 pt-42 pb-26 max-sm:px-4 max-sm:pt-30 max-sm:pb-14">
+          <InkBackground />
           <div className="mx-auto flex max-w-[1240px] flex-col items-start gap-5">
             <h1 className="max-w-[800px] text-[clamp(36px,5.2vw,60px)] leading-[1.1] font-medium tracking-[-0.03em]">
               The fast, native code editor that doesn't get in your&nbsp;way
