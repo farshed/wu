@@ -28,13 +28,13 @@ Wu is a fork of [Zed](https://github.com/zed-industries/zed). It inherits Zed's 
 
 See [INSTALL.md](https://github.com/farshed/wu/blob/main/docs/INSTALL.md) for more.
 
-## Raycast
-
-On macOS, the [Wu extension for Raycast](https://www.raycast.com/farshed/wu-editor) lets you open recent projects, new windows, settings and more straight from Raycast.
-
 ## Docs
 
 See [docs](https://wu.farshed.me).
+
+## Raycast
+
+On macOS, the [Wu extension for Raycast](https://www.raycast.com/farshed/wu-editor) lets you open recent projects, new windows, settings and more straight from Raycast.
 
 ---
 

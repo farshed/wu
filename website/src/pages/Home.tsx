@@ -86,7 +86,7 @@ export function Home() {
           <h2 className={sectionTitle}>Open source, built on Zed</h2>
           <p className={sectionBody}>
             Wu is a fork of Zed. It keeps Zed's editor core, GPU rendering and language tooling, and every Zed
-            extension works in Wu. The code is on GitHub for anyone to read, build or change.
+            extension works in Wu.
           </p>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
             <a className="btn btn-md btn-primary" href={REPO_URL} target="_blank" rel="noopener">
@@ -119,10 +119,6 @@ export function Home() {
             First time on macOS or Linux? See the{' '}
             <a href={INSTALL_GUIDE_URL} target="_blank" rel="noopener">
               install guide
-            </a>
-            . All releases are on{' '}
-            <a href={RELEASES_URL} target="_blank" rel="noopener">
-              GitHub
             </a>
             .
           </p>

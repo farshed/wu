@@ -31,7 +31,6 @@ const columns = [
     links: [
       { label: 'GitHub', href: REPO_URL },
       { label: 'Report an issue', href: ISSUES_URL },
-      { label: 'Zed', href: ZED_URL }
     ]
   }
 ];

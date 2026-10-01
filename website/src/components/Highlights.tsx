@@ -23,7 +23,6 @@ const highlights: Highlight[] = [
     title: 'Feels like VS Code, out of the box',
     paragraphs: [
       "An activity bar switches between the project, git, outline, search and debug panels. Panels dock on the left, and the defaults are tuned so you don't have to relearn your editor.",
-      'File icons and light and dark themes come built in.'
     ],
     media: <img className={screenshot} src="/screenshot-light.png" alt="Wu editor with a light theme" loading="lazy" />
   },
