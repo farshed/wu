@@ -108,6 +108,25 @@ pub struct LanguageSettings {
     /// Note: This setting has no effect in Vim mode, as rewrap is already
     /// allowed everywhere.
     pub allow_rewrap: RewrapBehavior,
+<<<<<<< c9825ea7226ebcbbbb1c4d442d6965319762b71d
+=======
+    /// Controls whether edit predictions are shown immediately (true)
+    /// or manually by triggering `editor::ShowEditPrediction` (false).
+    pub show_edit_predictions: bool,
+    /// Disable edit predictions in these language scopes, such as "comment" and
+    /// "string".
+    ///
+    /// Use `"..."` to add scopes without repeating the inherited list. In project
+    /// settings, it extends the user or parent configuration value. In
+    /// language-specific settings, it extends the scopes inherited by that
+    /// language. Omit `"..."` to replace the inherited list.
+    ///
+    /// Inherited scopes are inserted at `"..."`, and duplicates keep their first
+    /// occurrence.
+    ///
+    /// Set `[]` to clear the inherited list. Omit this setting to inherit it unchanged.
+    pub edit_predictions_disabled_in: Vec<String>,
+>>>>>>> d0e8038659bb444568cfa09d69517ce1d534fb6a
     /// Whether to show tabs and spaces in the editor.
     pub show_whitespaces: settings::ShowWhitespaceSetting,
     /// Visible characters used to render whitespace when show_whitespaces is enabled.
@@ -469,6 +488,208 @@ impl InlayHintSettings {
     }
 }
 
+<<<<<<< c9825ea7226ebcbbbb1c4d442d6965319762b71d
+=======
+/// The settings for edit predictions, such as [GitHub Copilot](https://github.com/features/copilot).
+#[derive(Clone, Debug, Default)]
+pub struct EditPredictionSettings {
+    /// The provider that supplies edit predictions.
+    pub provider: settings::EditPredictionProvider,
+    /// Disable edit predictions for files matching these glob patterns.
+    ///
+    /// Use `"..."` to add patterns without repeating Zed's defaults. In project
+    /// settings, it extends the user or parent configuration value. Omit
+    /// `"..."` to replace the inherited list.
+    ///
+    /// ```json
+    /// {
+    ///   "edit_predictions": {
+    ///     "disabled_globs": ["**/build/**", "..."]
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Inherited patterns are inserted at `"..."`, and duplicates keep their first
+    /// occurrence.
+    ///
+    /// Set `[]` to clear the inherited list. Omit this setting to inherit it unchanged.
+    ///
+    /// Relative patterns are matched against paths relative to the worktree root.
+    /// Absolute patterns are matched against absolute paths. A leading `~` is
+    /// expanded to your home folder.
+    pub disabled_globs: Vec<DisabledGlob>,
+    /// Configures how edit predictions are displayed in the buffer.
+    pub mode: settings::EditPredictionsMode,
+    /// Settings specific to GitHub Copilot.
+    pub copilot: CopilotSettings,
+    /// Settings specific to Codestral.
+    pub codestral: CodestralSettings,
+    /// Settings specific to Ollama.
+    pub ollama: Option<OpenAiCompatibleEditPredictionSettings>,
+    /// Settings specific to using custom OpenAI-compatible servers for edit prediction.
+    pub open_ai_compatible_api: Option<OpenAiCompatibleEditPredictionSettings>,
+    /// Settings specific to Zed's Edit Predictions provider.
+    pub zed: ZedEditPredictionSettings,
+    /// Settings specific to the Mercury Edit Predictions provider.
+    pub mercury: MercuryEditPredictionSettings,
+    /// Controls whether training data collection is enabled.
+    ///
+    /// `Default` means the value stored in the legacy KV store is used as a fallback,
+    /// preserving existing users' choices without a migration.
+    pub allow_data_collection: EditPredictionDataCollectionChoice,
+}
+
+impl EditPredictionSettings {
+    /// Returns whether edit predictions are enabled for the given path.
+    pub fn enabled_for_file(&self, file: &Arc<dyn File>, cx: &App) -> bool {
+        !self.disabled_globs.iter().any(|glob| {
+            if glob.is_absolute {
+                file.as_local()
+                    .is_some_and(|local| glob.matcher.is_match(local.abs_path(cx)))
+            } else {
+                glob.matcher.is_match(file.path().as_std_path())
+            }
+        })
+    }
+
+    /// Returns the configured debounce delay for the given provider.
+    pub fn debounce_for(&self, provider: settings::EditPredictionProvider) -> Duration {
+        let delay = match provider {
+            settings::EditPredictionProvider::Copilot => self.copilot.prediction_debounce,
+            settings::EditPredictionProvider::Codestral => self.codestral.prediction_debounce,
+            settings::EditPredictionProvider::Ollama => self
+                .ollama
+                .as_ref()
+                .map_or_else(DelayMs::default, |settings| settings.prediction_debounce),
+            settings::EditPredictionProvider::OpenAiCompatibleApi => self
+                .open_ai_compatible_api
+                .as_ref()
+                .map_or_else(DelayMs::default, |settings| settings.prediction_debounce),
+            settings::EditPredictionProvider::Zed => self.zed.prediction_debounce,
+            settings::EditPredictionProvider::Mercury => self.mercury.prediction_debounce,
+            settings::EditPredictionProvider::None => DelayMs::default(),
+        };
+        Duration::from_millis(delay.0)
+    }
+
+    /// Returns the configured debounce delay for the active prediction delegate.
+    ///
+    /// The Zed edit-prediction delegate handles multiple settings providers
+    /// (Zed, Mercury, Ollama, OpenAI-compatible), so it is identified by name
+    /// and then uses the currently configured provider to resolve the delay.
+    pub fn debounce_for_delegate(&self, delegate_name: &str) -> Duration {
+        match delegate_name {
+            "copilot" => Duration::from_millis(self.copilot.prediction_debounce.0),
+            "codestral" => Duration::from_millis(self.codestral.prediction_debounce.0),
+            "zed-predict" => self.debounce_for(self.provider),
+            _ => Duration::ZERO,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DisabledGlob {
+    matcher: GlobMatcher,
+    is_absolute: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CopilotSettings {
+    /// HTTP/HTTPS proxy to use for Copilot.
+    pub proxy: Option<String>,
+    /// Disable certificate verification for proxy (not recommended).
+    pub proxy_no_verify: Option<bool>,
+    /// Enterprise URI for Copilot.
+    pub enterprise_uri: Option<String>,
+    /// Whether the Copilot Next Edit Suggestions feature is enabled.
+    pub enable_next_edit_suggestions: Option<bool>,
+    /// Automatic prediction debounce delay.
+    pub prediction_debounce: DelayMs,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CodestralSettings {
+    /// Model to use for completions.
+    pub model: Option<String>,
+    /// Maximum tokens to generate.
+    pub max_tokens: Option<u32>,
+    /// Custom API URL to use for Codestral.
+    pub api_url: Option<String>,
+    /// Automatic prediction debounce delay.
+    pub prediction_debounce: DelayMs,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ZedEditPredictionSettings {
+    /// Automatic prediction debounce delay.
+    pub prediction_debounce: DelayMs,
+}
+
+/// Settings specific to the Mercury Edit Predictions provider.
+#[derive(Clone, Debug, Default)]
+pub struct MercuryEditPredictionSettings {
+    /// Automatic prediction debounce delay.
+    pub prediction_debounce: DelayMs,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct OpenAiCompatibleEditPredictionSettings {
+    /// Model to use for completions.
+    pub model: String,
+    /// Maximum tokens to generate.
+    pub max_output_tokens: u32,
+    /// Custom API URL to use for Ollama.
+    pub api_url: Arc<str>,
+    /// The prompt format to use for completions. When `None`, the format
+    /// will be derived from the model name at request time.
+    pub prompt_format: EditPredictionPromptFormat,
+    /// Automatic prediction debounce delay.
+    pub prediction_debounce: DelayMs,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum EditPredictionPromptFormat {
+    #[default]
+    Infer,
+    Zeta(ZetaVersion),
+    CodeLlama,
+    StarCoder,
+    DeepseekCoder,
+    Qwen,
+    CodeGemma,
+    Codestral,
+    Glm,
+    Sweep,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum ZetaVersion {
+    Zeta1,
+    Zeta2,
+    #[default] // NOTE: make latest version default when adding
+    Zeta2_1,
+}
+
+impl From<EditPredictionPromptFormatContent> for EditPredictionPromptFormat {
+    fn from(value: EditPredictionPromptFormatContent) -> Self {
+        match value {
+            EditPredictionPromptFormatContent::Infer => Self::Infer,
+            EditPredictionPromptFormatContent::Zeta => Self::Zeta(ZetaVersion::Zeta1),
+            EditPredictionPromptFormatContent::Zeta2 => Self::Zeta(ZetaVersion::Zeta2),
+            EditPredictionPromptFormatContent::Zeta2_1 => Self::Zeta(ZetaVersion::Zeta2_1),
+            EditPredictionPromptFormatContent::CodeLlama => Self::CodeLlama,
+            EditPredictionPromptFormatContent::StarCoder => Self::StarCoder,
+            EditPredictionPromptFormatContent::DeepseekCoder => Self::DeepseekCoder,
+            EditPredictionPromptFormatContent::Qwen => Self::Qwen,
+            EditPredictionPromptFormatContent::CodeGemma => Self::CodeGemma,
+            EditPredictionPromptFormatContent::Codestral => Self::Codestral,
+            EditPredictionPromptFormatContent::Glm => Self::Glm,
+            EditPredictionPromptFormatContent::Sweep => Self::Sweep,
+        }
+    }
+}
+
+>>>>>>> d0e8038659bb444568cfa09d69517ce1d534fb6a
 impl AllLanguageSettings {
     /// Returns the [`LanguageSettings`] for the language with the specified name.
     pub fn language(
@@ -632,6 +853,11 @@ impl settings::Settings for AllLanguageSettings {
                 document_folding_ranges: settings.document_folding_ranges.unwrap(),
                 document_symbols: settings.document_symbols.unwrap(),
                 allow_rewrap: settings.allow_rewrap.unwrap(),
+<<<<<<< c9825ea7226ebcbbbb1c4d442d6965319762b71d
+=======
+                show_edit_predictions: settings.show_edit_predictions.unwrap(),
+                edit_predictions_disabled_in: settings.edit_predictions_disabled_in.unwrap().0,
+>>>>>>> d0e8038659bb444568cfa09d69517ce1d534fb6a
                 show_whitespaces: settings.show_whitespaces.unwrap(),
                 whitespace_map: WhitespaceMap {
                     space: SharedString::new(whitespace_map.space.unwrap().to_string()),
@@ -695,6 +921,72 @@ impl settings::Settings for AllLanguageSettings {
             );
         }
 
+<<<<<<< c9825ea7226ebcbbbb1c4d442d6965319762b71d
+=======
+        let edit_prediction_provider = all_languages
+            .edit_predictions
+            .as_ref()
+            .and_then(|ep| ep.provider);
+
+        let edit_predictions = all_languages.edit_predictions.clone().unwrap();
+        let edit_predictions_mode = edit_predictions.mode.unwrap();
+
+        let disabled_globs: HashSet<&String> = edit_predictions
+            .disabled_globs
+            .as_ref()
+            .unwrap()
+            .0
+            .iter()
+            .collect();
+
+        let copilot = edit_predictions.copilot.unwrap();
+        let copilot_settings = CopilotSettings {
+            proxy: copilot.proxy,
+            proxy_no_verify: copilot.proxy_no_verify,
+            enterprise_uri: copilot.enterprise_uri,
+            enable_next_edit_suggestions: copilot.enable_next_edit_suggestions,
+            prediction_debounce: copilot.prediction_debounce.unwrap(),
+        };
+
+        let codestral = edit_predictions.codestral.unwrap();
+        let codestral_settings = CodestralSettings {
+            model: codestral.model,
+            max_tokens: codestral.max_tokens,
+            api_url: codestral.api_url,
+            prediction_debounce: codestral.prediction_debounce.unwrap(),
+        };
+
+        let ollama = edit_predictions.ollama.unwrap();
+        let ollama_settings = ollama
+            .model
+            .filter(|model| !model.0.is_empty())
+            .map(|model| OpenAiCompatibleEditPredictionSettings {
+                model: model.0,
+                max_output_tokens: ollama.max_output_tokens.unwrap(),
+                api_url: ollama.api_url.unwrap().into(),
+                prompt_format: ollama.prompt_format.unwrap().into(),
+                prediction_debounce: ollama.prediction_debounce.unwrap(),
+            });
+        let openai_compatible_settings = edit_predictions.open_ai_compatible_api.unwrap();
+        let openai_compatible_settings = openai_compatible_settings
+            .model
+            .filter(|model| !model.is_empty())
+            .zip(
+                openai_compatible_settings
+                    .api_url
+                    .filter(|api_url| !api_url.is_empty()),
+            )
+            .map(|(model, api_url)| OpenAiCompatibleEditPredictionSettings {
+                model,
+                max_output_tokens: openai_compatible_settings.max_output_tokens.unwrap(),
+                api_url: api_url.into(),
+                prompt_format: openai_compatible_settings.prompt_format.unwrap().into(),
+                prediction_debounce: openai_compatible_settings.prediction_debounce.unwrap(),
+            });
+        let zed_settings = edit_predictions.zed.unwrap();
+        let mercury_settings = edit_predictions.mercury.unwrap();
+
+>>>>>>> d0e8038659bb444568cfa09d69517ce1d534fb6a
         let mut file_types: FxHashMap<Arc<str>, (GlobSet, Vec<String>)> = FxHashMap::default();
 
         for (language, patterns) in all_languages.file_types.iter().flatten() {
@@ -705,6 +997,7 @@ impl settings::Settings for AllLanguageSettings {
                     Ok(glob) => {
                         builder.add(glob);
                     }
+<<<<<<< c9825ea7226ebcbbbb1c4d442d6965319762b71d
                     Err(error) => log::error!(
                         "Ignoring invalid file_types glob {pattern:?} for language {language}: {error}"
                     ),
@@ -722,6 +1015,25 @@ impl settings::Settings for AllLanguageSettings {
             file_types.insert(
                 language.clone(),
                 (glob_set, patterns.0.iter().cloned().collect()),
+=======
+                    Err(error) => {
+                        log::error!(
+                            "Failed to parse a `file_types` pattern for {language}. Skipping this pattern:\n\n{error}"
+                        );
+                    }
+                }
+            }
+
+            let matcher = builder.build().unwrap_or_else(|error| {
+                log::error!(
+                    "Failed to compile `file_types` patterns for {language}. Using an empty matcher:\n\n{error}"
+                );
+                GlobSet::empty()
+            });
+            file_types.insert(
+                language.clone(),
+                (matcher, patterns.0.iter().cloned().collect()),
+>>>>>>> d0e8038659bb444568cfa09d69517ce1d534fb6a
             );
         }
 
@@ -746,6 +1058,532 @@ mod tests {
     use settings::{LocalSettingsKind, LocalSettingsPath, WorktreeId};
     use util::rel_path::rel_path;
 
+<<<<<<< c9825ea7226ebcbbbb1c4d442d6965319762b71d
+=======
+    #[gpui::test]
+    fn test_file_types_preserves_valid_patterns(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let mut store = SettingsStore::new(cx, &settings::default_settings());
+            store.register_setting::<AllLanguageSettings>();
+
+            for patterns in [
+                vec!["*.rs", "[", "config.*"],
+                vec!["[", "{"],
+                vec![],
+                vec!["*.rs", "config.*"],
+            ] {
+                store
+                    .set_user_settings(
+                        &serde_json::json!({
+                            "file_types": {
+                                "Python": ["*.py"],
+                                "Rust": patterns,
+                            },
+                        })
+                        .to_string(),
+                        cx,
+                    )
+                    .unwrap();
+
+                let settings = store.get::<AllLanguageSettings>(None);
+                let (matcher, sources) = settings.file_types.get("Rust").unwrap();
+                assert_eq!(sources, &patterns);
+                assert_eq!(matcher.is_match("main.rs"), patterns.contains(&"*.rs"));
+                assert_eq!(
+                    matcher.is_match("config.custom"),
+                    patterns.contains(&"config.*")
+                );
+                assert!(!matcher.is_match("main.py"));
+                assert!(!matcher.is_match("unrelated.txt"));
+                assert!(!matcher.is_match("["));
+                assert!(!matcher.is_match("{"));
+                assert_eq!(matcher.is_empty(), !patterns.contains(&"*.rs"));
+
+                let (matcher, sources) = settings.file_types.get("Python").unwrap();
+                assert_eq!(sources, &["*.py"]);
+                assert!(matcher.is_match("main.py"));
+                assert!(!matcher.is_match("main.rs"));
+                assert!(!matcher.is_match("config.custom"));
+            }
+        });
+    }
+
+    #[gpui::test]
+    fn test_edit_predictions_disabled_in_language_overrides(cx: &mut App) {
+        let mut store = SettingsStore::new(cx, &settings::default_settings());
+        store.register_setting::<AllLanguageSettings>();
+        assert!(
+            store
+                .get::<AllLanguageSettings>(None)
+                .defaults
+                .edit_predictions_disabled_in
+                .is_empty()
+        );
+
+        for (language_settings, expected) in [
+            (serde_json::json!({}), vec!["comment"]),
+            (
+                serde_json::json!({"edit_predictions_disabled_in": ["string", "..."]}),
+                vec!["string", "comment"],
+            ),
+            (
+                serde_json::json!({"edit_predictions_disabled_in": ["string"]}),
+                vec!["string"],
+            ),
+            (
+                serde_json::json!({"edit_predictions_disabled_in": []}),
+                vec![],
+            ),
+        ] {
+            store
+                .set_user_settings(
+                    &serde_json::json!({
+                        "edit_predictions_disabled_in": ["comment"],
+                        "languages": {"Rust": language_settings},
+                    })
+                    .to_string(),
+                    cx,
+                )
+                .expect("user settings should load");
+            let settings = store.get::<AllLanguageSettings>(None);
+            assert_eq!(settings.defaults.edit_predictions_disabled_in, ["comment"]);
+            assert_eq!(
+                settings
+                    .languages
+                    .get(&LanguageName::from("Rust"))
+                    .expect("Rust settings should load")
+                    .edit_predictions_disabled_in,
+                expected,
+                "language settings: {language_settings}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn test_edit_predictions_disabled_in_project_overrides(cx: &mut App) {
+        let mut store = SettingsStore::new(cx, &settings::default_settings());
+        store.register_setting::<AllLanguageSettings>();
+        let worktree_id = WorktreeId::from_usize(1);
+        let root = LocalSettingsPath::InWorktree(rel_path("root").into());
+        let child = LocalSettingsPath::InWorktree(rel_path("root/child").into());
+
+        store
+            .set_user_settings(r#"{"edit_predictions_disabled_in":["comment"]}"#, cx)
+            .expect("user settings should load");
+        store
+            .set_local_settings(
+                worktree_id,
+                root,
+                LocalSettingsKind::Settings,
+                Some(r#"{"edit_predictions_disabled_in":["string","..."]}"#),
+                cx,
+            )
+            .expect("project settings should load");
+
+        for (overrides, expected) in [
+            (serde_json::json!({}), vec!["string", "comment"]),
+            (
+                serde_json::json!({"edit_predictions_disabled_in": ["documentation", "..."]}),
+                vec!["documentation", "string", "comment"],
+            ),
+            (
+                serde_json::json!({"edit_predictions_disabled_in": ["documentation"]}),
+                vec!["documentation"],
+            ),
+            (
+                serde_json::json!({"edit_predictions_disabled_in": []}),
+                vec![],
+            ),
+        ] {
+            for language_specific in [false, true] {
+                let content = if language_specific {
+                    serde_json::json!({"languages": {"Rust": overrides}})
+                } else {
+                    overrides.clone()
+                };
+                store
+                    .set_local_settings(
+                        worktree_id,
+                        child.clone(),
+                        LocalSettingsKind::Settings,
+                        Some(&content.to_string()),
+                        cx,
+                    )
+                    .expect("child settings should load");
+                let settings = store.get::<AllLanguageSettings>(Some(SettingsLocation {
+                    worktree_id,
+                    path: rel_path("root/child/file.rs"),
+                }));
+                let resolved = if language_specific {
+                    assert_eq!(
+                        settings.defaults.edit_predictions_disabled_in,
+                        ["string", "comment"]
+                    );
+                    settings
+                        .languages
+                        .get(&LanguageName::from("Rust"))
+                        .expect("Rust settings should load")
+                } else {
+                    &settings.defaults
+                };
+                assert_eq!(
+                    resolved.edit_predictions_disabled_in, expected,
+                    "project settings: {content}"
+                );
+            }
+        }
+        assert_eq!(
+            store
+                .get::<AllLanguageSettings>(None)
+                .defaults
+                .edit_predictions_disabled_in,
+            ["comment"]
+        );
+    }
+
+    #[gpui::test]
+    fn test_edit_predictions_disabled_globs_replace_and_clear(cx: &mut App) {
+        let mut store = SettingsStore::new(cx, &settings::default_settings());
+        store.register_setting::<AllLanguageSettings>();
+
+        for (content, sensitive_enabled, custom_enabled) in [
+            (r#"{}"#, false, true),
+            (
+                r#"{"edit_predictions":{"disabled_globs":["**/build/**"]}}"#,
+                true,
+                false,
+            ),
+            (r#"{"edit_predictions":{"disabled_globs":[]}}"#, true, true),
+            (r#"{"edit_predictions":{}}"#, false, true),
+        ] {
+            store
+                .set_user_settings(content, cx)
+                .expect("user settings should load");
+            let settings = &store.get::<AllLanguageSettings>(None).edit_predictions;
+            for (path, expected_enabled) in [
+                (".env", sensitive_enabled),
+                ("build/output.rs", custom_enabled),
+                ("certificates/private.pem", sensitive_enabled),
+                ("config/secrets.yml", sensitive_enabled),
+                ("src/main.rs", true),
+            ] {
+                let file: Arc<dyn File> = Arc::new(crate::TestFile {
+                    path: rel_path(path).into(),
+                    root_name: "project".to_string(),
+                    local_root: None,
+                });
+                assert_eq!(
+                    settings.enabled_for_file(&file, cx),
+                    expected_enabled,
+                    "path: {path}, settings: {content}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn test_edit_predictions_disabled_globs_inherit_across_settings_files(cx: &mut App) {
+        let mut store = SettingsStore::new(cx, &settings::default_settings());
+        store.register_setting::<AllLanguageSettings>();
+        let worktree_id = WorktreeId::from_usize(1);
+        let root = LocalSettingsPath::InWorktree(rel_path("root").into());
+        let child = LocalSettingsPath::InWorktree(rel_path("root/child").into());
+
+        store
+            .set_user_settings(
+                r#"{"edit_predictions":{"disabled_globs":["**/user/**","..."]}}"#,
+                cx,
+            )
+            .expect("user settings should load");
+        store
+            .set_local_settings(
+                worktree_id,
+                root,
+                LocalSettingsKind::Settings,
+                Some(r#"{"edit_predictions":{"disabled_globs":["**/project/**","..."]}}"#),
+                cx,
+            )
+            .expect("project settings should load");
+
+        for (content, inherits, child_enabled) in [
+            (
+                r#"{"edit_predictions":{"disabled_globs":["**/child/**","...","**/.env*","..."]}}"#,
+                true,
+                false,
+            ),
+            (r#"{"edit_predictions":{}}"#, true, true),
+            (
+                r#"{"edit_predictions":{"disabled_globs":["**/child/**"]}}"#,
+                false,
+                false,
+            ),
+            (r#"{"edit_predictions":{"disabled_globs":[]}}"#, false, true),
+        ] {
+            store
+                .set_local_settings(
+                    worktree_id,
+                    child.clone(),
+                    LocalSettingsKind::Settings,
+                    Some(content),
+                    cx,
+                )
+                .expect("child settings should load");
+            for (location, expected) in [
+                (None, [false, true, true, false]),
+                (
+                    Some(SettingsLocation {
+                        worktree_id,
+                        path: rel_path("root/file.rs"),
+                    }),
+                    [false, true, false, false],
+                ),
+                (
+                    Some(SettingsLocation {
+                        worktree_id,
+                        path: rel_path("root/child/file.rs"),
+                    }),
+                    [!inherits, child_enabled, !inherits, !inherits],
+                ),
+            ] {
+                let settings = &store.get::<AllLanguageSettings>(location).edit_predictions;
+                for (path, enabled) in [
+                    ".env",
+                    "child/output.rs",
+                    "project/output.rs",
+                    "user/output.rs",
+                ]
+                .into_iter()
+                .zip(expected)
+                .chain([("...", true), ("src/main.rs", true)])
+                {
+                    let file: Arc<dyn File> = Arc::new(crate::TestFile {
+                        path: rel_path(path).into(),
+                        root_name: "project".to_string(),
+                        local_root: None,
+                    });
+                    assert_eq!(
+                        settings.enabled_for_file(&file, cx),
+                        enabled,
+                        "path: {path}, settings: {content}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn test_edit_predictions_disabled_globs_preserve_matching(cx: &mut App) {
+        let mut store = SettingsStore::new(cx, &settings::default_settings());
+        store.register_setting::<AllLanguageSettings>();
+        let absolute_root = if cfg!(windows) {
+            "C:/absolute"
+        } else {
+            "/absolute"
+        };
+        let absolute_pattern = format!("{absolute_root}/project/**/*.rs");
+        let home = shellexpand::tilde("~").into_owned();
+        for (patterns, path, local_root, enabled) in [
+            (
+                vec!["**/src/**", "..."],
+                "src/main.rs",
+                Some(absolute_root),
+                false,
+            ),
+            (
+                vec!["**/src/**", "..."],
+                "other/main.rs",
+                Some(absolute_root),
+                true,
+            ),
+            (
+                vec![absolute_pattern.as_str(), "..."],
+                "src/main.rs",
+                Some(absolute_root),
+                false,
+            ),
+            (
+                vec![absolute_pattern.as_str(), "..."],
+                "src/main.rs",
+                None,
+                true,
+            ),
+            (
+                vec!["~/project/**/*.rs", "..."],
+                "src/main.rs",
+                Some(home.as_str()),
+                false,
+            ),
+            (
+                vec!["[", "**/src/**", "..."],
+                "src/main.rs",
+                Some(absolute_root),
+                false,
+            ),
+            (vec!["[", "..."], ".env", Some(absolute_root), false),
+            (vec!["[", "{"], ".env", Some(absolute_root), true),
+            (vec!["[", "{"], "src/main.rs", Some(absolute_root), true),
+            (vec!["[.][.][.]"], "...", Some(absolute_root), false),
+        ] {
+            store
+                .set_user_settings(
+                    &serde_json::json!({"edit_predictions": {"disabled_globs": patterns}})
+                        .to_string(),
+                    cx,
+                )
+                .expect("user settings should load");
+            let file: Arc<dyn File> = Arc::new(crate::TestFile {
+                path: rel_path(path).into(),
+                root_name: "project".to_string(),
+                local_root: local_root.map(std::path::PathBuf::from),
+            });
+            let settings = &store.get::<AllLanguageSettings>(None).edit_predictions;
+            assert_eq!(
+                settings.enabled_for_file(&file, cx),
+                enabled,
+                "path: {path}, patterns: {patterns:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn test_edit_predictions_enabled_for_file(cx: &mut TestAppContext) {
+        use crate::TestFile;
+        use std::path::PathBuf;
+
+        let cx = cx.app.borrow_mut();
+
+        let build_settings = |globs: &[&str]| -> EditPredictionSettings {
+            EditPredictionSettings {
+                disabled_globs: globs
+                    .iter()
+                    .map(|glob_str| {
+                        #[cfg(windows)]
+                        let glob_str = {
+                            let mut g = String::new();
+
+                            if glob_str.starts_with('/') {
+                                g.push_str("C:");
+                            }
+
+                            g.push_str(&glob_str.replace('/', "\\"));
+                            g
+                        };
+                        #[cfg(windows)]
+                        let glob_str = glob_str.as_str();
+                        let expanded_glob_str = shellexpand::tilde(glob_str).into_owned();
+                        DisabledGlob {
+                            matcher: globset::Glob::new(&expanded_glob_str)
+                                .unwrap()
+                                .compile_matcher(),
+                            is_absolute: Path::new(&expanded_glob_str).is_absolute(),
+                        }
+                    })
+                    .collect(),
+                ..Default::default()
+            }
+        };
+
+        const WORKTREE_NAME: &str = "project";
+        let make_test_file = |segments: &[&str]| -> Arc<dyn File> {
+            let path = segments.join("/");
+            let path = rel_path(&path);
+
+            Arc::new(TestFile {
+                path: path.into(),
+                root_name: WORKTREE_NAME.to_string(),
+                local_root: Some(PathBuf::from(if cfg!(windows) {
+                    "C:\\absolute\\"
+                } else {
+                    "/absolute/"
+                })),
+            })
+        };
+
+        let test_file = make_test_file(&["src", "test", "file.rs"]);
+
+        // Test relative globs
+        let settings = build_settings(&["*.rs"]);
+        assert!(!settings.enabled_for_file(&test_file, &cx));
+        let settings = build_settings(&["*.txt"]);
+        assert!(settings.enabled_for_file(&test_file, &cx));
+
+        // Test absolute globs
+        let settings = build_settings(&["/absolute/**/*.rs"]);
+        assert!(!settings.enabled_for_file(&test_file, &cx));
+        let settings = build_settings(&["/other/**/*.rs"]);
+        assert!(settings.enabled_for_file(&test_file, &cx));
+
+        // Test exact path match relative
+        let settings = build_settings(&["src/test/file.rs"]);
+        assert!(!settings.enabled_for_file(&test_file, &cx));
+        let settings = build_settings(&["src/test/otherfile.rs"]);
+        assert!(settings.enabled_for_file(&test_file, &cx));
+
+        // Test exact path match absolute
+        let settings = build_settings(&[&format!("/absolute/{}/src/test/file.rs", WORKTREE_NAME)]);
+        assert!(!settings.enabled_for_file(&test_file, &cx));
+        let settings = build_settings(&["/other/test/otherfile.rs"]);
+        assert!(settings.enabled_for_file(&test_file, &cx));
+
+        // Test * glob
+        let settings = build_settings(&["*"]);
+        assert!(!settings.enabled_for_file(&test_file, &cx));
+        let settings = build_settings(&["*.txt"]);
+        assert!(settings.enabled_for_file(&test_file, &cx));
+
+        // Test **/* glob
+        let settings = build_settings(&["**/*"]);
+        assert!(!settings.enabled_for_file(&test_file, &cx));
+        let settings = build_settings(&["other/**/*"]);
+        assert!(settings.enabled_for_file(&test_file, &cx));
+
+        // Test directory/** glob
+        let settings = build_settings(&["src/**"]);
+        assert!(!settings.enabled_for_file(&test_file, &cx));
+
+        let test_file_root: Arc<dyn File> = Arc::new(TestFile {
+            path: rel_path("file.rs").into(),
+            root_name: WORKTREE_NAME.to_string(),
+            local_root: Some(PathBuf::from("/absolute/")),
+        });
+        assert!(settings.enabled_for_file(&test_file_root, &cx));
+
+        let settings = build_settings(&["other/**"]);
+        assert!(settings.enabled_for_file(&test_file, &cx));
+
+        // Test **/directory/* glob
+        let settings = build_settings(&["**/test/*"]);
+        assert!(!settings.enabled_for_file(&test_file, &cx));
+        let settings = build_settings(&["**/other/*"]);
+        assert!(settings.enabled_for_file(&test_file, &cx));
+
+        // Test multiple globs
+        let settings = build_settings(&["*.rs", "*.txt", "src/**"]);
+        assert!(!settings.enabled_for_file(&test_file, &cx));
+        let settings = build_settings(&["*.txt", "*.md", "other/**"]);
+        assert!(settings.enabled_for_file(&test_file, &cx));
+
+        // Test dot files
+        let dot_file = make_test_file(&[".config", "settings.json"]);
+        let settings = build_settings(&[".*/**"]);
+        assert!(!settings.enabled_for_file(&dot_file, &cx));
+
+        let dot_env_file = make_test_file(&[".env"]);
+        let settings = build_settings(&[".env"]);
+        assert!(!settings.enabled_for_file(&dot_env_file, &cx));
+
+        // Test tilde expansion
+        let home = shellexpand::tilde("~").into_owned();
+        let home_file = Arc::new(TestFile {
+            path: rel_path("test.rs").into(),
+            root_name: "the-dir".to_string(),
+            local_root: Some(PathBuf::from(home)),
+        }) as Arc<dyn File>;
+        let settings = build_settings(&["~/the-dir/test.rs"]);
+        assert!(!settings.enabled_for_file(&home_file, &cx));
+    }
+
+>>>>>>> d0e8038659bb444568cfa09d69517ce1d534fb6a
     #[test]
     fn test_resolve_language_servers() {
         fn language_server_names(names: &[&str]) -> Vec<LanguageServerName> {
