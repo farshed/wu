@@ -13,7 +13,6 @@ precision highp float;
 uniform vec2 resolution;
 uniform float time;
 uniform vec3 ink;
-uniform float strength;
 
 float hash(vec2 point) {
   point = fract(point * vec2(123.34, 456.21));
@@ -67,7 +66,7 @@ void main() {
   float wide = step(1.3, resolution.x / resolution.y);
   float mask = mix(0.5 * smoothstep(0.55, 1.0, across), smoothstep(0.3, 0.8, across), wide);
 
-  float alpha = density * mask * strength;
+  float alpha = density * mask * 0.6;
   gl_FragColor = vec4(ink * alpha, alpha);
 }
 `;
@@ -123,20 +122,13 @@ export function InkBackground() {
     const resolutionUniform = gl.getUniformLocation(program, 'resolution');
     const timeUniform = gl.getUniformLocation(program, 'time');
     const inkUniform = gl.getUniformLocation(program, 'ink');
-    const strengthUniform = gl.getUniformLocation(program, 'strength');
 
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-    const darkScheme = matchMedia('(prefers-color-scheme: dark)');
 
     let elapsedSeconds = Math.random() * 400;
     let lastFrameTime: number | null = null;
     let animationFrame = 0;
     let onScreen = true;
-
-    const applyColors = () => {
-      gl.uniform3f(inkUniform, ...readInkColor());
-      gl.uniform1f(strengthUniform, darkScheme.matches ? 0.6 : 0.85);
-    };
 
     const draw = () => {
       gl.uniform2f(resolutionUniform, canvas.width, canvas.height);
@@ -170,24 +162,18 @@ export function InkBackground() {
       draw();
     };
 
-    const onSchemeChange = () => {
-      applyColors();
-      draw();
-    };
-
     const resizeObserver = new ResizeObserver(resize);
     const intersectionObserver = new IntersectionObserver(([entry]) => {
       onScreen = entry?.isIntersecting ?? true;
       updatePlayback();
     });
 
-    applyColors();
+    gl.uniform3f(inkUniform, ...readInkColor());
     resize();
     resizeObserver.observe(canvas);
     intersectionObserver.observe(canvas);
     document.addEventListener('visibilitychange', updatePlayback);
     reducedMotion.addEventListener('change', updatePlayback);
-    darkScheme.addEventListener('change', onSchemeChange);
 
     return () => {
       cancelAnimationFrame(animationFrame);
@@ -195,7 +181,6 @@ export function InkBackground() {
       intersectionObserver.disconnect();
       document.removeEventListener('visibilitychange', updatePlayback);
       reducedMotion.removeEventListener('change', updatePlayback);
-      darkScheme.removeEventListener('change', onSchemeChange);
     };
   }, []);
 
