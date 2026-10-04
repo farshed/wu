@@ -7,6 +7,12 @@ release body.
 
 ## Unreleased
 
+- `/compact` and other slash commands now work mid-conversation in Claude chats.
+- The chat shows "Compacting conversation…" while the agent compacts and the context ring updates right after.
+- Long agent chats scroll smoothly and typing in the chat box feels instant, since only the messages on screen are drawn.
+- Fixed a black bar at the top of the file tree when scrolling with the Wu themes.
+- Fixed text in the chat box being hard to read after switching between Wu Dark and Wu Light.
+
 ## 1.1.0 - 2026-10-04
 
 - The activity bar's icon size is now configurable in settings and via the `activity_bar.icon_size` property.
