@@ -41,7 +41,12 @@ use markdown::{
     parser::CodeBlockKind,
 };
 use project::Project;
-use std::{sync::Arc, time::Duration};
+use gpui::{FollowMode, ListAlignment, ListState, list};
+use std::{
+    cell::Cell,
+    rc::Rc,
+    {sync::Arc, time::Duration},
+};
 use theme::ActiveTheme as _;
 use util::ResultExt as _;
 use ui::{
@@ -58,7 +63,7 @@ use workspace::{
 const CONTENT_WIDTH: f32 = 736.;
 const COMPOSER_WIDTH: f32 = CONTENT_WIDTH + 32.;
 const SIDE_GUTTER: f32 = 48.;
-const STICK_THRESHOLD: f32 = 70.;
+const LIST_OVERDRAW: f32 = 1200.;
 const SCROLL_BUTTON_THRESHOLD: f32 = 320.;
 const AT_BOTTOM: f32 = 2.;
 const COMPOSER_RADIUS: f32 = 26.;
@@ -128,8 +133,8 @@ pub struct ChatView {
     store: Entity<AgentStore>,
     project: Entity<Project>,
     composer: Entity<Editor>,
-    scroll_handle: ScrollHandle,
-    follow_tail: bool,
+    list: ListState,
+    turns: Vec<Turn>,
     show_scroll_button: bool,
     expanded_rows: HashSet<String>,
     group_overrides: HashMap<String, bool>,
@@ -152,7 +157,7 @@ pub struct ChatView {
     _dictation_events: Task<()>,
     _dictation_download: Task<()>,
     _glide: Task<()>,
-    turn_bounds: outline::TurnBounds,
+    container_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     outline_hover: Option<usize>,
     expanded_work: HashSet<usize>,
     todo_panel: todo_panel::TodoPanelState,
@@ -161,6 +166,7 @@ pub struct ChatView {
     link_menu: Option<links::LinkMenu>,
     diagrams: std::cell::RefCell<HashMap<(String, bool), mermaid::Diagram>>,
     diagram_tasks: HashMap<(String, bool), Task<()>>,
+    diagram_scan: (Option<bool>, HashMap<gpui::EntityId, usize>),
     diagram_sources_shown: HashSet<String>,
     editing_queued: Option<queue_panel::QueuedEdit>,
     composer_layout: composer::ComposerLayout,
@@ -207,7 +213,6 @@ impl ChatView {
             editor.set_text_style_refinement(TextStyleRefinement {
                 font_size: Some(ui(14.).into()),
                 line_height: Some(ui(22.75).into()),
-                color: Some(cx.theme().colors().text),
                 ..Default::default()
             });
             editor
@@ -243,17 +248,15 @@ impl ChatView {
                 }
             }
         });
-        let scroll_handle = ScrollHandle::new();
-        scroll_handle.scroll_to_bottom();
+        let list = ListState::new(0, ListAlignment::Top, px(LIST_OVERDRAW));
+        list.set_follow_mode(FollowMode::Tail);
         let subscriptions = vec![
             cx.observe_in(&session, window, |this, session, window, cx| {
                 if session.read(cx).is_deleted() {
                     cx.emit(ItemEvent::CloseItem);
                     return;
                 }
-                if this.follow_tail {
-                    this.scroll_handle.scroll_to_bottom();
-                }
+                this.sync_turns(cx);
                 if this.subagent.is_none() {
                     this.sync_answer_editors(window, cx);
                 }
@@ -284,8 +287,8 @@ impl ChatView {
             store,
             project,
             composer,
-            scroll_handle,
-            follow_tail: true,
+            list,
+            turns: Vec::new(),
             show_scroll_button: false,
             expanded_rows: HashSet::default(),
             group_overrides: HashMap::default(),
@@ -308,7 +311,7 @@ impl ChatView {
             _dictation_events: Task::ready(()),
             _dictation_download: Task::ready(()),
             _glide: Task::ready(()),
-            turn_bounds: Default::default(),
+            container_bounds: Default::default(),
             outline_hover: None,
             expanded_work: HashSet::default(),
             todo_panel: Default::default(),
@@ -317,6 +320,7 @@ impl ChatView {
             link_menu: None,
             diagrams: Default::default(),
             diagram_tasks: HashMap::default(),
+            diagram_scan: Default::default(),
             diagram_sources_shown: HashSet::default(),
             editing_queued: None,
             composer_layout: Default::default(),
@@ -335,6 +339,7 @@ impl ChatView {
         };
         view.pin_default_settings(cx);
         view.sync_answer_editors(window, cx);
+        view.sync_turns(cx);
         view
     }
 
@@ -361,7 +366,6 @@ impl ChatView {
                 editor.set_text_style_refinement(TextStyleRefinement {
                     font_size: Some(ui(14.).into()),
                     line_height: Some(ui(22.75).into()),
-                    color: Some(cx.theme().colors().text),
                     ..Default::default()
                 });
                 editor
@@ -546,17 +550,16 @@ impl ChatView {
     }
 
     fn glide_to_bottom(&mut self, cx: &mut Context<Self>) {
-        self.follow_tail = false;
-        let start = self.scroll_handle.offset();
+        let start = self.scroll_top();
         self._glide = cx.spawn(async move |this, cx| {
             let frames = (GLIDE.as_millis() / GLIDE_FRAME.as_millis()).max(1) as u32;
             for frame in 1..=frames {
                 cx.background_executor().timer(GLIDE_FRAME).await;
                 let progress = ease_out_quint()(frame as f32 / frames as f32);
                 let still_open = this.update(cx, |this, cx| {
-                    let target = -this.scroll_handle.max_offset().y;
-                    let y = start.y + (target - start.y) * progress;
-                    this.scroll_handle.set_offset(point(start.x, y));
+                    let target = this.list.max_offset_for_scrollbar().y;
+                    let y = start + (target - start) * progress;
+                    this.list.set_offset_from_scrollbar(point(px(0.), -y));
                     cx.notify();
                 });
                 if still_open.is_err() {
@@ -564,8 +567,7 @@ impl ChatView {
                 }
             }
             this.update(cx, |this, cx| {
-                this.follow_tail = true;
-                this.scroll_handle.scroll_to_bottom();
+                this.list.set_follow_mode(FollowMode::Tail);
                 cx.notify();
             })
             .ok();
@@ -584,11 +586,17 @@ impl ChatView {
         self.session.update(cx, |session, cx| session.stop(cx));
     }
 
+    // A tail-following list reports its anchor past the end, so clamp to the real maximum.
+    fn scroll_top(&self) -> Pixels {
+        (-self.list.scroll_px_offset_for_scrollbar().y).min(self.list.max_offset_for_scrollbar().y)
+    }
+
     fn update_scroll_state(&mut self) {
-        let offset = -self.scroll_handle.offset().y;
-        let max_offset = self.scroll_handle.max_offset().y;
-        let distance = f32::from(max_offset - offset).max(0.);
-        self.follow_tail = distance <= STICK_THRESHOLD;
+        let distance = if self.list.is_following_tail() {
+            0.
+        } else {
+            f32::from(self.list.max_offset_for_scrollbar().y - self.scroll_top()).max(0.)
+        };
         if distance > SCROLL_BUTTON_THRESHOLD {
             self.show_scroll_button = true;
         } else if distance <= AT_BOTTOM {
@@ -941,68 +949,71 @@ impl ChatView {
         }
     }
 
-    fn render_turns(&self, window: &Window, cx: &Context<Self>) -> Vec<AnyElement> {
+    fn sync_turns(&mut self, cx: &App) {
+        let turns = group_turns(self.entries(cx));
+        let old_count = self.turns.len();
+        let unchanged = self
+            .turns
+            .iter()
+            .zip(&turns)
+            .take_while(|(old, new)| old.user == new.user)
+            .count();
+        // The growing last turn re-measures itself while visible; splicing it would reset the scroll.
+        if unchanged < old_count || turns.len() > old_count {
+            let start = unchanged.min(old_count);
+            self.list.splice(start..old_count, turns.len() - start);
+        }
+        self.turns = turns;
+    }
+
+    fn render_turn(&mut self, turn_index: usize, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let Some(Turn { user, items }) = self.turns.get(turn_index).cloned() else {
+            return div().into_any_element();
+        };
         let entries = self.entries(cx);
         let is_working = self.is_working(cx);
-        let mut turns: Vec<(Option<usize>, Vec<usize>)> = Vec::new();
-        for (index, entry) in entries.iter().enumerate() {
-            match entry {
-                Entry::User { .. } => turns.push((Some(index), Vec::new())),
-                _ => {
-                    if turns.is_empty() {
-                        turns.push((None, Vec::new()));
-                    }
-                    if let Some((_, items)) = turns.last_mut() {
-                        items.push(index);
-                    }
-                }
-            }
-        }
-        let turn_count = turns.len();
+        let is_first_turn = turn_index == 0;
+        let is_last_turn = turn_index + 1 == self.turns.len();
+        let leading_gap = if is_first_turn && user.is_none() {
+            0.
+        } else {
+            SPACE_LG
+        };
+        let undelivered = user.filter(|index| {
+            self.subagent.is_none()
+                && matches!(entries.get(*index), Some(Entry::User { undelivered: true, .. }))
+        });
         let message_style = Self::message_style(window, cx);
-        turns
-            .into_iter()
-            .enumerate()
-            .map(|(turn_index, (user, items))| {
-                let is_first_turn = turn_index == 0;
-                let is_last_turn = turn_index + 1 == turn_count;
-                let leading_gap = if is_first_turn && user.is_none() {
-                    0.
-                } else {
-                    SPACE_LG
-                };
-                let undelivered = user.filter(|index| {
-                    self.subagent.is_none()
-                        && matches!(entries[*index], Entry::User { undelivered: true, .. })
-                });
-                v_flex()
-                    .relative()
-                    .w_full()
-                    .when(!is_first_turn, |this| this.mt(px(SPACE_LG)))
-                    .when_some(user, |this, index| {
-                        this.child(outline::record_bounds(self.turn_bounds.turns.clone(), index))
-                            .child(self.render_user_message(index, cx))
-                    })
-                    .when(
-                        !items.is_empty() || (is_last_turn && is_working),
-                        |this| {
-                            this.child(self.render_assistant_turn(
-                                turn_index,
-                                &items,
-                                is_last_turn,
-                                leading_gap,
-                                &message_style,
-                                window,
-                                cx,
-                            ))
-                        },
-                    )
-                    .when_some(undelivered, |this, index| {
-                        this.child(self.render_retry(index, cx))
-                    })
-                    .into_any_element()
+        let turn = v_flex()
+            .relative()
+            .w_full()
+            .pt(px(if is_first_turn {
+                self.first_row_inset()
+            } else {
+                SPACE_LG
+            }))
+            .when(is_last_turn, |this| this.pb(px(TRANSCRIPT_BOTTOM_PAD)))
+            .when_some(user, |this, index| {
+                this.child(self.render_user_message(index, cx))
             })
-            .collect()
+            .when(
+                !items.is_empty() || (is_last_turn && is_working),
+                |this| {
+                    this.child(self.render_assistant_turn(
+                        turn_index,
+                        &items,
+                        is_last_turn,
+                        leading_gap,
+                        &message_style,
+                        window,
+                        cx,
+                    ))
+                },
+            )
+            .when_some(undelivered, |this, index| {
+                this.child(self.render_retry(index, cx))
+            });
+        column(turn).into_any_element()
     }
 
     fn hover_strip(
@@ -2635,6 +2646,32 @@ fn tool_icon(call: &ToolCall) -> IconName {
     }
 }
 
+#[derive(Clone, PartialEq)]
+struct Turn {
+    user: Option<usize>,
+    items: Vec<usize>,
+}
+
+fn group_turns(entries: &[Entry]) -> Vec<Turn> {
+    let mut turns: Vec<Turn> = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        match entry {
+            Entry::User { .. } => turns.push(Turn {
+                user: Some(index),
+                items: Vec::new(),
+            }),
+            _ => match turns.last_mut() {
+                Some(turn) => turn.items.push(index),
+                None => turns.push(Turn {
+                    user: None,
+                    items: vec![index],
+                }),
+            },
+        }
+    }
+    turns
+}
+
 fn column(content: impl IntoElement) -> impl IntoElement {
     h_flex()
         .w_full()
@@ -2652,33 +2689,28 @@ impl ChatView {
         }
     }
 
-    fn render_transcript(&self, turns: Vec<AnyElement>, cx: &Context<Self>) -> impl IntoElement {
-        let container = self.turn_bounds.container.clone();
+    fn render_transcript(&self, cx: &Context<Self>) -> impl IntoElement {
+        let container = self.container_bounds.clone();
         div()
             .relative()
             .flex_1()
             .min_h_0()
             .child(
                 canvas(
-                    move |bounds, _, _| *container.borrow_mut() = Some(bounds),
+                    move |bounds, _, _| container.set(Some(bounds)),
                     |_, _, _, _| {},
                 )
                 .absolute()
                 .size_full(),
             )
             .child(
-                div()
-                    .id("agent-transcript")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.scroll_handle)
-                    .child(column(
-                        v_flex()
-                            .w_full()
-                            .pt(px(self.first_row_inset()))
-                            .pb(px(TRANSCRIPT_BOTTOM_PAD))
-                            .children(turns),
-                    )),
+                list(
+                    self.list.clone(),
+                    cx.processor(|this, turn_index, window, cx| {
+                        this.render_turn(turn_index, window, cx)
+                    }),
+                )
+                .size_full(),
             )
             .when(self.show_scroll_button, |this| {
                 this.child(self.render_scroll_button(cx))
@@ -2686,7 +2718,7 @@ impl ChatView {
             .children(self.render_outline(cx))
     }
 
-    fn render_subagent(&self, window: &Window, cx: &Context<Self>) -> impl IntoElement {
+    fn render_subagent(&self, cx: &Context<Self>) -> impl IntoElement {
         let root = v_flex()
             .key_context("AgentChat")
             .track_focus(&self.focus_handle)
@@ -2709,7 +2741,7 @@ impl ChatView {
                     .child(message),
             );
         }
-        root.child(self.render_transcript(self.render_turns(window, cx), cx))
+        root.child(self.render_transcript(cx))
     }
 }
 
@@ -2727,7 +2759,7 @@ impl Render for ChatView {
             cx.defer(move |cx| session.update(cx, |session, cx| session.mark_seen(cx)));
         }
         if self.subagent.is_some() {
-            return self.render_subagent(window, cx).into_any_element();
+            return self.render_subagent(cx).into_any_element();
         }
         let session = self.session.read(cx);
         let is_new_chat = session.entries().is_empty() && !session.is_working();
@@ -2766,7 +2798,6 @@ impl Render for ChatView {
             return root.child(self.render_new_chat(window, cx)).into_any_element();
         }
         let expanded = self.composer_is_expanded(window, cx);
-        let turns = self.render_turns(window, cx);
         let composer_area = match pending.and_then(|id| {
             self.session
                 .read(cx)
@@ -2778,7 +2809,7 @@ impl Render for ChatView {
             Some(panel) => panel,
             None => self.render_pill(expanded, DOCKED_COMPOSER_RADIUS, window, cx),
         };
-        root.child(self.render_transcript(turns, cx)).child(
+        root.child(self.render_transcript(cx)).child(
             h_flex().w_full().justify_center().child(
                 v_flex()
                     .w_full()

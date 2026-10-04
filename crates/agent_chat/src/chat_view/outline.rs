@@ -4,10 +4,9 @@ use crate::{
     session::Entry,
 };
 use gpui::{
-    Anchor, AnyElement, Bounds, Context, IntoElement, ParentElement, Pixels, SharedString, Styled,
-    anchored, canvas, deferred, div, point, px,
+    Anchor, AnyElement, Context, IntoElement, ListOffset, ParentElement, SharedString, Styled,
+    anchored, deferred, div, px,
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use ui::prelude::*;
 
 const MIN_CONTAINER_WIDTH: f32 = 768.;
@@ -18,12 +17,6 @@ const TICK_GAP: f32 = 3.;
 const RAIL_VERTICAL_MARGIN: f32 = 24.;
 const MAX_RAIL_TICKS: usize = 12;
 const READING_INSET: f32 = 16.;
-
-#[derive(Default, Clone)]
-pub(super) struct TurnBounds {
-    pub turns: Rc<RefCell<HashMap<usize, Bounds<Pixels>>>>,
-    pub container: Rc<RefCell<Option<Bounds<Pixels>>>>,
-}
 
 struct Tick {
     entry_index: usize,
@@ -72,20 +65,6 @@ fn ticks(entries: &[Entry], cx: &gpui::App) -> Vec<Tick> {
     ticks
 }
 
-pub(super) fn record_bounds(
-    store: Rc<RefCell<HashMap<usize, Bounds<Pixels>>>>,
-    key: usize,
-) -> impl IntoElement {
-    canvas(
-        move |bounds, _, _| {
-            store.borrow_mut().insert(key, bounds);
-        },
-        |_, _, _, _| {},
-    )
-    .absolute()
-    .size_full()
-}
-
 fn rail_slots(height: f32) -> usize {
     let usable = (height - 2. * RAIL_VERTICAL_MARGIN).max(TICK_SLOT);
     (((usable + TICK_GAP) / (TICK_SLOT + TICK_GAP)).floor() as usize).clamp(1, MAX_RAIL_TICKS)
@@ -103,31 +82,36 @@ fn tick_buckets(count: usize, capacity: usize) -> Vec<(usize, usize)> {
 
 impl ChatView {
     fn jump_to_entry(&mut self, entry_index: usize, cx: &mut Context<Self>) {
-        let turn = self.turn_bounds.turns.borrow().get(&entry_index).copied();
-        let container = *self.turn_bounds.container.borrow();
-        let (Some(turn), Some(container)) = (turn, container) else {
+        let Some(turn_index) = self
+            .turns
+            .iter()
+            .position(|turn| turn.user == Some(entry_index))
+        else {
             return;
         };
-        let offset = self.scroll_handle.offset();
-        let target = offset.y - (turn.origin.y - container.origin.y) + px(READING_INSET);
-        self.scroll_handle.set_offset(point(offset.x, target.min(px(0.))));
-        self.follow_tail = false;
+        self.list.scroll_to(ListOffset {
+            item_ix: turn_index,
+            offset_in_item: px(0.),
+        });
         cx.notify();
     }
 
-    fn active_tick(&self, ticks: &[Tick], container: Bounds<Pixels>) -> Option<usize> {
-        let reading_line = container.origin.y + px(READING_INSET + 0.5);
-        let turns = self.turn_bounds.turns.borrow();
-        let active = ticks.iter().rposition(|tick| {
-            turns
-                .get(&tick.entry_index)
-                .is_some_and(|bounds| bounds.origin.y <= reading_line)
-        });
-        Some(active.unwrap_or(0))
+    fn active_tick(&self, ticks: &[Tick]) -> Option<usize> {
+        let reading_line = self.scroll_top() + px(READING_INSET + 0.5);
+        let top_turn = (0..self.turns.len())
+            .take_while(|index| self.list.offset_for_item(*index) <= reading_line)
+            .last()?;
+        let last_entry = self.turns[top_turn].user.or_else(|| self.turns[top_turn].items.first().copied())?;
+        Some(
+            ticks
+                .iter()
+                .rposition(|tick| tick.entry_index <= last_entry)
+                .unwrap_or(0),
+        )
     }
 
     pub(super) fn render_outline(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let container = (*self.turn_bounds.container.borrow())?;
+        let container = self.container_bounds.get()?;
         if f32::from(container.size.width) < MIN_CONTAINER_WIDTH {
             return None;
         }
@@ -136,7 +120,7 @@ impl ChatView {
             return None;
         }
         let colors = cx.theme().colors();
-        let active = self.active_tick(&ticks, container);
+        let active = self.active_tick(&ticks);
         let buckets = tick_buckets(ticks.len(), rail_slots(f32::from(container.size.height)));
         let active_bucket = active.and_then(|active| {
             buckets

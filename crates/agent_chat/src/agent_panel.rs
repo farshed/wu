@@ -224,7 +224,6 @@ impl AgentPanel {
                     editor.set_placeholder_text("Search chats…", window, cx);
                     editor.set_text_style_refinement(TextStyleRefinement {
                         font_size: Some(ui(13.).into()),
-                        color: Some(cx.theme().colors().text),
                         ..Default::default()
                     });
                     editor
@@ -363,7 +362,6 @@ impl AgentPanel {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text_style_refinement(TextStyleRefinement {
                 font_size: Some(font_size.into()),
-                color: Some(cx.theme().colors().text),
                 ..Default::default()
             });
             editor.set_text(current, window, cx);

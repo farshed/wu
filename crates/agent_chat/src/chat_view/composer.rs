@@ -560,9 +560,8 @@ impl ChatView {
                     .child(div().text_color(colors.text_muted).child("↓"))
                     .child(div().text_color(colors.text).child("Scroll to bottom"))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.follow_tail = true;
                         this.show_scroll_button = false;
-                        this.scroll_handle.scroll_to_bottom();
+                        this.list.set_follow_mode(gpui::FollowMode::Tail);
                         cx.notify();
                     })),
             )

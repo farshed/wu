@@ -76,18 +76,26 @@ pub(super) fn mermaid_sources(markdown: &str) -> Vec<String> {
 
 impl ChatView {
     pub(super) fn request_visible_diagrams(&mut self, cx: &mut Context<Self>) {
-        let sources: Vec<String> = self
-            .entries(cx)
-            .iter()
-            .filter_map(|entry| match entry {
-                crate::session::Entry::Assistant { markdown, .. } => {
-                    let source = markdown.read(cx).source();
-                    source.contains("```mermaid").then(|| mermaid_sources(source))
+        let dark = !cx.theme().appearance.is_light();
+        if self.diagram_scan.0 != Some(dark) {
+            self.diagram_scan = (Some(dark), Default::default());
+        }
+        let mut scanned = Vec::new();
+        let mut sources = Vec::new();
+        for entry in self.entries(cx) {
+            if let crate::session::Entry::Assistant { markdown, .. } = entry {
+                let source = markdown.read(cx).source();
+                let key = (markdown.entity_id(), source.len());
+                if self.diagram_scan.1.get(&key.0) == Some(&key.1) {
+                    continue;
                 }
-                _ => None,
-            })
-            .flatten()
-            .collect();
+                scanned.push(key);
+                if source.contains("```mermaid") {
+                    sources.extend(mermaid_sources(source));
+                }
+            }
+        }
+        self.diagram_scan.1.extend(scanned);
         for source in sources {
             self.request_diagram(source, cx);
         }
@@ -109,6 +117,7 @@ impl ChatView {
         }
         if self.diagrams.borrow().len() >= MAX_DIAGRAMS {
             self.diagrams.borrow_mut().clear();
+            self.diagram_scan.1.clear();
         }
         self.diagrams.borrow_mut().insert(key.clone(), Diagram::Pending);
         let theme = diagram_theme(cx);
