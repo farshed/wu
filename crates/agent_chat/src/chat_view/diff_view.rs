@@ -1,4 +1,4 @@
-use super::{CODE_FONT, ChatView};
+use super::{ChatView, code_font};
 use crate::chat_style::text_faint;
 use agent_harness::ToolDiff;
 use gpui::{
@@ -208,6 +208,7 @@ impl ChatView {
     }
 
     pub(super) fn render_diff(&self, view: &FileDiffView, cx: &App) -> AnyElement {
+        let code_font = code_font(cx);
         let colors = cx.theme().colors();
         let status = cx.theme().status();
         let syntax = cx.theme().syntax().clone();
@@ -261,7 +262,7 @@ impl ChatView {
                     .items_center()
                     .px(px(16.))
                     .bg(hunk_background)
-                    .font_family(CODE_FONT)
+                    .font(code_font.clone())
                     .text_size(px(11.))
                     .text_color(faint)
                     .child(hunk_header(hunk))
@@ -290,7 +291,7 @@ impl ChatView {
                     div()
                         .w(px(gutter_width))
                         .flex_none()
-                        .font_family(CODE_FONT)
+                        .font(code_font.clone())
                         .text_size(px(11.))
                         .line_height(px(DIFF_LINE_HEIGHT))
                         .text_color(color)
@@ -345,7 +346,7 @@ impl ChatView {
                                 .flex_none()
                                 .flex()
                                 .justify_center()
-                                .font_family(CODE_FONT)
+                                .font(code_font.clone())
                                 .text_size(px(DIFF_TEXT_SIZE))
                                 .line_height(px(DIFF_LINE_HEIGHT))
                                 .text_color(marker_color)
@@ -360,7 +361,7 @@ impl ChatView {
                                 .child(
                                     div()
                                         .pl(px(CODE_PADDING_LEFT))
-                                        .font_family(CODE_FONT)
+                                        .font(code_font.clone())
                                         .text_size(px(DIFF_TEXT_SIZE))
                                         .line_height(px(DIFF_LINE_HEIGHT))
                                         .whitespace_nowrap()

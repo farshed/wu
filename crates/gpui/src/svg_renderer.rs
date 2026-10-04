@@ -311,7 +311,7 @@ fn rasterize_tree(tree: &usvg::Tree, size: SvgSize) -> Result<Pixmap, usvg::Erro
 fn load_bundled_fonts(asset_source: &dyn AssetSource, db: &mut usvg::fontdb::Database) {
     let font_paths = [
         "fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf",
-        "fonts/lilex/Lilex-Regular.ttf",
+        "fonts/jetbrains-mono/JetBrainsMono-Regular.ttf",
     ];
     for path in font_paths {
         match asset_source.load(path) {
@@ -332,7 +332,7 @@ fn fix_generic_font_families(db: &mut usvg::fontdb::Database) {
         (Family::SansSerif, "IBM Plex Sans"),
         // No serif font bundled; use sans-serif as best available fallback.
         (Family::Serif, "IBM Plex Sans"),
-        (Family::Monospace, "Lilex"),
+        (Family::Monospace, "JetBrains Mono"),
         (Family::Cursive, "IBM Plex Sans"),
         (Family::Fantasy, "IBM Plex Sans"),
     ];
@@ -362,7 +362,7 @@ mod tests {
 
     const IBM_PLEX_REGULAR: &[u8] =
         include_bytes!("../../../assets/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf");
-    const LILEX_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/lilex/Lilex-Regular.ttf");
+    const JETBRAINS_MONO_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf");
 
     #[test]
     fn renders_parsed_svg_at_requested_size() -> Result<()> {
@@ -395,7 +395,7 @@ mod tests {
     fn db_with_bundled_fonts() -> Database {
         let mut db = Database::new();
         db.load_font_data(IBM_PLEX_REGULAR.to_vec());
-        db.load_font_data(LILEX_REGULAR.to_vec());
+        db.load_font_data(JETBRAINS_MONO_REGULAR.to_vec());
         db
     }
 
@@ -403,7 +403,7 @@ mod tests {
     fn text_with_split_glyph_clusters_in_mixed_fonts_does_not_panic() {
         let mut db = Database::new();
         db.load_font_data(IBM_PLEX_REGULAR.to_vec());
-        db.load_font_data(LILEX_REGULAR.to_vec());
+        db.load_font_data(JETBRAINS_MONO_REGULAR.to_vec());
         let options = usvg::Options {
             fontdb: std::sync::Arc::new(db),
             ..Default::default()
@@ -415,7 +415,7 @@ mod tests {
         // chunk must use two different fonts so the buggy merge path runs.
         let zalgo = "e\u{0301}\u{0302}\u{0303}\u{0304}\u{0306}\u{0307}\u{0308}\u{030a}";
         let svg = format!(
-            r#"<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><text font-family="Lilex" font-size="32">{zalgo}<tspan font-family="IBM Plex Sans">{zalgo}</tspan></text></svg>"#
+            r#"<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><text font-family="JetBrains Mono" font-size="32">{zalgo}<tspan font-family="IBM Plex Sans">{zalgo}</tspan></text></svg>"#
         );
 
         // Before the fix this aborts via panic with a message like
@@ -492,23 +492,23 @@ mod tests {
                 style: usvg::fontdb::Style::Normal,
             })
             .unwrap();
-        let lilex = db
+        let jetbrains_mono = db
             .query(&usvg::fontdb::Query {
-                families: &[usvg::fontdb::Family::Name("Lilex")],
+                families: &[usvg::fontdb::Family::Name("JetBrains Mono")],
                 weight: usvg::fontdb::Weight(400),
                 stretch: usvg::fontdb::Stretch::Normal,
                 style: usvg::fontdb::Style::Normal,
             })
             .unwrap();
-        let selected = select_emoji_font('│', &[], &db, &["IBM Plex Sans", "Lilex"]).unwrap();
+        let selected = select_emoji_font('│', &[], &db, &["IBM Plex Sans", "JetBrains Mono"]).unwrap();
 
-        assert_eq!(selected, lilex);
+        assert_eq!(selected, jetbrains_mono);
         assert!(!font_has_char(&db, ibm_plex_sans, '│'));
         assert!(font_has_char(&db, selected, '│'));
     }
 
     #[test]
-    fn fix_generic_font_families_monospace_resolves_to_lilex() {
+    fn fix_generic_font_families_monospace_resolves_to_jetbrains_mono() {
         let mut db = db_with_bundled_fonts();
         fix_generic_font_families(&mut db);
 
@@ -519,8 +519,8 @@ mod tests {
         let id = db.query(&query).expect("Monospace should resolve");
         let face = db.face(id).expect("Face should exist");
         assert!(
-            face.families.iter().any(|(name, _)| name.contains("Lilex")),
-            "Monospace should map to Lilex, got {:?}",
+            face.families.iter().any(|(name, _)| name.contains("JetBrains Mono")),
+            "Monospace should map to JetBrains Mono, got {:?}",
             face.families
         );
     }

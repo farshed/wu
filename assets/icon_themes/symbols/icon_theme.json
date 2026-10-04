@@ -3,7 +3,7 @@
   "author": "Miguel Solorio",
   "themes": [
     {
-      "name": "Symbols",
+      "name": "Symbols Dark",
       "appearance": "dark",
       "directory_icons": {
         "collapsed": "icon_themes/symbols/dark/folders/folder.svg",

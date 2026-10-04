@@ -178,6 +178,7 @@ dependencies = [
  "settings",
  "tempfile",
  "theme",
+ "theme_settings",
  "time",
  "time_format",
  "tokio",

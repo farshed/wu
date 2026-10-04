@@ -141,7 +141,7 @@ fn run_visual_tests(project_path: PathBuf, update_baseline: bool) -> Result<()> 
         Arc::new(Assets),
     );
 
-    // Load embedded fonts (IBM Plex Sans, Lilex, etc.) so UI renders with correct fonts
+    // Load embedded fonts (IBM Plex Sans, JetBrains Mono, etc.) so UI renders with correct fonts
     cx.update(|cx| {
         Assets.load_fonts(cx).unwrap();
     });

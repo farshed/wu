@@ -24,6 +24,8 @@ use crate::{
 };
 use agent_harness::{ToolCall, UserInputAnswer, view};
 use settings::{AgentChatSendKey, Settings as _};
+use gpui::Font;
+use theme_settings::ThemeSettings;
 use collections::{HashMap, HashSet};
 use editor::{Editor, EditorEvent};
 use gpui::{
@@ -108,7 +110,6 @@ const COPIED_FEEDBACK: Duration = Duration::from_millis(1200);
 const AUTO_ADVANCE: Duration = Duration::from_millis(220);
 const USAGE_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const GROUP_SHIMMER: Duration = Duration::from_millis(3400);
-const CODE_FONT: &str = "Geist Mono";
 const FADE_IN: Duration = Duration::from_millis(260);
 const GLIDE: Duration = Duration::from_millis(280);
 const GLIDE_FRAME: Duration = Duration::from_millis(16);
@@ -626,10 +627,9 @@ impl ChatView {
         style.heading.margin.bottom = Some(px(MD_BLOCK_GAP).into());
         let is_light = cx.theme().appearance.is_light();
         style.inline_code = TextStyleRefinement {
-            font_family: Some(CODE_FONT.into()),
             color: Some(accent),
             background_color: Some(accent.opacity(if is_light { 0.10 } else { 0.12 })),
-            ..Default::default()
+            ..code_text_style(cx)
         };
         style.link = TextStyleRefinement {
             color: Some(colors.text),
@@ -646,10 +646,9 @@ impl ChatView {
         code_block.padding.top = Some(px(10.).into());
         code_block.padding.bottom = Some(px(10.).into());
         code_block.text = TextStyleRefinement {
-            font_family: Some(CODE_FONT.into()),
             font_size: Some(px(12.5).into()),
             line_height: Some(px(18.).into()),
-            ..Default::default()
+            ..code_text_style(cx)
         };
         style.code_block = code_block;
         let heading = |size: f32, line_height: f32| {
@@ -690,9 +689,8 @@ impl ChatView {
         style.container_style.margin.bottom = Some(px(-OUTPUT_LINE_HEIGHT).into());
         style.heading.margin.bottom = Some(px(OUTPUT_LINE_HEIGHT).into());
         style.inline_code = TextStyleRefinement {
-            font_family: Some(CODE_FONT.into()),
             color: Some(faint),
-            ..Default::default()
+            ..code_text_style(cx)
         };
         style.link = TextStyleRefinement {
             color: Some(faint),
@@ -706,11 +704,10 @@ impl ChatView {
         let mut code_block = StyleRefinement::default();
         code_block.margin.bottom = Some(px(OUTPUT_LINE_HEIGHT).into());
         code_block.text = TextStyleRefinement {
-            font_family: Some(CODE_FONT.into()),
             font_size: Some(px(TOOL_TEXT_SIZE).into()),
             line_height: Some(px(OUTPUT_LINE_HEIGHT).into()),
             color: Some(faint),
-            ..Default::default()
+            ..code_text_style(cx)
         };
         style.code_block = code_block;
         let heading = || {
@@ -1833,7 +1830,7 @@ impl ChatView {
                     h_flex()
                         .flex_none()
                         .gap(px(4.))
-                        .font_family(CODE_FONT)
+                        .font(code_font(cx))
                         .text_size(px(11.))
                         .when(additions > 0, |this| {
                             this.child(
@@ -2087,7 +2084,12 @@ impl ChatView {
             .overflow_hidden()
             .when(!invocation.lines.is_empty(), |this| {
                 this.child(detail_separator())
-                    .child(detail_lines(invocation.lines, invocation_hidden, faint))
+                    .child(detail_lines(
+                        invocation.lines,
+                        invocation_hidden,
+                        faint,
+                        code_font(cx),
+                    ))
                     .when(invocation_hidden > 0, |this| {
                         this.child(self.render_show_full(
                             format!("agent-full-input-{}", tool.id),
@@ -2103,7 +2105,12 @@ impl ChatView {
                     .child(self.render_diff(&diff, cx)),
                 None if !output.lines.is_empty() => this
                     .child(detail_separator())
-                    .child(detail_lines(output.lines, output_hidden, faint))
+                    .child(detail_lines(
+                        output.lines,
+                        output_hidden,
+                        faint,
+                        code_font(cx),
+                    ))
                     .when(output_hidden > 0, |this| {
                         this.child(self.render_show_full(
                             format!("agent-full-output-{}", tool.id),
@@ -2179,6 +2186,22 @@ impl ChatView {
                     ),
             )
             .into_any_element()
+    }
+}
+
+pub(crate) fn code_font(cx: &App) -> Font {
+    ThemeSettings::get_global(cx).buffer_font.clone()
+}
+
+fn code_text_style(cx: &App) -> TextStyleRefinement {
+    let font = code_font(cx);
+    TextStyleRefinement {
+        font_family: Some(font.family),
+        font_features: Some(font.features),
+        font_fallbacks: font.fallbacks,
+        font_weight: Some(font.weight),
+        font_style: Some(font.style),
+        ..Default::default()
     }
 }
 
@@ -2460,13 +2483,18 @@ fn detail_separator() -> impl IntoElement {
     div().h(px(DETAIL_SEPARATOR)).flex_none()
 }
 
-fn detail_lines(lines: Vec<String>, hidden: usize, color: Hsla) -> impl IntoElement {
+fn detail_lines(
+    lines: Vec<String>,
+    hidden: usize,
+    color: Hsla,
+    font: Font,
+) -> impl IntoElement {
     v_flex()
         .w_full()
         .min_w_0()
         .overflow_hidden()
         .py(px(6.))
-        .font_family(CODE_FONT)
+        .font(font)
         .text_size(px(TOOL_TEXT_SIZE))
         .children(lines.into_iter().map(move |line| {
             div()

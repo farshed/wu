@@ -8,6 +8,19 @@ release body.
 ## Unreleased
 
 - The activity bar's icon size is now configurable in settings and via the `activity_bar.icon_size` property.
+- New Wu Light and Wu Dark themes.
+- Symbols is the new default icon theme.
+- Geist is the new interface font, and JetBrains Mono is the new code font.
+- Redesigned tabs.
+- New Agent Chat panel in the activity bar. Chat with Claude Code or Codex using the CLIs you already have installed and signed in; no API keys needed.
+- Agent chats support slash commands, `@` file mentions and `$` skills, with a menu that completes them as you type.
+- Attach images to a message by pasting, dropping or using the paperclip button.
+- The chat sidebar has pins, custom sections, an archive, search and grouping by project. Chats can be forked, and side chats open next to the main one.
+- Wu can play a sound and show a notification when the agent finishes, needs your input or hits an error.
+- Voice dictation in the chat box, using a local speech model that downloads on first use.
+- New Agent Chat page in settings.
+- Idle windows on macOS stop redrawing until something changes, which saves power.
+- Fixed some list scrolling glitches and images that were sized wrongly in some layouts.
 
 ## 1.0.10 - 2026-09-26
 

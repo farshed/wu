@@ -416,7 +416,7 @@ impl ChatView {
         let clock = elapsed.map(|seconds| {
             div()
                 .flex_none()
-                .font_family(super::CODE_FONT)
+                .font(super::code_font(cx))
                 .text_size(px(11.))
                 .text_color(if seconds + VOICE_LIMIT_WARNING_SECS >= max_seconds {
                     cx.theme().status().warning

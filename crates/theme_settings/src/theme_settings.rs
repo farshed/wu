@@ -15,10 +15,10 @@ use anyhow::{Context as _, Result};
 use gpui::{App, Font, HighlightStyle, Pixels, Refineable, px};
 use gpui_util::ResultExt;
 use theme::{
-    AccentColors, Appearance, AppearanceContent, DEFAULT_ICON_THEME_NAME, GlobalTheme, LoadThemes,
-    PlayerColor, PlayerColors, StatusColors, SyntaxTheme, SystemAppearance, SystemColors, Theme,
-    ThemeColors, ThemeFamily, ThemeRegistry, ThemeSettingsProvider, ThemeStyles,
-    default_color_scales, default_icon_theme, try_parse_color,
+    AccentColors, Appearance, AppearanceContent, DEFAULT_ICON_THEME_NAME, GlobalTheme,
+    LEGACY_DEFAULT_ICON_THEME_NAME, LoadThemes, PlayerColor, PlayerColors, StatusColors,
+    SyntaxTheme, SystemAppearance, SystemColors, Theme, ThemeColors, ThemeFamily, ThemeRegistry,
+    ThemeSettingsProvider, ThemeStyles, default_color_scales, default_icon_theme, try_parse_color,
 };
 
 pub use crate::schema::{
@@ -174,8 +174,13 @@ fn configured_icon_theme(cx: &mut App) -> Arc<theme::IconTheme> {
 
     let appearance = GlobalTheme::theme(cx).appearance;
     let icon_theme_name = theme_settings.icon_theme.name(appearance);
+    let icon_theme_name = if icon_theme_name.0.as_ref() == LEGACY_DEFAULT_ICON_THEME_NAME {
+        DEFAULT_ICON_THEME_NAME
+    } else {
+        icon_theme_name.0.as_ref()
+    };
 
-    match themes.get_icon_theme(&icon_theme_name.0) {
+    match themes.get_icon_theme(icon_theme_name) {
         Ok(theme) => theme,
         Err(err) => {
             if themes.extensions_loaded() {

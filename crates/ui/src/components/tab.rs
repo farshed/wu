@@ -4,7 +4,6 @@ use smallvec::SmallVec;
 use crate::prelude::*;
 
 const TAB_HEIGHT: Pixels = px(24.);
-const TAB_MIN_WIDTH: Pixels = px(112.);
 const TAB_SLOT_SIZE: Pixels = px(18.);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -131,7 +130,6 @@ impl RenderOnce for Tab {
             .flex_none()
             .items_center()
             .h(TAB_HEIGHT)
-            .min_w(TAB_MIN_WIDTH)
             .px(px(4.))
             .gap(px(3.))
             .rounded(px(6.))

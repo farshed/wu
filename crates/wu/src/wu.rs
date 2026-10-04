@@ -5464,7 +5464,7 @@ mod tests {
         cx.text_system()
             .add_fonts(vec![
                 Assets
-                    .load("fonts/lilex/Lilex-Regular.ttf")
+                    .load("fonts/jetbrains-mono/JetBrainsMono-Regular.ttf")
                     .unwrap()
                     .unwrap(),
                 Assets
