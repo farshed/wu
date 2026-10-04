@@ -959,6 +959,8 @@ async fn run_session(session: Session) {
     let mut reasoning_streams: HashMap<String, ReasoningStream> = HashMap::new();
     let mut pending_usage: Option<AgentEvent> = None;
     let mut queued_steers: VecDeque<SteerMessage> = VecDeque::new();
+    let mut compacting = false;
+    let mut compacted_tokens: Option<u64> = None;
     let mut steering_open = true;
     let mut interrupted = false;
     let mut interrupt_sent = false;
@@ -1022,16 +1024,21 @@ async fn run_session(session: Session) {
                             Phase::Completed
                         };
                         let item = params.get("item").unwrap_or(&Value::Null);
-                        if phase == Phase::Completed {
-                            let output = match item_type(item) {
-                                "exitedReviewMode" => item.get("review").and_then(Value::as_str),
-                                "contextCompaction" => Some("Context compacted."),
-                                _ => None,
+                        if item_type(item) == "contextCompaction" {
+                            let event = if phase == Phase::Started {
+                                compacted_tokens = None;
+                                AgentEvent::Compacting { active: true }
+                            } else {
+                                AgentEvent::Compacted { tokens: compacted_tokens.take(), manual: current_native }
                             };
-                            if let Some(text) = output
-                                && !send(&event_tx, AgentEvent::TextDelta { text: text.into() }).await
-                            { break 'main; }
+                            compacting = phase == Phase::Started;
+                            if !send(&event_tx, event).await { break 'main; }
                         }
+                        if phase == Phase::Completed
+                            && item_type(item) == "exitedReviewMode"
+                            && let Some(text) = item.get("review").and_then(Value::as_str)
+                            && !send(&event_tx, AgentEvent::TextDelta { text: text.into() }).await
+                        { break 'main; }
                         if matches!(item_type(item), "agentMessage" | "agent_message") {
                             if phase == Phase::Completed {
                                 let id = item.get("id").and_then(Value::as_str).unwrap_or("");
@@ -1075,7 +1082,13 @@ async fn run_session(session: Session) {
                     }
 
                     "thread/tokenUsage/updated" => {
-                        if let Some(usage) = normalize::context_usage_event(&params)
+                        let context_usage = normalize::context_usage_event(&params);
+                        if compacting
+                            && let Some(AgentEvent::ContextUsage { tokens: Some(tokens), .. }) = &context_usage
+                        {
+                            compacted_tokens = Some(*tokens);
+                        }
+                        if let Some(usage) = context_usage
                             && !send(&event_tx, usage).await { break 'main; }
                         if let Some(usage) = usage_event(&params) {
                             pending_usage = Some(usage);

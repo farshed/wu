@@ -690,6 +690,7 @@ pub struct AgentSession {
     transcript: Transcript,
     subagents: HashMap<String, Subagent>,
     working: bool,
+    compacting: bool,
     run: Option<ActiveRun>,
     prompt_after_stop: Option<Prompt>,
     user_stopped: bool,
@@ -745,6 +746,7 @@ impl AgentSession {
             transcript,
             subagents,
             working: false,
+            compacting: false,
             run: None,
             prompt_after_stop: None,
             user_stopped: false,
@@ -813,6 +815,17 @@ impl AgentSession {
 
     pub fn is_working(&self) -> bool {
         self.working
+    }
+
+    pub fn is_compacting(&self) -> bool {
+        self.working && self.compacting
+    }
+
+    pub fn can_steer(&self, prompt: &Prompt) -> bool {
+        // Claude reads a slash command sent into a running turn as plain text.
+        self.working
+            && !(self.metadata.kind == AgentKind::Claude
+                && agent_harness::leading_command(&prompt.text).is_some())
     }
 
     pub fn working_since(&self) -> Option<Instant> {
@@ -1024,6 +1037,31 @@ impl AgentSession {
     }
 
     fn deliver(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
+        let stopping = self
+            .run
+            .as_ref()
+            .is_some_and(|run| run.interrupt.is_cancelled());
+        let is_command = |prompt: &Prompt| agent_harness::leading_command(&prompt.text).is_some();
+        let steering_command = self.run.is_some() && !stopping && !self.can_steer(&prompt);
+        // Merging would turn the other message into the command's arguments.
+        let merging_command = stopping
+            && self
+                .prompt_after_stop
+                .as_ref()
+                .is_some_and(|pending| is_command(pending) || is_command(&prompt));
+        if self.working && (steering_command || merging_command) {
+            self.next_queue_id += 1;
+            self.queue.insert(
+                0,
+                QueuedMessage {
+                    id: self.next_queue_id,
+                    prompt,
+                },
+            );
+            self.save_entries(cx);
+            cx.notify();
+            return;
+        }
         self.user_stopped = false;
         if self.restart_on_next_send && !self.working {
             self.run = None;
@@ -1363,6 +1401,7 @@ impl AgentSession {
                     self.set_native_session_id(session_id, cx);
                 }
                 self.working = self.prompt_after_stop.is_some();
+                self.compacting = false;
                 self.transcript.text_block_open = false;
                 self.cancel_running_tools();
                 match status {
@@ -1393,6 +1432,21 @@ impl AgentSession {
                 self.transcript.text_block_open = false;
                 self.transcript.entries.push(Entry::Image { path: path.into() });
                 self.save_entries(cx);
+            }
+            AgentEvent::Compacting { active } => self.compacting = active,
+            AgentEvent::Compacted { tokens, manual } => {
+                self.compacting = false;
+                // After /compact the Claude process keeps the old history in memory; a resume loads the new one.
+                if manual && self.metadata.kind == AgentKind::Claude {
+                    self.restart_on_next_send = true;
+                }
+                let mut context = self.metadata.context.unwrap_or_default();
+                if context.tokens != tokens {
+                    context.tokens = tokens;
+                    self.metadata.context = Some(context);
+                    self.save_metadata(cx);
+                }
+                self.push_notice("Context compacted.".into(), false, cx);
             }
             AgentEvent::ContextUsage { tokens, window } => {
                 let mut context = self.metadata.context.unwrap_or_default();
@@ -2979,6 +3033,165 @@ done
         assert!(second.contains("--resume=sess-args"), "{second}");
     }
 
+    #[cfg(unix)]
+    #[gpui::test]
+    async fn manual_compaction_reloads_claude_on_the_next_message(cx: &mut TestAppContext) {
+        use std::os::unix::fs::PermissionsExt as _;
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let script = directory.path().join("steer-aware-claude");
+        std::fs::write(
+            &script,
+            r#"#!/bin/sh
+case "$*" in *--resume*) run=resumed;; *) run=new;; esac
+printf '{"type":"system","subtype":"init","model":"m","tools":[],"cwd":"/tmp","session_id":"sess-commands"}\n'
+while read -r line; do
+  case "$line" in *priority*) kind=steer;; *) kind=first;; esac
+  case "$line" in
+    *'"/compact'*)
+      printf '{"type":"system","subtype":"status","status":"compacting","session_id":"sess-commands"}\n'
+      printf '{"type":"system","subtype":"compact_boundary","session_id":"sess-commands","compact_metadata":{"trigger":"manual","pre_tokens":900,"post_tokens":120}}\n'
+      printf '{"type":"system","subtype":"status","status":null,"compact_result":"success","session_id":"sess-commands"}\n';;
+    *'"long task'*)
+      printf '{"type":"system","subtype":"compact_boundary","session_id":"sess-commands","compact_metadata":{"trigger":"auto","pre_tokens":900,"post_tokens":150}}\n';;
+    *'"doomed'*)
+      printf '{"type":"system","subtype":"status","status":"compacting","session_id":"sess-commands"}\n'
+      printf '{"type":"system","subtype":"status","status":null,"compact_result":"failed","compact_error":"prompt_too_long","session_id":"sess-commands"}\n';;
+  esac
+  printf '{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"%s %s"}}}\n' "$run" "$kind"
+  printf '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[]}}\n'
+  printf '{"type":"result","subtype":"success","result":"ok","errors":[],"usage":{"input_tokens":1,"output_tokens":1},"session_id":"sess-commands"}\n'
+done
+"#,
+        )
+        .expect("write fixture");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
+            .expect("make fixture executable");
+        let store = new_store(directory.path(), cx);
+        store.update(cx, |store, _| {
+            store.harnesses.insert(
+                AgentKind::Claude,
+                Arc::new(ClaudeHarness::new().with_executable(script)),
+            );
+        });
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+
+        for (message, expected) in [
+            ("hello", "new first"),
+            ("follow up", "new steer"),
+            ("/compact", "new steer"),
+            ("after compacting", "resumed first"),
+            ("long task", "resumed steer"),
+            ("after auto compaction", "resumed steer"),
+            ("doomed", "resumed steer"),
+        ] {
+            let entries_before = session.read_with(cx, |session, _| session.entries().len());
+            session.update(cx, |session, cx| session.send_message(message, cx));
+            run_until(cx, |cx| {
+                session.read_with(cx, |session, _| {
+                    !session.is_working() && session.entries().len() > entries_before + 1
+                })
+            });
+            assert_eq!(last_reply(&session, cx), expected, "reply to {message:?}");
+        }
+        session.read_with(cx, |session, _| {
+            assert!(!session.is_compacting());
+            assert_eq!(
+                session.metadata.context.and_then(|context| context.tokens),
+                Some(150)
+            );
+            let notices: Vec<(&str, bool)> = session
+                .entries()
+                .iter()
+                .filter_map(|entry| match entry {
+                    Entry::Notice { text, is_error } => Some((text.as_ref(), *is_error)),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                notices,
+                [
+                    ("Context compacted.", false),
+                    ("Context compacted.", false),
+                    ("Couldn't compact the conversation: prompt_too_long", true),
+                ]
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn compacting_label_follows_the_agent(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        session.update(cx, |session, cx| {
+            session.working = true;
+            session.apply_event(AgentEvent::Compacting { active: true }, cx);
+            assert!(session.is_compacting());
+            session.apply_event(AgentEvent::Compacting { active: false }, cx);
+            assert!(!session.is_compacting());
+            session.apply_event(AgentEvent::Compacting { active: true }, cx);
+            session.apply_event(
+                AgentEvent::Compacted {
+                    tokens: None,
+                    manual: false,
+                },
+                cx,
+            );
+            assert!(!session.is_compacting());
+            assert!(!session.restart_on_next_send, "auto compaction keeps the process");
+            assert_eq!(session.metadata.context.and_then(|context| context.tokens), None);
+            session.apply_event(AgentEvent::Compacting { active: true }, cx);
+            session.apply_event(
+                AgentEvent::Done {
+                    status: DoneStatus::Completed,
+                    result: None,
+                    error: None,
+                    session_id: None,
+                },
+                cx,
+            );
+            assert!(!session.is_compacting());
+        });
+    }
+
+    #[gpui::test]
+    async fn commands_are_never_glued_to_messages_sent_while_stopping(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        use_quick_stopping_claude(&store, cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        session.update(cx, |session, cx| {
+            session.send_message("scenario:interrupt", cx)
+        });
+        run_until(cx, |cx| {
+            session.read_with(cx, |session, _| {
+                session.metadata().native_session_id.is_some()
+            })
+        });
+        session.update(cx, |session, cx| {
+            session.stop(cx);
+            session.send_message("/compact", cx);
+            session.send_message("scenario:happy", cx);
+            assert_eq!(
+                session.prompt_after_stop.as_ref().map(|prompt| prompt.text.as_str()),
+                Some("/compact")
+            );
+            let queued: Vec<&str> = session
+                .queue()
+                .iter()
+                .map(|queued| queued.prompt.text.as_str())
+                .collect();
+            assert_eq!(queued, ["scenario:happy"]);
+            assert!(!session.can_steer(&Prompt::from("/compact".to_string())));
+        });
+    }
+
     fn use_quick_stopping_claude(store: &Entity<AgentStore>, cx: &mut TestAppContext) {
         store.update(cx, |store, _| {
             store.harnesses.insert(
@@ -3101,6 +3314,19 @@ done
         store.update(cx, |store, cx| store.delete_session(&id, cx));
         assert!(opening.await.is_err());
         store.read_with(cx, |store, _| assert!(!store.live.contains_key(&id)));
+    }
+
+    pub(crate) fn feed_events(
+        session: &Entity<AgentSession>,
+        events: Vec<AgentEvent>,
+        cx: &mut TestAppContext,
+    ) {
+        session.update(cx, |session, cx| {
+            session.working = true;
+            for event in events {
+                session.apply_event(event, cx);
+            }
+        });
     }
 
     pub(crate) fn feed_subagent(session: &Entity<AgentSession>, cx: &mut TestAppContext) {

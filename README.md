@@ -8,14 +8,14 @@
 
 ---
 
-Wu is a fast, native code editor written in Rust, with a clean, modern design and coding agents built in. The name comes from [wu wei](https://en.wikipedia.org/wiki/Wu_wei): effortless action.
+Wu is a fast, native code editor written in Rust, with a clean, modern design and coding agents built in. The name comes from [wu wei](https://en.wikipedia.org/wiki/Wu_wei): effortless action. Wu is a fork of [Zed](https://github.com/zed-industries/zed) but diverges heavily from it.
 
 ## Features
 
 - **Native and fast.** Written in Rust. No Electron or webviews. Opens instantly and stays responsive on large views.
 - **Lightweight.** Wu's memory footprint is lower than VS Code and Zed. See [benchmarks](https://github.com/farshed/wu/blob/main/docs/memory-benchmark.md).
 - **Coding agents built in.** Built-in support for Claude Code and Codex. OpenCode incoming.
-- **Beautiful by default.** Clean, modern look and a delightful user experience.
+- **Beautiful by default.** Clean, modern look with a delightful UX.
 - **No account or telemetry.** Nothing to sign in to. Wu never sends your usage data anywhere.
 
 ## Download

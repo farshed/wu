@@ -1155,6 +1155,10 @@ async fn native_commands_use_rpc_operations_and_render_results() {
         for event in events {
             match event {
                 AgentEvent::TextDelta { text: delta } => text.push_str(&delta),
+                AgentEvent::Compacted { manual, .. } => {
+                    assert!(manual, "{prompt}");
+                    text.push_str("Context compacted.");
+                }
                 AgentEvent::Done { status, error, .. } => {
                     assert_eq!(status, DoneStatus::Completed, "{prompt}: {error:?}");
                     completions += 1;

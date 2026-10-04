@@ -131,7 +131,6 @@ impl ChatView {
             return None;
         }
         let colors = cx.theme().colors();
-        let can_steer = session.is_working();
         let muted_glyph = colors.text_muted.opacity(0.8);
         let action_hover = ink(0.07, cx);
         let glyph_button = |key: &str, glyph: IconName, tooltip: &'static str| {
@@ -274,7 +273,7 @@ impl ChatView {
                                         .update(cx, |session, cx| session.send_queued_now(id, cx))
                                 })),
                             )
-                            .when(can_steer, |this| {
+                            .when(session.can_steer(&queued.prompt), |this| {
                                 this.child(
                                     primary_button(
                                         &format!("steer-{id}"),

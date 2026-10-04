@@ -141,6 +141,7 @@ fn is_synthetic_user_text(text: &str) -> bool {
 pub(crate) struct Normalizer {
     // The CLI re-emits init (same session id) on every wake turn.
     saw_init: bool,
+    compacting: bool,
     last_model: Option<String>,
     spawn_by_task_id: std::collections::HashMap<String, String>,
     spawn_by_tool_id: std::collections::HashMap<String, String>,
@@ -153,6 +154,7 @@ impl Normalizer {
     pub fn new() -> Self {
         Self {
             saw_init: false,
+            compacting: false,
             last_model: None,
             spawn_by_task_id: std::collections::HashMap::new(),
             spawn_by_tool_id: std::collections::HashMap::new(),
@@ -315,6 +317,36 @@ impl Normalizer {
                     self.spawn_by_tool_id
                         .insert(tool.to_owned(), spawn.clone());
                     return Vec::new();
+                }
+                if f.subtype == "status" {
+                    // The CLI repeats the compacting status every 30 seconds.
+                    if f.status.as_deref() == Some("compacting") {
+                        return if std::mem::replace(&mut self.compacting, true) {
+                            Vec::new()
+                        } else {
+                            vec![AgentEvent::Compacting { active: true }]
+                        };
+                    }
+                    let mut events = Vec::new();
+                    if std::mem::take(&mut self.compacting) {
+                        events.push(AgentEvent::Compacting { active: false });
+                    }
+                    if f.compact_result.as_deref() == Some("failed") {
+                        let reason = f.compact_error.as_deref().unwrap_or("unknown error");
+                        events.push(AgentEvent::Error {
+                            message: format!("Couldn't compact the conversation: {reason}"),
+                        });
+                    }
+                    return events;
+                }
+                if f.subtype == "compact_boundary" {
+                    self.compacting = false;
+                    let metadata = f.compact_metadata.unwrap_or_default();
+                    let tokens = ["post_tokens", "postTokens"]
+                        .iter()
+                        .find_map(|key| metadata.get(*key).and_then(Value::as_u64));
+                    let manual = metadata.get("trigger").and_then(Value::as_str) == Some("manual");
+                    return vec![AgentEvent::Compacted { tokens, manual }];
                 }
                 if f.subtype != "init" || self.saw_init {
                     return Vec::new();
@@ -1168,6 +1200,62 @@ mod tests {
                 })
             ),
             "wake turn settles with its own Done"
+        );
+    }
+
+    #[test]
+    fn compaction_reports_status_and_new_size() {
+        let mut norm = Normalizer::new();
+        let mut events =
+            |line: &str| norm.normalize(crate::claude::wire::parse_frame(line).unwrap(), false);
+        let compacting =
+            r#"{"type":"system","subtype":"status","status":"compacting","session_id":"s1"}"#;
+        assert_eq!(events(compacting), vec![AgentEvent::Compacting { active: true }]);
+        assert!(events(compacting).is_empty(), "repeated status is ignored");
+        assert_eq!(
+            events(
+                r#"{"type":"system","subtype":"compact_boundary","session_id":"s1","compact_metadata":{"trigger":"manual","pre_tokens":484425,"post_tokens":8690}}"#
+            ),
+            vec![AgentEvent::Compacted {
+                tokens: Some(8690),
+                manual: true
+            }]
+        );
+        assert!(
+            events(r#"{"type":"system","subtype":"status","status":null,"compact_result":"success","session_id":"s1"}"#)
+                .is_empty()
+        );
+        assert!(
+            events(r#"{"type":"system","subtype":"status","status":"requesting","session_id":"s1"}"#)
+                .is_empty()
+        );
+        assert_eq!(
+            events(
+                r#"{"type":"system","subtype":"compact_boundary","session_id":"s1","compact_metadata":{"trigger":"auto","pre_tokens":484425}}"#
+            ),
+            vec![AgentEvent::Compacted {
+                tokens: None,
+                manual: false
+            }]
+        );
+    }
+
+    #[test]
+    fn failed_compaction_clears_status_and_reports_error() {
+        let mut norm = Normalizer::new();
+        let mut events =
+            |line: &str| norm.normalize(crate::claude::wire::parse_frame(line).unwrap(), false);
+        events(r#"{"type":"system","subtype":"status","status":"compacting","session_id":"s1"}"#);
+        assert_eq!(
+            events(
+                r#"{"type":"system","subtype":"status","status":null,"compact_result":"failed","compact_error":"prompt_too_long","session_id":"s1"}"#
+            ),
+            vec![
+                AgentEvent::Compacting { active: false },
+                AgentEvent::Error {
+                    message: "Couldn't compact the conversation: prompt_too_long".into()
+                },
+            ]
         );
     }
 

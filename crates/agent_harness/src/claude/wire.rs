@@ -33,6 +33,12 @@ pub(crate) struct SystemFrame {
     pub task_id: Option<String>,
     #[serde(default)]
     pub subagent_type: Option<String>,
+    #[serde(default, alias = "compactMetadata")]
+    pub compact_metadata: Option<Value>,
+    #[serde(default)]
+    pub compact_result: Option<String>,
+    #[serde(default)]
+    pub compact_error: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -362,6 +362,13 @@ pub enum AgentEvent {
         tokens: Option<u64>,
         window: Option<u64>,
     },
+    Compacting {
+        active: bool,
+    },
+    Compacted {
+        tokens: Option<u64>,
+        manual: bool,
+    },
     #[serde(rename_all = "camelCase")]
     Usage {
         input_tokens: u64,

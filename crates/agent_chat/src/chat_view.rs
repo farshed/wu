@@ -1504,6 +1504,11 @@ impl ChatView {
             .working_since(cx)
             .map(|since| since.elapsed().as_secs())
             .unwrap_or(0);
+        let label = if self.subagent.is_none() && self.session.read(cx).is_compacting() {
+            "Compacting conversation…".to_string()
+        } else {
+            format!("{}…", flavour_word(self.flavour_seed, elapsed))
+        };
         let colors = cx.theme().colors();
         h_flex()
             .gap(px(SPACE_SM))
@@ -1517,7 +1522,7 @@ impl ChatView {
                 div()
                     .text_size(ui(12.))
                     .text_color(colors.text_muted)
-                    .child(format!("{}…", flavour_word(self.flavour_seed, elapsed))),
+                    .child(label),
             )
             .child(
                 div()
@@ -2970,6 +2975,86 @@ mod tests {
             assert_eq!(view.title(cx), "scan the repo");
             assert_eq!(view.entries(cx).len(), 3);
         });
+    }
+
+    #[gpui::test]
+    async fn pane_keeps_focus_while_the_agent_streams(cx: &mut TestAppContext) {
+        use agent_harness::AgentEvent;
+        cx.update(|cx| {
+            workspace::AppState::test(cx);
+            editor::init(cx);
+        });
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        store.update(cx, |store, _| store.skip_plan_usage());
+        let project = project::Project::test(FakeFs::new(cx.executor()), [], cx).await;
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let (multi_workspace, cx) = cx.add_window_view(|window, cx| {
+            workspace::MultiWorkspace::test_new(project.clone(), window, cx)
+        });
+        let workspace = multi_workspace.read_with(cx, |multi, _| multi.workspace().clone());
+        let chat = workspace.update_in(cx, |workspace, window, cx| {
+            let weak = cx.entity().downgrade();
+            let chat = cx.new(|cx| {
+                ChatView::new(session.clone(), store.clone(), project.clone(), weak, window, cx)
+            });
+            workspace.add_item_to_active_pane(Box::new(chat.clone()), None, true, window, cx);
+            chat
+        });
+        let pane = workspace.read_with(cx, |workspace, _| workspace.active_pane().clone());
+        crate::session::tests::feed_events(
+            &session,
+            vec![AgentEvent::TextDelta { text: "First reply with some words.".into() }],
+            cx,
+        );
+        let draw = |cx: &mut VisualTestContext| {
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                let _ = window.draw(cx);
+            });
+        };
+        draw(cx);
+        let focus_targets: Vec<(&str, FocusHandle)> = cx.update(|_, cx| {
+            let markdown = chat.read(cx).entries(cx).iter().find_map(|entry| match entry {
+                Entry::Assistant { markdown, .. } => Some(markdown.focus_handle(cx)),
+                _ => None,
+            });
+            [("composer", Some(chat.read(cx).composer.focus_handle(cx))), ("reply", markdown)]
+                .into_iter()
+                .filter_map(|(name, handle)| Some((name, handle?)))
+                .collect()
+        });
+        for (name, target) in focus_targets {
+            cx.update(|window, cx| window.focus(&target, cx));
+            draw(cx);
+            let mut lost = Vec::new();
+            for step in 0..40 {
+                let events = match step % 5 {
+                    0 => vec![AgentEvent::ReasoningDelta { text: format!("thinking {step} ") }],
+                    1 => vec![AgentEvent::ToolCall {
+                        id: format!("tool-{step}"),
+                        call: ToolCall::Unknown { name: "Bash".into(), input: None },
+                    }],
+                    2 => vec![AgentEvent::ToolResult {
+                        id: format!("tool-{}", step - 1),
+                        is_error: false,
+                        output: Some("ok".into()),
+                        diff: None,
+                    }],
+                    3 => vec![AgentEvent::TextDelta { text: format!("more text {step} ") }],
+                    _ => vec![AgentEvent::AssistantMessageCompleted { assistant_message_id: String::new() }],
+                };
+                crate::session::tests::feed_events(&session, events, cx);
+                draw(cx);
+                let focused = cx.update(|window, cx| pane.read(cx).has_focus(window, cx));
+                if !focused {
+                    lost.push(step);
+                }
+            }
+            assert!(lost.is_empty(), "pane lost focus ({name} focused) at steps {lost:?}");
+        }
     }
 
     #[gpui::test]
