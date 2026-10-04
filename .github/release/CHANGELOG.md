@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+## 1.1.0 - 2026-10-04
+
 - The activity bar's icon size is now configurable in settings and via the `activity_bar.icon_size` property.
 - New Wu Light and Wu Dark themes.
 - Symbols is the new default icon theme.
