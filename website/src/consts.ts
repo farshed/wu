@@ -1,7 +1,7 @@
 export const SITE_URL = 'https://wu.farshed.me';
 export const SITE_TITLE = 'Wu';
 export const SITE_DESCRIPTION =
-  'Wu is a fast, native code editor with the familiarity of VS Code. No AI features, no account, no telemetry.';
+  'Wu is the fast, native code editor, written in Rust. Batteries included, with coding agents built in. No account, no telemetry.';
 
 export const REPO_URL = 'https://github.com/farshed/wu';
 export const RELEASES_URL = `${REPO_URL}/releases`;

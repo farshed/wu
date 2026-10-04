@@ -20,23 +20,38 @@ const highlights: Highlight[] = [
     media: <img className={screenshot} src="/screenshot-dark.png" alt="Wu editor with a dark theme" />
   },
   {
-    title: 'Feels like VS Code, out of the box',
+    title: 'Coding agents, built in',
     paragraphs: [
-      "An activity bar switches between the project, git, outline, search and debug panels. Panels dock on the left, and the defaults are tuned so you don't have to relearn your editor.",
+      'Chat with Claude Code or Codex right in Wu. It runs the CLIs you already have installed and signed in, so there are no API keys and no extra subscription.',
+      'Queue messages, follow subagents, review diffs and switch models without leaving the editor.'
+    ],
+    media: (
+      <div className="flex size-full flex-col justify-center gap-[1.4cqw] px-[9cqw] text-[7cqw] leading-[1.05] tracking-[-0.035em]">
+        <span>Claude Code.</span>
+        <span className="text-secondary">Codex.</span>
+        <span className="text-tertiary">Built in.</span>
+      </div>
+    )
+  },
+  {
+    title: 'Beautiful by default',
+    paragraphs: [
+      'A clean, modern interface that stays out of your way, in light and dark.',
+      'It looks good from the first launch, so you can start working instead of tweaking settings.'
     ],
     media: <img className={screenshot} src="/screenshot-light.png" alt="Wu editor with a light theme" loading="lazy" />
   },
   {
     title: 'Yours, not ours',
     paragraphs: [
-      'Wu has no built-in AI features. Bring whichever agent you already use.',
+      "Wu works with the agents you already pay for. Nothing goes through a Wu server.",
       "There's nothing to sign in to, and Wu never sends your usage data anywhere."
     ],
     media: (
       <div className="flex size-full flex-col justify-center gap-[1.4cqw] px-[9cqw] text-[7cqw] leading-[1.05] tracking-[-0.035em]">
-        <span>No AI features.</span>
-        <span className="text-secondary">No account.</span>
-        <span className="text-tertiary">No telemetry.</span>
+        <span>No account.</span>
+        <span className="text-secondary">No telemetry.</span>
+        <span className="text-tertiary">No API keys.</span>
       </div>
     )
   }

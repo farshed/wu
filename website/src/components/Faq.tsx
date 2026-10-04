@@ -14,7 +14,7 @@ const questions: { question: string; answer: ReactNode }[] = [
   {
     question: 'Does Wu have AI features?',
     answer:
-      "No. The agent panel, inline assistant and edit predictions are removed. Use whichever agent or tool you already like, in Wu's terminal or anywhere else."
+      "Yes. The Agent Chat panel runs Claude Code or Codex using the CLIs you already have installed and signed in, so you don't need API keys or a Wu account. Zed's own AI features, like the inline assistant and edit predictions, are not included."
   },
   {
     question: 'Do Zed extensions work in Wu?',
@@ -49,8 +49,9 @@ const questions: { question: string; answer: ReactNode }[] = [
     question: 'How is Wu different from Zed?',
     answer: (
       <>
-        Wu removes AI, collaboration and telemetry, and changes the layout and defaults to feel like VS Code. Everything
-        else works the way it does in Zed. The <a href="/docs/">docs</a> list every difference.
+        Wu has its own agent chat built on the Claude Code and Codex CLIs, its own look, and an activity bar for
+        switching panels. It drops Zed's AI service, collaboration and telemetry. Everything else works the way it does
+        in Zed. The <a href="/docs/">docs</a> list every difference.
       </>
     )
   },

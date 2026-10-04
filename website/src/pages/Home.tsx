@@ -28,11 +28,11 @@ export function Home() {
           <InkBackground />
           <div className="mx-auto flex max-w-[1240px] flex-col items-start gap-5">
             <h1 className="max-w-[800px] text-[clamp(36px,5.2vw,60px)] leading-[1.1] font-medium tracking-[-0.03em]">
-              The fast, native code editor that doesn't get in your&nbsp;way
+              The fast, native code&nbsp;editor
             </h1>
             <p className="max-w-[600px] text-xl leading-[1.35] text-secondary max-sm:text-lg">
-              Wu has the speed of a native app and the familiarity of VS Code. No AI features, no account, no
-              telemetry. Just your code.
+              Written in Rust. Batteries included: coding agents, a beautiful design and everything you need from day
+              one.
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <a className="btn btn-lg btn-primary" href={downloadHref}>
