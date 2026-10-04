@@ -7,10 +7,8 @@ use std::time::Duration;
 use theme::ActiveTheme as _;
 use ui::{Clickable, IconName, IconSize, Toggleable, Tooltip, prelude::*};
 
-const WU_DEFAULT_UI_FONT_SIZE: f32 = 15.0;
-
 pub(crate) fn ui(pixels_at_default: f32) -> Rems {
-    rems(pixels_at_default / WU_DEFAULT_UI_FONT_SIZE)
+    rems(pixels_at_default / 16.0)
 }
 
 const INK_HAIRLINE_SCALE: f32 = 1.35;
