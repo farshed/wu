@@ -19,18 +19,18 @@
 }
 
 :root {
-  --primary: #cdd6f4;
-  --secondary: #a6adc8;
-  --tertiary: #7f849c;
-  --accent: #cba6f7;
-  --accent-hover: #d5b8f9;
-  --accent-press: #b795de;
-  --on-accent: #1e1e2e;
-  --background: #1e1e2e;
-  --elevated: #cdd6f4;
-  --hero-start: #11111b;
-  --hero-end: #181825;
-  --tile: #11111b;
+  --primary: #e8e8ea;
+  --secondary: #a9a9ae;
+  --tertiary: #85858a;
+  --accent: #8b7cf6;
+  --accent-hover: #9d90f8;
+  --accent-press: #7a6ad9;
+  --on-accent: #060606;
+  --background: #0d0d0d;
+  --elevated: #e8e8ea;
+  --hero-start: #060606;
+  --hero-end: #0a0a0a;
+  --tile: #060606;
   color-scheme: dark;
 }
 

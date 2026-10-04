@@ -2278,7 +2278,7 @@ impl Element for MarkdownElement {
                                 markdown_end,
                             );
                         }
-                        MarkdownTag::CodeBlock { kind, .. } => {
+                        MarkdownTag::CodeBlock { kind, metadata } => {
                             let language = match kind {
                                 CodeBlockKind::Fenced => {
                                     parsed_markdown.fallback_code_block_language.clone()
@@ -2362,7 +2362,36 @@ impl Element for MarkdownElement {
                                     builder.push_code_block(language);
                                     builder.push_div(code_block, range, markdown_end);
                                 }
-                                (CodeBlockRenderer::Custom { .. }, _) => {}
+                                (CodeBlockRenderer::Custom { render, .. }, _) => {
+                                    let parent_container = render(
+                                        kind,
+                                        &parsed_markdown,
+                                        range.clone(),
+                                        metadata.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                    builder.push_div(parent_container, range, markdown_end);
+
+                                    let mut code_block =
+                                        div().id(("code-block", range.start)).map(|code_block| {
+                                            if let Some(scroll_handle) = scroll_handle.as_ref() {
+                                                code_block
+                                                    .flex()
+                                                    .overflow_x_scroll()
+                                                    .restrict_scroll_to_axis()
+                                                    .track_scroll(scroll_handle)
+                                            } else {
+                                                code_block.w_full()
+                                            }
+                                        });
+                                    // A custom renderer draws the frame, so the style shapes the body.
+                                    code_block.style().refine(&self.style.code_block);
+
+                                    builder.push_text_style(self.style.code_block.text.to_owned());
+                                    builder.push_code_block(language);
+                                    builder.push_div(code_block, range, markdown_end);
+                                }
                             }
                         }
                         MarkdownTag::HtmlBlock => {
@@ -4552,6 +4581,59 @@ mod tests {
             })
             .into_any_element()
         });
+    }
+
+    #[gpui::test]
+    fn test_custom_code_block_renderer_frames_the_code(cx: &mut TestAppContext) {
+        struct TestWindow;
+
+        impl Render for TestWindow {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                div()
+            }
+        }
+
+        struct CustomMarkdown {
+            markdown: Entity<Markdown>,
+            seen: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+        }
+
+        impl Render for CustomMarkdown {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                let seen = self.seen.clone();
+                MarkdownElement::new(self.markdown.clone(), MarkdownStyle::default())
+                    .code_block_renderer(CodeBlockRenderer::Custom {
+                        render: Arc::new(move |kind, parsed, _, metadata, _, _| {
+                            let language = match kind {
+                                CodeBlockKind::FencedLang(language) => language.to_string(),
+                                _ => String::new(),
+                            };
+                            let code = parsed.source()[metadata.content_range].to_string();
+                            seen.lock().expect("lock").push((language, code));
+                            div().child("header")
+                        }),
+                        transform: None,
+                    })
+            }
+        }
+
+        ensure_theme_initialized(cx);
+        let (_, cx) = cx.add_window_view(|_, _| TestWindow);
+        let markdown =
+            cx.new(|cx| Markdown::new("```rust\nfn main() {}\n```".into(), None, None, cx));
+        cx.run_until_parked();
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        cx.draw(Default::default(), size(px(600.0), px(600.0)), |_, cx| {
+            cx.new(|_| CustomMarkdown {
+                markdown: markdown.clone(),
+                seen: seen.clone(),
+            })
+            .into_any_element()
+        });
+        assert_eq!(
+            seen.lock().expect("lock").first(),
+            Some(&("rust".to_string(), "fn main() {}\n".to_string()))
+        );
     }
 
     #[gpui::test]

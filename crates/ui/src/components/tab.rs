@@ -1,27 +1,11 @@
-use std::cmp::Ordering;
-
 use gpui::{AnyElement, IntoElement, Stateful};
 use smallvec::SmallVec;
 
 use crate::prelude::*;
 
-const START_TAB_SLOT_SIZE: Pixels = px(12.);
-const END_TAB_SLOT_SIZE: Pixels = px(14.);
-
-/// The position of a [`Tab`] within a list of tabs.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum TabPosition {
-    /// The tab is first in the list.
-    First,
-
-    /// The tab is in the middle of the list (i.e., it is not the first or last tab).
-    ///
-    /// The [`Ordering`] is where this tab is positioned with respect to the selected tab.
-    Middle(Ordering),
-
-    /// The tab is last in the list.
-    Last,
-}
+const TAB_HEIGHT: Pixels = px(24.);
+const TAB_MIN_WIDTH: Pixels = px(112.);
+const TAB_SLOT_SIZE: Pixels = px(18.);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TabCloseSide {
@@ -33,7 +17,6 @@ pub enum TabCloseSide {
 pub struct Tab {
     div: Stateful<Div>,
     selected: bool,
-    position: TabPosition,
     close_side: TabCloseSide,
     start_slot: Option<AnyElement>,
     end_slot: Option<AnyElement>,
@@ -48,17 +31,11 @@ impl Tab {
                 .id(id.clone())
                 .debug_selector(|| format!("TAB-{}", id)),
             selected: false,
-            position: TabPosition::First,
             close_side: TabCloseSide::End,
             start_slot: None,
             end_slot: None,
             children: SmallVec::new(),
         }
-    }
-
-    pub fn position(mut self, position: TabPosition) -> Self {
-        self.position = position;
-        self
     }
 
     pub fn close_side(mut self, close_side: TabCloseSide) -> Self {
@@ -109,74 +86,68 @@ impl ParentElement for Tab {
 impl RenderOnce for Tab {
     #[allow(refining_impl_trait)]
     fn render(self, _: &mut Window, cx: &mut App) -> Stateful<Div> {
-        let (text_color, tab_bg, _tab_hover_bg, _tab_active_bg) = match self.selected {
-            false => (
-                cx.theme().colors().text_muted,
-                cx.theme().colors().tab_inactive_background,
-                cx.theme().colors().ghost_element_hover,
-                cx.theme().colors().ghost_element_active,
-            ),
-            true => (
-                cx.theme().colors().text,
-                cx.theme().colors().tab_active_background,
-                cx.theme().colors().element_hover,
-                cx.theme().colors().element_active,
-            ),
+        let colors = cx.theme().colors();
+        let text_color = if self.selected {
+            colors.text
+        } else {
+            colors.text_muted
         };
+        let selected_background = colors.tab_active_background;
+        let hover_background = selected_background.opacity(0.6);
 
-        let (start_slot, end_slot) = {
-            let start_slot = h_flex()
-                .size(START_TAB_SLOT_SIZE)
+        let has_end_slot = self.end_slot.is_some();
+        let slot_layer = || {
+            h_flex()
+                .absolute()
+                .inset_0()
                 .justify_center()
-                .children(self.start_slot);
-
-            let end_slot = h_flex()
-                .size(END_TAB_SLOT_SIZE)
-                .justify_center()
-                .children(self.end_slot);
-
-            match self.close_side {
-                TabCloseSide::End => (start_slot, end_slot),
-                TabCloseSide::Start => (end_slot, start_slot),
-            }
         };
+        let slot = h_flex()
+            .relative()
+            .flex_none()
+            .size(TAB_SLOT_SIZE)
+            .when_some(self.start_slot, |slot, indicator| {
+                slot.child(
+                    slot_layer()
+                        .when(has_end_slot, |layer| {
+                            layer.group_hover("", |style| style.invisible())
+                        })
+                        .child(indicator),
+                )
+            })
+            .when_some(self.end_slot, |slot, end_slot| {
+                slot.child(slot_layer().child(end_slot))
+            });
+
+        let content = h_flex()
+            .flex_1()
+            .min_w_0()
+            .gap(px(3.))
+            .children(self.children);
 
         self.div
-            .h(Tab::container_height(cx))
-            .bg(tab_bg)
-            .border_color(cx.theme().colors().border)
-            .map(|this| match self.position {
-                TabPosition::First => {
-                    if self.selected {
-                        this.pl_px().border_r_1().pb_px()
-                    } else {
-                        this.pl_px().pr_px().border_b_1()
-                    }
-                }
-                TabPosition::Last => {
-                    if self.selected {
-                        this.border_l_1().border_r_1().pb_px()
-                    } else {
-                        this.pl_px().border_b_1().border_r_1()
-                    }
-                }
-                TabPosition::Middle(Ordering::Equal) => this.border_l_1().border_r_1().pb_px(),
-                TabPosition::Middle(Ordering::Less) => this.border_l_1().pr_px().border_b_1(),
-                TabPosition::Middle(Ordering::Greater) => this.border_r_1().pl_px().border_b_1(),
-            })
+            .group("")
+            .flex()
+            .flex_none()
+            .items_center()
+            .h(TAB_HEIGHT)
+            .min_w(TAB_MIN_WIDTH)
+            .px(px(4.))
+            .gap(px(3.))
+            .rounded(px(6.))
+            .text_color(text_color)
             .cursor_pointer()
-            .child(
-                h_flex()
-                    .group("")
-                    .relative()
-                    .h(Tab::content_height(cx))
-                    .px(DynamicSpacing::Base04.px(cx))
-                    .gap(DynamicSpacing::Base04.rems(cx))
-                    .text_color(text_color)
-                    .child(start_slot)
-                    .children(self.children)
-                    .child(end_slot),
-            )
+            .map(|this| {
+                if self.selected {
+                    this.bg(selected_background)
+                } else {
+                    this.hover(|style| style.bg(hover_background))
+                }
+            })
+            .map(|this| match self.close_side {
+                TabCloseSide::End => this.child(content).child(slot),
+                TabCloseSide::Start => this.child(slot).child(content),
+            })
     }
 }
 
@@ -186,8 +157,7 @@ impl Component for Tab {
     }
 
     fn description() -> &'static str {
-        "A tab component that can be used in a tabbed interface, \
-        supporting different positions and states."
+        "A rounded tab chip for tabbed interfaces, with selected and unselected states."
     }
 
     fn preview(_window: &mut Window, _cx: &mut App) -> AnyElement {
@@ -205,27 +175,6 @@ impl Component for Tab {
                         Tab::new("selected")
                             .toggle_state(true)
                             .child("Selected Tab")
-                            .into_any_element(),
-                    ),
-                    single_example(
-                        "First",
-                        Tab::new("first")
-                            .position(TabPosition::First)
-                            .child("First Tab")
-                            .into_any_element(),
-                    ),
-                    single_example(
-                        "Middle",
-                        Tab::new("middle")
-                            .position(TabPosition::Middle(Ordering::Equal))
-                            .child("Middle Tab")
-                            .into_any_element(),
-                    ),
-                    single_example(
-                        "Last",
-                        Tab::new("last")
-                            .position(TabPosition::Last)
-                            .child("Last Tab")
                             .into_any_element(),
                     ),
                 ],

@@ -8,12 +8,12 @@ use parking_lot::RwLock;
 use thiserror::Error;
 
 use crate::{
-    Appearance, AppearanceContent, ChevronIcons, DEFAULT_ICON_THEME_NAME, DirectoryIcons,
-    IconDefinition, IconTheme, IconThemeFamilyContent, MATERIAL_ICON_THEME_LIGHT_NAME,
-    MATERIAL_ICON_THEME_NAME, Theme, ThemeFamily, default_icon_theme,
+    Appearance, AppearanceContent, BUNDLED_ICON_THEME_NAMES, ChevronIcons, DEFAULT_ICON_THEME_NAME,
+    DirectoryIcons, IconDefinition, IconTheme, IconThemeFamilyContent, Theme, ThemeFamily,
+    default_icon_theme,
 };
 
-const BUNDLED_ICON_THEME_PATHS: &[&str] = &["icon_themes/material/icon_theme.json"];
+const BUNDLED_ICON_THEME_PATHS: &[&str] = &["icon_themes/symbols/icon_theme.json"];
 
 /// The metadata for a theme.
 #[derive(Debug, Clone)]
@@ -291,7 +291,7 @@ impl ThemeRegistry {
             .retain(|name, _| !icon_themes_to_remove.contains(name));
         if icon_themes_to_remove
             .iter()
-            .any(|name| name == MATERIAL_ICON_THEME_NAME || name == MATERIAL_ICON_THEME_LIGHT_NAME)
+            .any(|name| BUNDLED_ICON_THEME_NAMES.contains(&name.as_ref()))
             && let Err(error) = self.load_bundled_icon_themes()
         {
             log::error!("failed to reload bundled icon themes: {error:#}");
@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn bundled_icon_themes_reference_existing_assets() {
         let registry = ThemeRegistry::new(Box::new(assets::Assets));
-        for name in [MATERIAL_ICON_THEME_NAME, MATERIAL_ICON_THEME_LIGHT_NAME] {
+        for name in BUNDLED_ICON_THEME_NAMES {
             let icon_theme = registry.get_icon_theme(name).unwrap();
             assert_icon_paths_exist(&registry, &icon_theme);
         }

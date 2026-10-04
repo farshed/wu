@@ -34,7 +34,7 @@ export function renderPage(route: Route, { css, js }: Assets): string {
     <meta property="og:image" content="${image}" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="${image}" />
-    <meta name="theme-color" content="#1e1e2e" />
+    <meta name="theme-color" content="#0d0d0d" />
     <script>document.documentElement.classList.add('js')</script>
     <link rel="preload" href="/fonts/ibm-plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="${css}" />

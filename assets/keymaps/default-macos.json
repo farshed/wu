@@ -1269,4 +1269,11 @@
       "shift-tab": "git_graph::FocusPreviousTabStop",
     },
   },
+  {
+    "context": "AgentComposer > Editor && mode == auto_height",
+    "bindings": {
+      "enter": "agent_chat::Send",
+      "shift-enter": "editor::Newline",
+    },
+  },
 ]

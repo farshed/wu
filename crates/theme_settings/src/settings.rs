@@ -14,7 +14,7 @@ pub use settings::{FontFamilyName, IconThemeName, ThemeAppearanceMode, ThemeName
 use settings::{IntoGpui, RegisterSetting, Settings, SettingsContent};
 use std::sync::Arc;
 use theme::{
-    Appearance, MATERIAL_ICON_THEME_LIGHT_NAME, MATERIAL_ICON_THEME_NAME, SyntaxTheme, Theme,
+    Appearance, SYMBOLS_ICON_THEME_LIGHT_NAME, SYMBOLS_ICON_THEME_NAME, SyntaxTheme, Theme,
     UiDensity,
 };
 
@@ -202,19 +202,34 @@ impl From<settings::IconThemeSelection> for IconThemeSelection {
 }
 
 impl IconThemeSelection {
-    /// Returns the icon theme name based on the given [`Appearance`].
-    pub fn name(&self, system_appearance: Appearance) -> IconThemeName {
-        match self {
+    /// Returns the icon theme name to pair with an active theme of the given [`Appearance`].
+    ///
+    /// Either Symbols variant resolves to the one matching `theme_appearance`.
+    pub fn name(&self, theme_appearance: Appearance) -> IconThemeName {
+        let name = match self {
             Self::Static(theme) => theme.clone(),
             Self::Dynamic { mode, light, dark } => match mode {
                 ThemeAppearanceMode::Light => light.clone(),
                 ThemeAppearanceMode::Dark => dark.clone(),
-                ThemeAppearanceMode::System => match system_appearance {
+                ThemeAppearanceMode::System => match theme_appearance {
                     Appearance::Light => light.clone(),
                     Appearance::Dark => dark.clone(),
                 },
             },
+        };
+
+        let is_symbols = [SYMBOLS_ICON_THEME_NAME, SYMBOLS_ICON_THEME_LIGHT_NAME]
+            .contains(&name.0.as_ref());
+        if !is_symbols {
+            return name;
         }
+        IconThemeName(
+            match theme_appearance {
+                Appearance::Light => SYMBOLS_ICON_THEME_LIGHT_NAME,
+                Appearance::Dark => SYMBOLS_ICON_THEME_NAME,
+            }
+            .into(),
+        )
     }
 
     /// Returns the [`ThemeMode`] for the [`IconThemeSelection`].
@@ -346,8 +361,8 @@ fn set_icon_theme_mode(theme: &mut settings::ThemeSettingsContent, mode: ThemeAp
     } else {
         theme.icon_theme = Some(settings::IconThemeSelection::Dynamic {
             mode,
-            light: IconThemeName(MATERIAL_ICON_THEME_LIGHT_NAME.into()),
-            dark: IconThemeName(MATERIAL_ICON_THEME_NAME.into()),
+            light: IconThemeName(SYMBOLS_ICON_THEME_LIGHT_NAME.into()),
+            dark: IconThemeName(SYMBOLS_ICON_THEME_NAME.into()),
         });
     }
 }
@@ -371,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn set_mode_seeds_material_icon_themes_with_the_same_mode() {
+    fn set_mode_seeds_symbols_icon_themes_with_the_same_mode() {
         let mut content = SettingsContent::default();
         set_mode(&mut content, ThemeAppearanceMode::Light);
 
@@ -379,8 +394,8 @@ mod tests {
             content.theme.icon_theme,
             Some(settings::IconThemeSelection::Dynamic {
                 mode: ThemeAppearanceMode::Light,
-                light: IconThemeName(MATERIAL_ICON_THEME_LIGHT_NAME.into()),
-                dark: IconThemeName(MATERIAL_ICON_THEME_NAME.into()),
+                light: IconThemeName(SYMBOLS_ICON_THEME_LIGHT_NAME.into()),
+                dark: IconThemeName(SYMBOLS_ICON_THEME_NAME.into()),
             })
         );
     }
@@ -398,6 +413,40 @@ mod tests {
 
         assert_eq!(theme_mode(&content), Some(ThemeAppearanceMode::Light));
         assert_eq!(icon_mode(&content), Some(ThemeAppearanceMode::Light));
+    }
+
+    #[test]
+    fn symbols_icon_theme_follows_theme_appearance() {
+        let symbols = IconThemeName(SYMBOLS_ICON_THEME_NAME.into());
+        let symbols_light = IconThemeName(SYMBOLS_ICON_THEME_LIGHT_NAME.into());
+        let selections = [
+            IconThemeSelection::Static(symbols.clone()),
+            IconThemeSelection::Static(symbols_light.clone()),
+            IconThemeSelection::Dynamic {
+                mode: ThemeAppearanceMode::Dark,
+                light: symbols_light.clone(),
+                dark: symbols.clone(),
+            },
+            IconThemeSelection::Dynamic {
+                mode: ThemeAppearanceMode::System,
+                light: symbols.clone(),
+                dark: symbols.clone(),
+            },
+        ];
+
+        for selection in selections {
+            assert_eq!(selection.name(Appearance::Light), symbols_light);
+            assert_eq!(selection.name(Appearance::Dark), symbols);
+        }
+    }
+
+    #[test]
+    fn other_static_icon_themes_are_left_alone() {
+        let custom = IconThemeName("Custom Icons".into());
+        let selection = IconThemeSelection::Static(custom.clone());
+
+        assert_eq!(selection.name(Appearance::Light), custom);
+        assert_eq!(selection.name(Appearance::Dark), custom);
     }
 }
 

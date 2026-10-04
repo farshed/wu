@@ -58,6 +58,7 @@ required-features = ["visual-tests"]
 
 [dependencies]
 activity_indicator.workspace = true
+agent_chat.workspace = true
 anyhow.workspace = true
 askpass.workspace = true
 assets.workspace = true

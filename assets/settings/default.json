@@ -8,13 +8,13 @@
   // - "dark": Use the theme indicated by the "dark" field
   "theme": {
     "mode": "system",
-    "light": "Catppuccin Latte",
-    "dark": "Catppuccin Mocha",
+    "light": "Wu Light",
+    "dark": "Wu Dark",
   },
   "icon_theme": {
     "mode": "system",
-    "light": "Material Icon Theme Light",
-    "dark": "Material Icon Theme",
+    "light": "Symbols Light",
+    "dark": "Symbols",
   },
   // The name of a base set of key bindings to use.
   // This setting can take the following values:
@@ -57,10 +57,9 @@
   //         },
   "buffer_line_height": "comfortable",
   // The name of a font to use for rendering text in the UI
-  // You can set this to ".SystemUIFont" to use the system font
-  // ".ZedSans" currently aliases to "IBM Plex Sans", but this may
-  // change in the future
-  "ui_font_family": ".ZedSans",
+  // You can set this to ".SystemUIFont" to use the system font, or to
+  // "IBM Plex Sans" for the previous default
+  "ui_font_family": "Geist",
   // Set the UI's font fallbacks, this will be merged with the platform's
   // default font fallbacks.
   "ui_font_fallbacks": null,

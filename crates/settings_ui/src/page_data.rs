@@ -584,7 +584,7 @@ fn appearance_page() -> SettingsPage {
                                 return;
                             };
                             let settings_value = settings_content.theme.icon_theme.get_or_insert_with(|| {
-                                settings::IconThemeSelection::Static(settings::IconThemeName(theme::MATERIAL_ICON_THEME_NAME.into()))
+                                settings::IconThemeSelection::Static(settings::IconThemeName(theme::SYMBOLS_ICON_THEME_NAME.into()))
                             });
                             *settings_value = match value {
                                 settings::IconThemeSelectionDiscriminants::Static => {

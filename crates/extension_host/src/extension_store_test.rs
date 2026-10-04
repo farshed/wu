@@ -550,11 +550,11 @@ async fn test_extension_store(cx: &mut TestAppContext) {
         assert_eq!(
             theme_registry.list_names(),
             [
-                "Catppuccin Mocha",
                 "Monokai Dark",
                 "Monokai Light",
                 "Monokai Pro Dark",
                 "Monokai Pro Light",
+                "Wu Dark",
             ]
         );
     });
@@ -643,12 +643,12 @@ async fn test_extension_store(cx: &mut TestAppContext) {
         assert_eq!(
             theme_registry.list_names(),
             [
-                "Catppuccin Mocha",
                 "Gruvbox",
                 "Monokai Dark",
                 "Monokai Light",
                 "Monokai Pro Dark",
                 "Monokai Pro Light",
+                "Wu Dark",
             ]
         );
     });
@@ -707,12 +707,12 @@ async fn test_extension_store(cx: &mut TestAppContext) {
         assert_eq!(
             theme_registry.list_names(),
             [
-                "Catppuccin Mocha",
                 "Gruvbox",
                 "Monokai Dark",
                 "Monokai Light",
                 "Monokai Pro Dark",
                 "Monokai Pro Light",
+                "Wu Dark",
             ]
         );
 
@@ -779,7 +779,7 @@ async fn test_uninstalling_an_extension_restores_the_bundled_theme_it_replaced(
                         "name": "Catppuccin",
                         "version": "1.0.0",
                         "themes": {
-                            "Catppuccin Mocha": "themes/catppuccin.json"
+                            "Wu Dark": "themes/catppuccin.json"
                         }
                     }"#,
                     "themes": {
@@ -788,7 +788,7 @@ async fn test_uninstalling_an_extension_restores_the_bundled_theme_it_replaced(
                             "author": "Someone",
                             "themes": [
                                 {
-                                    "name": "Catppuccin Mocha",
+                                    "name": "Wu Dark",
                                     "appearance": "dark",
                                     "style": {}
                                 }

@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/activity_indicator",
+    "crates/agent_chat",
+    "crates/agent_harness",
     "crates/askpass",
     "crates/assets",
     "crates/auto_update",
@@ -196,6 +198,8 @@ edition = "2024"
 #
 
 activity_indicator = { path = "crates/activity_indicator" }
+agent_chat = { path = "crates/agent_chat" }
+agent_harness = { path = "crates/agent_harness" }
 askpass = { path = "crates/askpass" }
 assets = { path = "crates/assets" }
 auto_update = { path = "crates/auto_update" }
@@ -662,6 +666,7 @@ time = { version = "0.3", features = [
     "local-offset",
 ] }
 tokio = { version = "1" }
+tokio-util = "0.7"
 toml = "0.8"
 toml_edit = { version = "0.22", default-features = false, features = [
     "display",

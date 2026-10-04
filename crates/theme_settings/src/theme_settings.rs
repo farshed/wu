@@ -78,8 +78,8 @@ pub fn init(themes_to_load: LoadThemes, cx: &mut App) {
     }
 
     let theme = configured_theme(cx);
-    let icon_theme = configured_icon_theme(cx);
     GlobalTheme::update_theme(cx, theme);
+    let icon_theme = configured_icon_theme(cx);
     GlobalTheme::update_icon_theme(cx, icon_theme);
 
     let settings = ThemeSettings::get_global(cx);
@@ -91,7 +91,7 @@ pub fn init(themes_to_load: LoadThemes, cx: &mut App) {
     let mut prev_markdown_preview_font_size_settings =
         settings.markdown_preview_font_size_settings();
     let mut prev_theme_name = settings.theme.name(SystemAppearance::global(cx).0);
-    let mut prev_icon_theme_name = settings.icon_theme.name(SystemAppearance::global(cx).0);
+    let mut prev_icon_theme_name = settings.icon_theme.name(GlobalTheme::theme(cx).appearance);
     let mut prev_theme_overrides = (
         settings.experimental_theme_overrides.clone(),
         settings.theme_overrides.clone(),
@@ -105,7 +105,6 @@ pub fn init(themes_to_load: LoadThemes, cx: &mut App) {
         let git_commit_buffer_font_size_settings = settings.git_commit_buffer_font_size_settings();
         let markdown_preview_font_size_settings = settings.markdown_preview_font_size_settings();
         let theme_name = settings.theme.name(SystemAppearance::global(cx).0);
-        let icon_theme_name = settings.icon_theme.name(SystemAppearance::global(cx).0);
         let theme_overrides = (
             settings.experimental_theme_overrides.clone(),
             settings.theme_overrides.clone(),
@@ -137,6 +136,9 @@ pub fn init(themes_to_load: LoadThemes, cx: &mut App) {
             reload_theme(cx);
         }
 
+        let icon_theme_name = ThemeSettings::get_global(cx)
+            .icon_theme
+            .name(GlobalTheme::theme(cx).appearance);
         if icon_theme_name != prev_icon_theme_name {
             prev_icon_theme_name = icon_theme_name;
             reload_icon_theme(cx);
@@ -169,9 +171,10 @@ fn configured_theme(cx: &mut App) -> Arc<Theme> {
 fn configured_icon_theme(cx: &mut App) -> Arc<theme::IconTheme> {
     let themes = ThemeRegistry::default_global(cx);
     let theme_settings = ThemeSettings::get_global(cx);
-    let system_appearance = SystemAppearance::global(cx);
 
-    let icon_theme_name = theme_settings.icon_theme.name(*system_appearance);
+    let icon_theme_name = theme_settings
+        .icon_theme
+        .name(GlobalTheme::theme(cx).appearance);
 
     match themes.get_icon_theme(&icon_theme_name.0) {
         Ok(theme) => theme,
@@ -190,6 +193,8 @@ fn configured_icon_theme(cx: &mut App) -> Arc<theme::IconTheme> {
 pub fn reload_theme(cx: &mut App) {
     let theme = configured_theme(cx);
     GlobalTheme::update_theme(cx, theme);
+    let icon_theme = configured_icon_theme(cx);
+    GlobalTheme::update_icon_theme(cx, icon_theme);
     cx.refresh_windows();
 }
 

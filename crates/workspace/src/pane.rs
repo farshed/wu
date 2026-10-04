@@ -46,7 +46,7 @@ use std::{
 use theme_settings::ThemeSettings;
 use ui::{
     ContextMenu, ContextMenuEntry, ContextMenuItem, DecoratedIcon, IconButtonShape, IconDecoration,
-    IconDecorationKind, Indicator, PopoverMenu, PopoverMenuHandle, Tab, TabBar, TabPosition,
+    IconDecorationKind, Indicator, PopoverMenu, PopoverMenuHandle, Tab, TabBar,
     Tooltip, prelude::*, right_click_menu,
 };
 use util::{
@@ -2920,10 +2920,7 @@ impl Pane {
         let indicator = render_item_indicator(item.boxed_clone(), cx);
         let tab_tooltip_content = item.tab_tooltip_content(cx);
         let item_id = item.item_id();
-        let is_first_item = ix == 0;
-        let is_last_item = ix == self.items.len() - 1;
         let is_pinned = self.is_tab_pinned(ix);
-        let position_relative_to_active_item = ix.cmp(&self.active_item_index);
 
         let read_only_toggle = |toggleable: bool| {
             IconButton::new("toggle_read_only", IconName::FileLock)
@@ -2954,14 +2951,8 @@ impl Pane {
         let has_file_icon = icon.is_some();
 
         let capability = item.capability(cx);
+        let has_indicator = indicator.is_some();
         let tab = Tab::new(ix)
-            .position(if is_first_item {
-                TabPosition::First
-            } else if is_last_item {
-                TabPosition::Last
-            } else {
-                TabPosition::Middle(position_relative_to_active_item)
-            })
             .close_side(match close_side {
                 ClosePosition::Left => ui::TabCloseSide::Start,
                 ClosePosition::Right => ui::TabCloseSide::End,
@@ -3053,6 +3044,7 @@ impl Pane {
                     end_slot_action = &TogglePinTab;
                     end_slot_tooltip_text = "Unpin Tab";
                     IconButton::new("unpin tab", IconName::Pin)
+                        .when(has_indicator, |button| button.visible_on_hover(""))
                         .shape(IconButtonShape::Square)
                         .icon_color(Color::Muted)
                         .size(ButtonSize::None)
@@ -3067,7 +3059,8 @@ impl Pane {
                     };
                     end_slot_tooltip_text = "Close Tab";
                     match show_close_button {
-                        ShowCloseButton::Always => IconButton::new("close tab", IconName::Close),
+                        ShowCloseButton::Always => IconButton::new("close tab", IconName::Close)
+                            .when(has_indicator, |button| button.visible_on_hover("")),
                         ShowCloseButton::Hover => {
                             IconButton::new("close tab", IconName::Close).visible_on_hover("")
                         }
@@ -3102,9 +3095,11 @@ impl Pane {
             .child(
                 h_flex()
                     .id(("pane-tab-content", ix))
-                    .gap_1()
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(3.))
                     .children(if let Some(icon) = icon {
-                        Some(icon)
+                        Some(tab_icon_slot(icon, is_active).into_any_element())
                     } else if !capability.editable() {
                         Some(read_only_toggle(capability == Capability::Read).into_any_element())
                     } else {
@@ -3673,6 +3668,8 @@ impl Pane {
                 let is_scrollable = max_scroll > px(2.0);
                 let has_active_unpinned_tab = self.active_item_index >= self.pinned_tab_count;
                 h_flex()
+                    .gap_1()
+                    .pl_1()
                     .children(pinned_tabs)
                     .when(is_scrollable && is_scrolled, |this| {
                         this.when(has_active_unpinned_tab, |this| this.border_r_2())
@@ -3715,6 +3712,8 @@ impl Pane {
                     .debug_selector(|| "pinned_tabs_row".into())
                     .overflow_x_scroll()
                     .w_full()
+                    .gap_1()
+                    .px_1()
                     .children(pinned_tabs)
                     .child(self.render_pinned_tab_bar_drop_target(cx)),
             );
@@ -3744,6 +3743,8 @@ impl Pane {
             .id("unpinned tabs")
             .overflow_x_scroll()
             .w_full()
+            .gap_1()
+            .px_1()
             .track_scroll(&self.tab_bar_scroll_handle)
             .on_scroll_wheel(cx.listener(|this, _, _, _| {
                 this.suppress_scroll = true;
@@ -5090,6 +5091,15 @@ pub fn tab_details(items: &[Box<dyn ItemHandle>], _window: &Window, cx: &App) ->
     })
 }
 
+fn tab_icon_slot(icon: AnyElement, is_active: bool) -> impl IntoElement {
+    h_flex()
+        .flex_none()
+        .size(px(18.))
+        .justify_center()
+        .when(!is_active, |slot| slot.opacity(0.78))
+        .child(icon)
+}
+
 pub fn render_item_indicator(item: Box<dyn ItemHandle>, cx: &App) -> Option<Indicator> {
     maybe!({
         let indicator_color = match (item.has_conflict(cx), item.is_dirty(cx)) {
@@ -5123,7 +5133,7 @@ impl Render for DraggedTab {
                 .tab_icon_element(self.item.as_ref(), self.is_active, window, cx);
         Tab::new("")
             .toggle_state(self.is_active)
-            .children(icon)
+            .children(icon.map(|icon| tab_icon_slot(icon, self.is_active)))
             .child(label)
             .render(window, cx)
             .font(ui_font)

@@ -26,12 +26,13 @@ fn bar_width(cx: &App) -> Pixels {
 
 /// Entries are shown in this order by `Panel::panel_key()` until the user drags
 /// them around. Panels not listed come after, in dock order (left dock first).
-const DEFAULT_ORDER: [&str; 5] = [
+const DEFAULT_ORDER: [&str; 6] = [
     "ProjectPanel",
     "SearchPanel",
     "GitPanel",
     "OutlinePanel",
     "DebugPanel",
+    "AgentPanel",
 ];
 
 const ORDER_KEY: &str = "activity_bar_order";
