@@ -1,41 +1,3 @@
-//! Codex harness: spawns the installed `codex` CLI as `codex app-server` and
-//! speaks JSON-RPC 2.0 over stdio — the same interface the Codex IDE extension
-//! uses. Resurrected from the pre-ACP driver and modernized.
-//!
-//! VERSION PIN: the app-server API is EXPERIMENTAL (`capabilities.
-//! experimentalApi`); this driver is validated against codex-cli 0.153.4 —
-//! imageGeneration additionally follows the 0.154.0 schema (savedPath only).
-//! Revalidate the method/notification surface when bumping past it.
-//!
-//! - `initialize` handshake (clientInfo + `capabilities.experimentalApi`) then
-//!   the `initialized` notification; unknown notification methods tolerated.
-//! - `thread/start` (or `thread/resume` with a fresh-start fallback) →
-//!   `SessionStarted`; `turn/start` carries the prompt, model, effort,
-//!   `sandboxPolicy`, and approval policy.
-//! - Notifications map to [`AgentEvent`]s: agentMessage/reasoning deltas (both
-//!   `delta`/`textDelta` spellings), item lifecycles → typed ToolCall/ToolResult,
-//!   `thread/tokenUsage/updated` → Usage, turn/completed|failed|aborted → Done.
-//! - Approvals + sandbox: an auto-approving run is yolo mode (policy
-//!   `"never"`, `danger-full-access`). Otherwise the run uses the requested
-//!   sandbox with policy `"on-request"`, and
-//!   `item/commandExecution/requestApproval` +
-//!   `item/fileChange/requestApproval` round-trip through
-//!   [`RunControls::request_input`] as a synthesized allow/deny question.
-//! - Subagents are full child app-server threads. Parent spawn items establish
-//!   their stable ownership; content arriving before the spawn is buffered.
-//!   A registered child's notifications route through an EXPLICIT table
-//!   ([`normalize::route_child_notification`]) — content, errors and child turns
-//!   become tagged [`AgentEvent::Subagent`] events; unrelated child bookkeeping is
-//!   consumed so it can never settle the parent turn, and unknown methods
-//!   fall through to the parent path (fail open, never silent loss).
-//! - Steering: `turn/steer { expectedTurnId }` into the live turn; a rejected
-//!   steer (the turn-completed race) is queued and delivered as the next
-//!   `turn/start` on the same thread. The session is persistent across turns
-//!   while the steering mailbox lives.
-//! - Interrupt: cancelling [`RunControls::interrupt`] sends `turn/interrupt`,
-//!   escalating to SIGTERM → SIGKILL if the child is unresponsive; the stream
-//!   always ends with `Done { status: Interrupted }`.
-
 pub mod catalog;
 mod normalize;
 mod subagents;
@@ -54,23 +16,18 @@ use tokio::sync::mpsc;
 
 use crate::{
     AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice, ReasoningLevel,
-    RunRequest, SteeringMode, UserInputAnswer, UserInputQuestion,
+    RunRequest, Skill, SkillRef, SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
 };
 
 use crate::jsonrpc::{Incoming, RpcClient};
 use crate::process::{Child, Command, Stdio};
-use crate::{Harness, HarnessError, RunControls};
+use crate::{Harness, HarnessError, RunControls, SteerMessage};
 use catalog::{REASONING_LEVELS, sandbox_mode, sandbox_policy_value, static_models, to_effort};
 use normalize::{
     ChildRoute, Phase, ReasoningStream, delta_text, item_id, item_type, notification_thread_id,
     route_child_notification, turn_error_message, turn_id, usage_event,
 };
 
-/// Locate the device's installed Codex CLI: `CODEX_EXECUTABLE`, then our own
-/// PATH, then the login-shell PATH snapshot (the user's shell init shapes
-/// PATH in ways a GUI/service launch never sees — see [`crate::shell_env`]),
-/// then known install locations as a last resort. Resolved per call — cheap
-/// after the snapshot is cached.
 pub fn resolve_codex_executable() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("CODEX_EXECUTABLE").filter(|p| !p.is_empty()) {
         return crate::executable::validate_native_override(&PathBuf::from(p)).ok();
@@ -86,14 +43,10 @@ pub fn resolve_codex_executable() -> Option<PathBuf> {
     crate::executable::find_on_paths("codex", extra)
 }
 
-/// The Codex harness. Construct with [`CodexHarness::new`]; tests point it at a
-/// fake app server with [`CodexHarness::with_executable`].
 pub struct CodexHarness {
     models_cache: crate::catalog::Catalog,
     executable: Option<PathBuf>,
-    /// Grace between `turn/interrupt` and SIGTERM.
     interrupt_grace: Duration,
-    /// Grace between SIGTERM and SIGKILL.
     kill_grace: Duration,
 }
 
@@ -113,13 +66,12 @@ impl CodexHarness {
         Self::default()
     }
 
-    /// Use a fixed CLI binary instead of PATH/known-location resolution.
     pub fn with_executable(mut self, path: impl Into<PathBuf>) -> Self {
         self.executable = Some(path.into());
         self
     }
 
-    /// Tune the interrupt→SIGTERM→SIGKILL escalation timing.
+    /// `interrupt_grace` runs from `turn/interrupt` to SIGTERM, `kill_grace` from SIGTERM to SIGKILL.
     pub fn with_graces(mut self, interrupt_grace: Duration, kill_grace: Duration) -> Self {
         self.interrupt_grace = interrupt_grace;
         self.kill_grace = kill_grace;
@@ -137,7 +89,7 @@ impl CodexHarness {
         }
         resolve_codex_executable().ok_or_else(|| {
             HarnessError::NotInstalled(
-                "codex (searched PATH, the login shell's PATH, ~/.local/bin, \
+                "codex (searched PATH, ~/.local/bin, \
                  ~/.codex/bin, ~/.npm-global/bin, /opt/homebrew/bin, /usr/local/bin, \
                  and fnm/nvm/volta/pnpm/bun install dirs; Windows also checks USERPROFILE \
                  and explicit NVM_SYMLINK/VOLTA_HOME/PNPM_HOME; set CODEX_EXECUTABLE \
@@ -147,10 +99,26 @@ impl CodexHarness {
         })
     }
 
-    async fn discover_models(&self) -> Result<Vec<Model>, HarnessError> {
+    fn current_model_context(&self) -> Result<crate::ModelContext, HarnessError> {
+        crate::model_context::context(self.id(), &self.resolve_executable()?, &[])
+    }
+
+    async fn probe_app_server<T, F, Fut>(
+        &self,
+        cwd: Option<&std::path::Path>,
+        timeout_message: &str,
+        body: F,
+    ) -> Result<T, HarnessError>
+    where
+        F: FnOnce(RpcClient, PathBuf) -> Fut,
+        Fut: std::future::Future<Output = Result<T, HarnessError>>,
+    {
         let exe = self.resolve_executable()?;
         let mut cmd = Command::new(&exe);
         cmd.arg("app-server");
+        if let Some(cwd) = cwd {
+            cmd.current_dir(cwd);
+        }
         crate::compose_child_path(&mut cmd, &exe);
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -168,7 +136,7 @@ impl CodexHarness {
             return Err(HarnessError::Protocol("codex child has no stdio".into()));
         };
         let (client, _incoming) = RpcClient::new(stdin, stdout);
-        let discovery = async {
+        let probe = async {
             client
                 .request(
                     "initialize",
@@ -183,7 +151,32 @@ impl CodexHarness {
                 )
                 .await?;
             client.notify("initialized", None);
+            body(client.clone(), exe).await
+        };
+        let result = tokio::time::timeout(Duration::from_secs(10), probe).await;
+        shutdown_child(&mut child, self.kill_grace).await;
+        match result {
+            Ok(inner) => inner,
+            Err(_) => Err(HarnessError::Protocol(timeout_message.into())),
+        }
+    }
 
+    async fn discover_skills(&self, cwd: &std::path::Path) -> Result<Vec<Skill>, HarnessError> {
+        self.probe_app_server(
+            Some(cwd),
+            "skill discovery timed out",
+            |client, _exe| async move {
+                let result = client
+                    .request("skills/list", json!({ "cwds": [cwd], "forceReload": true }))
+                    .await?;
+                Ok(parse_skills(&result))
+            },
+        )
+        .await
+    }
+
+    async fn discover_models(&self) -> Result<Vec<Model>, HarnessError> {
+        self.probe_app_server(None, "model discovery timed out", |client, exe| async move {
             let mut models = Vec::new();
             let mut model_ids = HashSet::new();
             let mut seen_cursors = HashSet::new();
@@ -230,14 +223,9 @@ impl CodexHarness {
                 }
                 .into());
             }
-            Ok::<Vec<Model>, HarnessError>(models)
-        };
-        let result = tokio::time::timeout(Duration::from_secs(10), discovery).await;
-        shutdown_child(&mut child, self.kill_grace).await;
-        match result {
-            Ok(inner) => inner,
-            Err(_) => Err(HarnessError::Protocol("model discovery timed out".into())),
-        }
+            Ok(models)
+        })
+        .await
     }
 }
 
@@ -256,9 +244,7 @@ fn reasoning_level(value: &str) -> Option<ReasoningLevel> {
     })
 }
 
-/// Codex accepts both names; saved settings use `fast`.
-/// Normalize the app server's `priority` id so live and fallback catalogs do
-/// not produce two different settings for the same tier.
+/// Codex accepts `priority` and `fast` for the same tier; saved settings use `fast`.
 fn normalized_service_tier(value: &str) -> &str {
     match value {
         "priority" => "fast",
@@ -345,8 +331,6 @@ fn legacy_model_page(page: &Value) -> bool {
         })
 }
 
-/// Parse one `model/list` page. Unknown future reasoning levels are ignored
-/// independently instead of invalidating the complete catalog.
 fn parse_model_list_page(result: &Value) -> (Vec<(Model, bool)>, Option<String>) {
     let mut models = Vec::new();
     for item in result
@@ -423,25 +407,18 @@ fn parse_model_list_page(result: &Value) -> (Vec<(Model, bool)>, Option<String>)
     (models, next_cursor)
 }
 
-/// `skills/list` result → typed skills. Keep distinct paths for duplicate names.
-/// Identical name/path pairs are deduplicated across cwd groups. The interface's
-/// shortDescription is picker-sized; the model-facing description is a fallback.
 #[async_trait]
 impl Harness for CodexHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Codex
     }
     fn display_name(&self) -> &str {
-        // "Codex" (not "Codex CLI") — comet composer/defaults.ts
-        // HARNESS_LABEL; must also match the registry's lazy descriptor so
-        // the catalog entry doesn't change after the first resolve.
+        // Must match the registry's lazy descriptor so the catalog entry stays stable.
         "Codex"
     }
     fn supports_steering(&self) -> bool {
         true
     }
-    /// Native `turn/steer` injects into the active turn; a steer that misses
-    /// the turn falls back to a follow-up `turn/start` on the same thread.
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
@@ -454,26 +431,41 @@ impl Harness for CodexHarness {
     fn executable_path(&self) -> Option<PathBuf> {
         self.resolve_executable().ok()
     }
-    /// The signed-in account's visible `model/list` is authoritative. A
-    /// curated snapshot keeps the picker operational when the experimental
-    /// discovery call is unavailable and no last-good catalog exists. Explicit
-    /// picker refreshes bypass cooldowns while overlapping callers coalesce.
     fn model_context(&self) -> Result<Option<crate::ModelContext>, HarnessError> {
-        crate::model_context::context(self.id(), &self.resolve_executable()?, &[]).map(Some)
+        self.current_model_context().map(Some)
     }
     fn fallback_models(&self) -> Vec<Model> {
         static_models()
     }
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
-        self.model_context()?.unwrap().log();
+        self.current_model_context()?.log();
         self.models_cache
             .get_with(
                 force,
-                || self.model_context().map(|c| c.unwrap().key()),
+                || self.current_model_context().map(|context| context.key()),
                 || self.discover_models(),
             )
             .await
     }
+    async fn commands(&self, _cwd: &std::path::Path) -> Result<Vec<SlashCommand>, HarnessError> {
+        Ok(vec![
+            SlashCommand {
+                name: "compact".into(),
+                description: "Compact this conversation's context".into(),
+                input_hint: None,
+            },
+            SlashCommand {
+                name: "review".into(),
+                description: "Review uncommitted changes, or supply review instructions".into(),
+                input_hint: Some("optional instructions".into()),
+            },
+        ])
+    }
+
+    async fn skills(&self, cwd: &std::path::Path) -> Result<Vec<Skill>, HarnessError> {
+        self.discover_skills(cwd).await
+    }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         self.resolve_executable()?;
         match self.model_catalog(false).await {
@@ -511,10 +503,10 @@ impl CodexHarness {
                 "/compact needs an existing Codex conversation".into(),
             ));
         }
+        if native.is_some() && (!request.attachments.is_empty() || !request.skills.is_empty()) {
+            return Err(command_with_extras_error());
+        }
         let exe = self.resolve_executable()?;
-        // Auto-approving runs are yolo mode: danger-full-access + approvalPolicy
-        // "never" (set below) — codex's --dangerously-bypass-approvals-and-sandbox
-        // equivalent.
         if request.auto_approve {
             request.sandbox = crate::SandboxLevel::DangerFullAccess;
         }
@@ -577,10 +569,6 @@ impl CodexHarness {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Session
-// ---------------------------------------------------------------------------
-
 struct Session {
     child: Child,
     client: RpcClient,
@@ -590,14 +578,10 @@ struct Session {
     request: RunRequest,
     interrupt_grace: Duration,
     kill_grace: Duration,
-    /// Rolling stderr tail for the crash message on an unexpected exit.
     stderr_tail: crate::StderrTail,
 }
 
-/// Turn-routing state (port of codex.ts's activeTurnId/completedTurnIds): the
-/// `turn/start` response and the turn lifecycle notifications are separate
-/// app-server messages that may arrive in either order — never revive a turn
-/// that `turn/completed` already declared finished.
+/// The `turn/start` response and turn notifications can arrive in either order.
 #[derive(Default)]
 struct TurnRouter {
     active: Option<String>,
@@ -613,8 +597,7 @@ impl TurnRouter {
         if id.is_empty() || self.is_completed(&id) {
             return;
         }
-        // A replacement `turn/started` is authoritative evidence that a stale
-        // active turn is over, even if its completion notification was lost.
+        // A new turn means the old one is over even if its completion was lost.
         if let Some(prev) = self.active.take()
             && prev != id
         {
@@ -633,15 +616,12 @@ impl TurnRouter {
         }
     }
 
-    /// Adopt a turn id from a `turn/start` RESPONSE (the notification is
-    /// allowed to beat it).
     fn adopt_started(&mut self, id: String) {
         self.active = (!id.is_empty() && !self.is_completed(&id)).then_some(id);
     }
 
     fn remember_completed(&mut self, id: String) {
         self.completed.push_back(id);
-        // Bounded so a months-long persistent session can't grow it forever.
         while self.completed.len() > 32 {
             self.completed.pop_front();
         }
@@ -652,7 +632,6 @@ fn new_message_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-/// Rotate the assistant message id; returns (previous, next).
 fn rotate(id: &mut String) -> (String, String) {
     let prev = std::mem::replace(id, new_message_id());
     (prev, id.clone())
@@ -662,11 +641,71 @@ async fn send(tx: &mpsc::Sender<Result<AgentEvent, HarnessError>>, ev: AgentEven
     tx.send(Ok(ev)).await.is_ok()
 }
 
-fn prompt_input(text: &str) -> Value {
-    json!([{"type": "text", "text": text}])
+async fn send_final(tx: &mpsc::Sender<Result<AgentEvent, HarnessError>>, ev: AgentEvent) {
+    if !send(tx, ev).await {
+        tracing::debug!(target: "agent_harness::codex", "event receiver gone, dropping final event");
+    }
 }
 
-/// Map supported leading commands to native app-server operations.
+// The text item must stay first: `start_turn` routes commands from `/input/0/text`.
+fn prompt_input(text: &str, attachments: &[String], skills: &[SkillRef]) -> Value {
+    let mut input = vec![json!({"type": "text", "text": text})];
+    let mut seen = HashSet::new();
+    for skill in skills {
+        if seen.insert(skill) {
+            input.push(json!({"type": "skill", "name": skill.name, "path": skill.path}));
+        }
+    }
+    for path in attachments {
+        input.push(json!({"type": "localImage", "path": path}));
+    }
+    Value::Array(input)
+}
+
+fn parse_skills(result: &Value) -> Vec<Skill> {
+    let mut seen = HashSet::new();
+    result
+        .get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|group| {
+            group
+                .get("skills")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|skill| {
+            let name = skill.get("name")?.as_str()?;
+            let path = skill
+                .get("path")
+                .and_then(Value::as_str)
+                .filter(|path| !path.is_empty() && !path.chars().any(char::is_control));
+            if name.is_empty()
+                || name.chars().any(|c| c.is_control() || c.is_whitespace())
+                || !seen.insert((name.to_owned(), path.map(str::to_owned)))
+            {
+                return None;
+            }
+            Some(Skill {
+                name: name.to_owned(),
+                path: path.map(str::to_owned),
+                description: skill
+                    .pointer("/interface/shortDescription")
+                    .and_then(Value::as_str)
+                    .or_else(|| skill.get("description").and_then(Value::as_str))
+                    .unwrap_or_default()
+                    .to_owned(),
+                enabled: skill
+                    .get("enabled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
+            })
+        })
+        .collect()
+}
+
 fn command_request(
     text: &str,
     thread_id: &str,
@@ -690,8 +729,6 @@ fn command_request(
                     else { json!({"type":"custom", "instructions":args}) },
             }),
         ))),
-        // Known client commands need explicit UI mappings. Do not silently
-        // send those to the model; unknown slash tokens and paths stay literal.
         "model" | "permissions" | "approvals" | "new" | "clear" | "resume" | "fork" | "status"
         | "diff" | "mention" | "mcp" | "skills" | "plan" | "fast" | "logout" | "quit" | "exit"
         | "init" | "rename" | "feedback" | "ps" | "stop" | "clean" | "archive" | "delete" => {
@@ -701,6 +738,13 @@ fn command_request(
         }
         _ => Ok(None),
     }
+}
+
+fn command_with_extras_error() -> HarnessError {
+    HarnessError::Protocol(
+        "Codex commands cannot include skills or attachments; send them in a separate prompt"
+            .into(),
+    )
 }
 
 async fn start_turn(client: &RpcClient, params: Value) -> Result<String, HarnessError> {
@@ -715,17 +759,13 @@ async fn start_turn(client: &RpcClient, params: Value) -> Result<String, Harness
             .as_array()
             .is_some_and(|input| input.len() > 1)
     {
-        return Err(HarnessError::Protocol(
-            "Codex commands cannot include skill selections; send them in a separate prompt".into(),
-        ));
+        return Err(command_with_extras_error());
     }
     let (method, params) = native.unwrap_or(("turn/start", params));
     let started = client.request(method, params).await?;
     Ok(started["turn"]["id"].as_str().unwrap_or("").to_owned())
 }
 
-/// The per-run event loop: one task multiplexing app-server messages, the
-/// steering mailbox, the interrupt token, and consumer liveness.
 async fn run_session(session: Session) {
     let Session {
         mut child,
@@ -745,15 +785,12 @@ async fn run_session(session: Session) {
     } = controls;
     let request_input = Arc::new(request_input);
 
-    // ---- wire params ------------------------------------------------------
     let approval_policy = if request.auto_approve {
         "never"
     } else {
         "on-request"
     };
     let effort = to_effort(request.reasoning);
-    // Service tier rides thread-start and every turn (mirrors the Codex IDE
-    // client). "default" means Standard — omit it entirely.
     let service_tier = request
         .model_options
         .get("serviceTier")
@@ -775,7 +812,6 @@ async fn run_session(session: Session) {
         p
     };
 
-    // ---- handshake + thread + first turn (interruptible) ------------------
     let setup = async {
         client
             .request(
@@ -797,7 +833,6 @@ async fn run_session(session: Session) {
             p.insert("threadId".into(), Value::String(resume.clone()));
             match client.request("thread/resume", Value::Object(p)).await {
                 Ok(thread) => thread,
-                // A missing/foreign rollout falls back to a fresh thread.
                 Err(e) => {
                     if command_request(&request.prompt, resume)?.is_some() {
                         return Err(e);
@@ -825,45 +860,46 @@ async fn run_session(session: Session) {
         res = setup => match res {
             Ok(thread_id) => thread_id,
             Err(e) => {
-                let _ = event_tx
-                    .send(Ok(AgentEvent::Done {
+                send_final(
+                    &event_tx,
+                    AgentEvent::Done {
                         status: DoneStatus::Errored,
                         result: None,
                         error: Some(e.to_string()),
                         session_id: None,
-                    }))
-                    .await;
+                    },
+                )
+                .await;
                 shutdown_child(&mut child, kill_grace).await;
                 return;
             }
         },
         _ = interrupt.cancelled() => {
-            let _ = event_tx
-                .send(Ok(AgentEvent::Done {
+            send_final(
+                &event_tx,
+                AgentEvent::Done {
                     status: DoneStatus::Interrupted,
                     result: None,
                     error: None,
                     session_id: None,
-                }))
-                .await;
+                },
+            )
+            .await;
             shutdown_child(&mut child, kill_grace).await;
             return;
         }
     };
 
-    let turn_params = |text: &str| -> Value {
+    let turn_params = |text: &str, attachments: &[String], skills: &[SkillRef]| -> Value {
         let mut p = serde_json::Map::new();
         p.insert("threadId".into(), Value::String(thread_id.clone()));
-        p.insert("input".into(), prompt_input(text));
+        p.insert("input".into(), prompt_input(text, attachments, skills));
         p.insert("approvalPolicy".into(), approval_policy.into());
         p.insert(
             "sandboxPolicy".into(),
             sandbox_policy_value(request.sandbox),
         );
-        // Reasoning summaries stream (`item/reasoning/summaryTextDelta`) only
-        // when asked for — without this codex "thinks" in silence for minutes:
-        // nothing renders and the UI's 45s staleness gate flips Working off
-        // (user report: "not streaming, doesn't say it's working").
+        // Without this Codex streams no reasoning summaries and looks idle for minutes.
         p.insert("summary".into(), "auto".into());
         if let Some(model) = &request.model {
             p.insert("model".into(), Value::String(model.clone()));
@@ -896,36 +932,36 @@ async fn run_session(session: Session) {
     }
 
     let mut router = TurnRouter::default();
-    match start_turn(&client, turn_params(&request.prompt)).await {
+    match start_turn(
+        &client,
+        turn_params(&request.prompt, &request.attachments, &request.skills),
+    )
+    .await
+    {
         Ok(id) => router.adopt_started(id),
         Err(e) => {
-            let _ = event_tx
-                .send(Ok(AgentEvent::Done {
+            send_final(
+                &event_tx,
+                AgentEvent::Done {
                     status: DoneStatus::Errored,
                     result: None,
                     error: Some(e.to_string()),
                     session_id: Some(thread_id.clone()),
-                }))
-                .await;
+                },
+            )
+            .await;
             shutdown_child(&mut child, kill_grace).await;
             return;
         }
     }
 
-    // ---- main loop --------------------------------------------------------
-    // Deltas seen per agent-message item, so a model that never streams
-    // (item/completed only) still emits its text exactly once.
     let mut streamed_text: HashSet<String> = HashSet::new();
     let mut reasoning_streams: HashMap<String, ReasoningStream> = HashMap::new();
-    // Token usage is held until the turn ends, emitted just before Done.
     let mut pending_usage: Option<AgentEvent> = None;
-    // Steers whose `turn/steer` lost the turn-completed race; delivered as the
-    // next `turn/start` when the expected turn's end notification arrives.
-    let mut queued_steers: VecDeque<String> = VecDeque::new();
+    let mut queued_steers: VecDeque<SteerMessage> = VecDeque::new();
     let mut steering_open = true;
     let mut interrupted = false;
     let mut interrupt_sent = false;
-    // A Done has been emitted for the turn currently/last in flight.
     let mut done_current = false;
     let mut current_native = command_request(&request.prompt, &thread_id)
         .ok()
@@ -938,19 +974,13 @@ async fn run_session(session: Session) {
         tokio::select! {
             inc = incoming.recv() => match inc {
                 Some(Incoming::Notification { method, params }) => {
-                // Foreign-thread traffic FIRST: a child thread's turn/thread
-                // bookkeeping must never reach the parent turn router below
-                // (a child's turn/completed would settle the PARENT turn).
+                // Must run first: a child's turn/completed would otherwise settle the parent turn.
                 if let Some(nthread) = notification_thread_id(&method, &params)
                     && !nthread.is_empty()
                     && nthread != thread_id
                 {
                     match route_child_notification(&method) {
-                        ChildRoute::Parent => {
-                            // Unknown/parent-owned: fall through so a codex
-                            // update degrades to "the parent sees it",
-                            // never silent loss.
-                        }
+                        ChildRoute::Parent => {}
                         ChildRoute::Consumed => continue,
                         ChildRoute::Subagent => {
                             for event in children.notification(&nthread, &method, &params) {
@@ -1004,7 +1034,6 @@ async fn run_session(session: Session) {
                         }
                         if matches!(item_type(item), "agentMessage" | "agent_message") {
                             if phase == Phase::Completed {
-                                // Fallback for non-streamed messages only.
                                 let id = item.get("id").and_then(Value::as_str).unwrap_or("");
                                 let text = item.get("text").and_then(Value::as_str).unwrap_or("");
                                 if !streamed_text.contains(id)
@@ -1013,13 +1042,7 @@ async fn run_session(session: Session) {
                                 {
                                     break 'main;
                                 }
-                                // Codex emits several assistant messages per
-                                // turn (commentary, final answer); their
-                                // deltas carry no separator, so consecutive
-                                // messages rendered concatenated
-                                // ("…waiting.Beta's 90-second…" — live
-                                // finding). Close each message as a
-                                // paragraph.
+                                // Consecutive assistant messages carry no separator of their own.
                                 if !send(
                                     &event_tx,
                                     AgentEvent::TextDelta {
@@ -1030,9 +1053,6 @@ async fn run_session(session: Session) {
                                 {
                                     break 'main;
                                 }
-                                // Deltas are token chunks, not steering
-                                // boundaries: the completed item is the
-                                // provider-authoritative end of the text part.
                                 let (prev, _next) = rotate(&mut assistant_message_id);
                                 if !send(
                                     &event_tx,
@@ -1062,8 +1082,6 @@ async fn run_session(session: Session) {
                         }
                     }
 
-                    // Codex's `update_plan` tool: the whole checklist, replaced
-                    // on every call, with an in-progress step.
                     "turn/plan/updated" => {
                         for ev in normalize::plan_update_events(&params) {
                             if !send(&event_tx, ev).await { break 'main; }
@@ -1073,8 +1091,6 @@ async fn run_session(session: Session) {
                     "turn/completed" => {
                         let id = turn_id(&params);
                         router.note_completed(&id);
-                        // Item ids never span turns; without this the set grew
-                        // one entry per message for a persistent session's life.
                         streamed_text.clear();
                         if let Some(usage) = pending_usage.take()
                             && !send(&event_tx, usage).await
@@ -1113,15 +1129,12 @@ async fn run_session(session: Session) {
                             done_after_interrupt = true;
                             break 'main;
                         }
-                        // Persistent session: a steer that lost the race with
-                        // this turn's end becomes the next turn now; otherwise
-                        // stay alive for the mailbox — the caller owns teardown.
                         current_native = false;
-                        if let Some(text) = queued_steers.pop_front() {
-                            current_native = command_request(&text, &thread_id).ok().flatten().is_some();
+                        if let Some(msg) = queued_steers.pop_front() {
+                            current_native = command_request(&msg.prompt, &thread_id).ok().flatten().is_some();
                             if !steer_as_new_turn(
                                 &client,
-                                turn_params(&text),
+                                turn_params(&msg.prompt, &msg.attachments, &msg.skills),
                                 &mut router,
                                 &event_tx,
                                 &mut assistant_message_id,
@@ -1147,7 +1160,7 @@ async fn run_session(session: Session) {
                         if interrupted {
                             done_after_interrupt = true;
                         }
-                        let _ = send(
+                        send_final(
                             &event_tx,
                             AgentEvent::Done {
                                 status: if interrupted {
@@ -1173,7 +1186,7 @@ async fn run_session(session: Session) {
                         if interrupted {
                             done_after_interrupt = true;
                         }
-                        let _ = send(
+                        send_final(
                             &event_tx,
                             AgentEvent::Done {
                                 status: DoneStatus::Interrupted,
@@ -1187,8 +1200,6 @@ async fn run_session(session: Session) {
                     }
 
                     "error" => {
-                        // 0.146.x nests it (`params.error.message`); older
-                        // builds were flat (`params.message`) — accept both.
                         let message = params
                             .pointer("/error/message")
                             .and_then(Value::as_str)
@@ -1200,8 +1211,6 @@ async fn run_session(session: Session) {
                         }
                     }
 
-                    // thread/status, mcpServer startup, account noise, … —
-                    // unknown notification methods are tolerated by design.
                     _ => {}
                 }
                 }
@@ -1217,26 +1226,21 @@ async fn run_session(session: Session) {
                     );
                 }
 
-                // stdout EOF or reader gone: the app server exited.
                 Some(Incoming::Eof) | None => break 'main,
             },
 
             steer = steering.recv(), if steering_open && !interrupted => match steer {
                 Some(msg) => {
-                    let text = msg.prompt;
-                    // Native operations run at a turn boundary, never as text
-                    // injected into an already running model turn. Later messages
-                    // must stay behind queued commands: Steered acknowledgments
-                    // retire the engine's accepted-message ledger in FIFO order.
-                    if !done_current && (!queued_steers.is_empty() || current_native || !matches!(command_request(&text, &thread_id), Ok(None))) {
-                        queued_steers.push_back(text);
+                    // Steered acks must stay FIFO, so nothing may overtake a queued command.
+                    if !done_current && (!queued_steers.is_empty() || current_native || !matches!(command_request(&msg.prompt, &thread_id), Ok(None))) {
+                        queued_steers.push_back(msg);
                         continue 'main;
                     }
                     if let Some(expected) = router.active.clone() {
                         let steer_params = json!({
                             "threadId": thread_id,
                             "expectedTurnId": expected,
-                            "input": prompt_input(&text),
+                            "input": prompt_input(&msg.prompt, &msg.attachments, &msg.skills),
                         });
                         match client.request("turn/steer", steer_params).await {
                             Ok(_) => {
@@ -1253,12 +1257,7 @@ async fn run_session(session: Session) {
                                     break 'main;
                                 }
                             }
-                            // A failed `turn/steer` does NOT mean the text is
-                            // bad: most commonly the active turn finished
-                            // between the UI send and this request. Queue it
-                            // for redelivery as the next `turn/start` when the
-                            // expected turn's end arrives (also the safe
-                            // fallback for older Codex without steering).
+                            // Usually the turn ended before the steer landed; redeliver as the next turn.
                             Err(e) => {
                                 tracing::debug!(
                                     target: "agent_harness::codex",
@@ -1267,28 +1266,25 @@ async fn run_session(session: Session) {
                                 if router.active.as_deref() == Some(expected.as_str())
                                     && !router.is_completed(&expected)
                                 {
-                                    queued_steers.push_back(text);
+                                    queued_steers.push_back(msg);
                                 } else {
-                                    current_native = command_request(&text, &thread_id).ok().flatten().is_some();
+                                    current_native = command_request(&msg.prompt, &thread_id).ok().flatten().is_some();
                                     if !steer_as_new_turn(
-                                        &client, turn_params(&text), &mut router, &event_tx,
+                                        &client, turn_params(&msg.prompt, &msg.attachments, &msg.skills), &mut router, &event_tx,
                                         &mut assistant_message_id, &mut done_current,
                                     ).await { break 'main; }
                                 }
                             }
                         }
                     } else {
-                        current_native = command_request(&text, &thread_id).ok().flatten().is_some();
+                        current_native = command_request(&msg.prompt, &thread_id).ok().flatten().is_some();
                         if !steer_as_new_turn(
-                            &client, turn_params(&text), &mut router, &event_tx,
+                            &client, turn_params(&msg.prompt, &msg.attachments, &msg.skills), &mut router, &event_tx,
                             &mut assistant_message_id, &mut done_current,
                         ).await { break 'main; }
                     }
                 }
                 None => {
-                    // Mailbox closed (the caller's graceful idle-reap): finish
-                    // once nothing is in flight — mirrors codex.ts's steer loop
-                    // `finish()` on a null take.
                     steering_open = false;
                     if done_current && router.active.is_none() && queued_steers.is_empty() {
                         break 'main;
@@ -1313,19 +1309,8 @@ async fn run_session(session: Session) {
                             );
                         }
                     });
-                    // Escalate if the app server doesn't wind down (turn/aborted)
-                    // within the grace periods: SIGTERM, then SIGKILL.
-                    if let Some(pid) = crate::process::signal_target(&child) {
-                        escalation = Some(tokio::spawn(async move {
-                            tokio::time::sleep(interrupt_grace).await;
-                            send_signal(&pid, Signal::Term);
-                            tokio::time::sleep(kill_grace).await;
-                            send_signal(&pid, Signal::Kill);
-                        }));
-                    }
+                    escalation = crate::process::escalate_interrupt(&child, interrupt_grace, kill_grace);
                 } else {
-                    // Idle between turns: nothing to interrupt — the terminal
-                    // bookkeeping below still guarantees Done { Interrupted }.
                     break 'main;
                 }
             },
@@ -1334,25 +1319,23 @@ async fn run_session(session: Session) {
         }
     }
 
-    // Terminal bookkeeping: never end the stream without a Done unless the
-    // consumer already hung up.
     if !event_tx.is_closed() {
         if interrupted && !done_after_interrupt {
-            let _ = event_tx
-                .send(Ok(AgentEvent::Done {
+            send_final(
+                &event_tx,
+                AgentEvent::Done {
                     status: DoneStatus::Interrupted,
                     result: None,
                     error: None,
                     session_id: Some(thread_id.clone()),
-                }))
-                .await;
+                },
+            )
+            .await;
         } else if !interrupted && !done_current {
-            // A child KILLED mid-turn (OS memory pressure, `killall codex`)
-            // must not read as a silent success — codex.ts's signal-death
-            // handling, reduced to the turn-in-flight case.
             let status = child.try_wait().ok().flatten();
-            let _ = event_tx
-                .send(Ok(AgentEvent::Done {
+            send_final(
+                &event_tx,
+                AgentEvent::Done {
                     status: DoneStatus::Errored,
                     result: None,
                     error: Some(crate::crash_message(
@@ -1361,8 +1344,9 @@ async fn run_session(session: Session) {
                         &stderr_tail,
                     )),
                     session_id: Some(thread_id.clone()),
-                }))
-                .await;
+                },
+            )
+            .await;
         }
     }
 
@@ -1372,9 +1356,7 @@ async fn run_session(session: Session) {
     }
 }
 
-/// Deliver a steer as a fresh `turn/start` on the same thread (the fallback
-/// leg of the steer race, and the between-turns delivery path). Returns false
-/// when the loop should end (turn/start failed or the consumer hung up).
+/// Returns false when the session loop should end.
 async fn steer_as_new_turn(
     client: &RpcClient,
     params: Value,
@@ -1398,7 +1380,7 @@ async fn steer_as_new_turn(
             .await
         }
         Err(e) => {
-            let _ = send(
+            send_final(
                 event_tx,
                 AgentEvent::Error {
                     message: format!("Steering failed: {e}"),
@@ -1410,21 +1392,13 @@ async fn steer_as_new_turn(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Approvals
-// ---------------------------------------------------------------------------
-
 type RequestInputFn = Box<
     dyn Fn(Vec<UserInputQuestion>) -> tokio::sync::oneshot::Receiver<Vec<UserInputAnswer>>
         + Send
         + Sync,
 >;
 
-/// Serve one server→client request. Approval requests round-trip through
-/// `request_input` as a synthesized yes/no question (in a subtask so the
-/// message loop keeps flowing); with `auto_approve` they're accepted outright
-/// (belt to the wire-level `approvalPolicy: "never"`). Anything else is
-/// rejected as unsupported so the server never wedges awaiting a reply.
+/// Every request must get a reply or the app server stalls waiting for it.
 fn handle_server_request(
     client: &RpcClient,
     id: Value,
@@ -1433,9 +1407,7 @@ fn handle_server_request(
     auto_approve: bool,
     request_input: &Arc<RequestInputFn>,
 ) {
-    // A tool's user-input request (EXPERIMENTAL, codex 0.146.x) is a CONTENT
-    // question, never auto-approvable — route it to the input bridge and
-    // answer keyed by question id, `{ answers: { <id>: { answers: [..] } } }`.
+    // A content question, so never auto-approved.
     if method == "item/tool/requestUserInput" {
         let questions = user_input_questions(params);
         if questions.is_empty() {
@@ -1481,13 +1453,6 @@ fn handle_server_request(
     let client = client.clone();
     let request_input = Arc::clone(request_input);
     tokio::spawn(async move {
-        // The engine's input bridge owns the `InputRequested`/`InputResolved`
-        // lifecycle (it mints the request id the resolver is parked under);
-        // emitting our own copy here doubled the doc's input part with an id
-        // `respond_input` could never match.
-        //
-        // A dropped sender (caller went away) degrades to a decline so the
-        // agent is unblocked — never silently allowed.
         let answers = (request_input)(vec![question.clone()])
             .await
             .unwrap_or_default();
@@ -1504,8 +1469,7 @@ fn handle_server_request(
     });
 }
 
-/// Parse `item/tool/requestUserInput` questions into (wire id, question)
-/// pairs, tolerant of field spellings; answers key by the WIRE id.
+/// Answers must be keyed by the wire id, not the generated question id.
 fn user_input_questions(params: &Value) -> Vec<(String, UserInputQuestion)> {
     params
         .get("questions")
@@ -1564,7 +1528,6 @@ fn user_input_questions(params: &Value) -> Vec<(String, UserInputQuestion)> {
         .collect()
 }
 
-/// Synthesize the yes/no question an approval request surfaces to the user.
 fn approval_question(method: &str, params: &Value) -> UserInputQuestion {
     let (header, question) = if method.contains("commandExecution") {
         let command = match params.get("command") {
@@ -1616,7 +1579,7 @@ fn approval_question(method: &str, params: &Value) -> UserInputQuestion {
     }
 }
 
-use crate::{Signal, send_signal, shutdown_child};
+use crate::shutdown_child;
 
 #[cfg(test)]
 mod tests {
@@ -1700,7 +1663,6 @@ mod tests {
         assert_eq!(q.header, crate::claude::PERMISSION_HEADER);
         assert!(q.question.contains("/a.rs, /b.rs"));
 
-        // Command as argv array joins with spaces.
         let q = approval_question(
             "item/commandExecution/requestApproval",
             &json!({"command": ["git", "push", "--force"]}),
@@ -1712,19 +1674,32 @@ mod tests {
     fn turn_router_never_revives_completed_turns() {
         let mut r = TurnRouter::default();
         r.note_completed("t-1");
-        // The turn/start response arriving after turn/completed must not
-        // resurrect the turn.
         r.adopt_started("t-1".into());
         assert_eq!(r.active, None);
-        // Nor may a late turn/started notification.
         r.note_started("t-1".into());
         assert_eq!(r.active, None);
 
         r.note_started("t-2".into());
         assert_eq!(r.active.as_deref(), Some("t-2"));
-        // A replacement started turn retires the stale one.
         r.note_started("t-3".into());
         assert_eq!(r.active.as_deref(), Some("t-3"));
         assert!(r.is_completed("t-2"));
+    }
+
+    #[test]
+    fn prompt_input_puts_text_first_and_dedupes_skills() {
+        let skill = SkillRef {
+            name: "review".into(),
+            path: "/repo/SKILL.md".into(),
+        };
+        let input = prompt_input("look", &["/tmp/a.png".into()], &[skill.clone(), skill]);
+        assert_eq!(
+            input,
+            json!([
+                {"type": "text", "text": "look"},
+                {"type": "skill", "name": "review", "path": "/repo/SKILL.md"},
+                {"type": "localImage", "path": "/tmp/a.png"},
+            ])
+        );
     }
 }

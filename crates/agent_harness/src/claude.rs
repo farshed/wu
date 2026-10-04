@@ -1,32 +1,3 @@
-//! Claude Code harness: spawns the installed `claude` CLI and speaks its
-//! stream-json protocol directly — no adapter process in between. Resurrected
-//! from the pre-ACP driver (see docs/research/harness.md) and modernized
-//! against CLI 2.1.228.
-//!
-//! - stdout JSONL frames are normalized into [`AgentEvent`]s (init dedupe,
-//!   subagent tagging, typed tool decoding, error-code mapping).
-//! - PERMISSIONS ride the stdio control channel: `--permission-prompt-tool
-//!   stdio` (the same transport the Claude Agent SDK's `query()` drives).
-//!   Tool calls round-trip through [`RunControls::request_input`] as a yes/no
-//!   question unless the request auto-approves, and `AskUserQuestion` always
-//!   does.
-//! - DONE is the CLI's own `result` frame, eagerly: background work (a
-//!   spawned subagent) never holds the turn. The CLI natively runs a second
-//!   wake turn when a background task finishes — a fresh `init` (same
-//!   session id, deduped) plus another `result` — and both are forwarded;
-//!   the engine's parked-session resume path turns them into the
-//!   done→Working→done wake.
-//! - SUBAGENT frames arrive on the same stdout tagged with a top-level
-//!   `parent_tool_use_id`; they are wrapped in [`AgentEvent::Subagent`] and
-//!   NEVER folded into the parent feed (a background subagent interleaves
-//!   with the parent's own stream — folding them in split contiguous text
-//!   around phantom tool calls).
-//! - Steering: queued [`SteerMessage`]s are written to stdin as user lines at
-//!   any time; the CLI folds them into the running turn at its own step
-//!   boundary.
-//! - Interrupt: cancelling [`RunControls::interrupt`] sends the protocol-level
-//!   interrupt control request, then escalates to SIGTERM and SIGKILL.
-
 pub mod catalog;
 mod discovery;
 mod normalize;
@@ -44,25 +15,20 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 use crate::{
-    AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode,
-    UserInputAnswer, UserInputQuestion,
+    AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SlashCommand,
+    SteeringMode, UserInputAnswer, UserInputQuestion,
 };
 
 use crate::process::{Child, ChildStdin, Command, Stdio};
-use crate::{Harness, HarnessError, RunControls, Signal, send_signal, shutdown_child};
+use crate::{Harness, HarnessError, RunControls, shutdown_child};
 use catalog::{apply_ultrathink, to_effort};
 use normalize::Normalizer;
 use wire::{ControlRequestFrame, Frame, allow_response, control_response_line, deny_response};
 
-/// The option label that approves a permission question.
 pub const PERMISSION_ALLOW: &str = "Allow";
-/// The option label that declines a permission question.
 pub const PERMISSION_DENY: &str = "Deny";
-/// The header every permission question carries, so hosts can render it as
-/// an approval rather than a free-form question.
 pub const PERMISSION_HEADER: &str = "Permission";
 
-/// A yes/no question asking to run one tool, worded from its decoded call.
 fn permission_question(tool_name: &str, input: &Value) -> UserInputQuestion {
     let call = normalize::decode_tool_use(tool_name, input);
     let question = match &call {
@@ -86,13 +52,6 @@ fn permission_question(tool_name: &str, input: &Value) -> UserInputQuestion {
     }
 }
 
-/// Locate the device's installed Claude Code CLI: our own PATH, then the
-/// login-shell PATH snapshot (the user's shell init shapes PATH in ways a
-/// GUI/service launch never sees — see [`crate::shell_env`]), then known
-/// install locations as a last resort. The `CLAUDE_CODE_EXECUTABLE` override
-/// is applied by [`ClaudeHarness::resolve_executable`], so availability and
-/// launches agree on one resolution order. Resolved per call — cheap after
-/// the snapshot is cached.
 fn resolve_claude_executable() -> Option<PathBuf> {
     let mut extra = Vec::new();
     if let Some(home) = crate::executable::home_dir() {
@@ -112,13 +71,9 @@ fn option_is_on(options: &serde_json::Map<String, Value>, key: &str) -> bool {
     }
 }
 
-/// The Claude Code harness. Construct with [`ClaudeHarness::new`]; tests point
-/// it at a fake CLI with [`ClaudeHarness::with_executable`].
 pub struct ClaudeHarness {
     executable: Option<PathBuf>,
-    /// Grace between the interrupt control request and SIGTERM.
     interrupt_grace: Duration,
-    /// Grace between SIGTERM and SIGKILL.
     kill_grace: Duration,
     initialize: discovery::InitializeCache,
     models_cache: crate::catalog::Catalog,
@@ -141,13 +96,11 @@ impl ClaudeHarness {
         Self::default()
     }
 
-    /// Use a fixed CLI binary instead of PATH/known-location resolution.
     pub fn with_executable(mut self, path: impl Into<PathBuf>) -> Self {
         self.executable = Some(path.into());
         self
     }
 
-    /// Tune the interrupt→SIGTERM→SIGKILL escalation timing.
     pub fn with_graces(mut self, interrupt_grace: Duration, kill_grace: Duration) -> Self {
         self.interrupt_grace = interrupt_grace;
         self.kill_grace = kill_grace;
@@ -165,7 +118,7 @@ impl ClaudeHarness {
         }
         resolve_claude_executable().ok_or_else(|| {
             HarnessError::NotInstalled(
-                "claude (searched PATH, the login shell's PATH, ~/.claude/local, \
+                "claude (searched PATH, ~/.claude/local, \
                  ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, and \
                  fnm/nvm/volta/pnpm/bun install dirs; Windows also checks USERPROFILE \
                  and explicit NVM_SYMLINK/VOLTA_HOME/PNPM_HOME; set \
@@ -184,23 +137,17 @@ impl ClaudeHarness {
             "stream-json",
             "--output-format",
             "stream-json",
-            // Required by the CLI alongside `-p --output-format stream-json`.
+            // The CLI rejects stream-json output without --verbose.
             "--verbose",
             "--include-partial-messages",
             "--replay-user-messages",
-            // Newer Claude models emit no readable thinking text unless a
-            // summary is asked for (raw reasoning stays provider-private).
+            // Newer models emit no thinking text unless a summary is requested.
             "--thinking-display",
             "summarized",
-            // Route permission prompts to the stdio control channel so
-            // `can_use_tool` (and AskUserQuestion in particular) reaches us.
-            // Undocumented flag; validated live against 2.1.228.
+            // Undocumented: routes `can_use_tool` requests to the stdio control channel.
             "--permission-prompt-tool",
             "stdio",
         ]);
-        // The 1M context window is selected via a model-id suffix
-        // (`sonnet[1m]`), exactly how the CLI itself does it; fast mode and
-        // always-on thinking are settings overrides.
         if let Some(model) = &request.model {
             let one_m = request
                 .model_options
@@ -253,12 +200,14 @@ impl ClaudeHarness {
         cmd
     }
 
-    /// Share the complete initialize response between model and command discovery.
-    /// No user message is written; the short-lived child is retired after initialize.
+    fn discovery_context(&self) -> Result<crate::ModelContext, HarnessError> {
+        crate::model_context::context(self.id(), &self.resolve_executable()?, &[])
+    }
+
     async fn initialize(&self) -> Result<Value, HarnessError> {
         self.initialize
             .get(
-                || self.model_context().map(|c| c.unwrap().key()),
+                || self.discovery_context().map(|context| context.key()),
                 || self.probe_initialize(None),
             )
             .await
@@ -277,8 +226,7 @@ impl ClaudeHarness {
             "stream-json",
             "--output-format",
             "stream-json",
-            // Mandatory with --print + stream-json output; without it the
-            // CLI exits immediately with a usage error.
+            // The CLI rejects stream-json output without --verbose.
             "--verbose",
         ]);
         cmd.stdin(Stdio::piped())
@@ -296,7 +244,7 @@ impl ClaudeHarness {
             shutdown_child(&mut child, self.kill_grace).await;
             return Err(HarnessError::Protocol("claude child has no stdio".into()));
         };
-        const PROBE_ID: &str = "wu-model-probe";
+        const PROBE_ID: &str = "wu-initialize-probe";
         let discovery = async {
             let request = serde_json::json!({
                 "type": "control_request",
@@ -342,6 +290,36 @@ impl ClaudeHarness {
     }
 }
 
+fn parse_initialize_commands(response: &Value) -> Vec<SlashCommand> {
+    response
+        .pointer("/response/commands")
+        .and_then(Value::as_array)
+        .map(|commands| commands.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|command| {
+            let name = command.get("name").and_then(Value::as_str)?.trim();
+            if name.is_empty() {
+                return None;
+            }
+            Some(SlashCommand {
+                name: name.to_owned(),
+                description: command
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                input_hint: command
+                    .get("argumentHint")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|hint| !hint.is_empty())
+                    .map(str::to_owned),
+            })
+        })
+        .collect()
+}
+
 #[async_trait]
 impl Harness for ClaudeHarness {
     fn id(&self) -> HarnessId {
@@ -366,28 +344,25 @@ impl Harness for ClaudeHarness {
         ]
     }
     fn installed(&self) -> bool {
-        // The launch resolver, not bare lookup: a valid CLAUDE_CODE_EXECUTABLE
-        // (or a test `executable`) must report installed, and an invalid one
-        // must not — availability and launches share one resolution.
+        // Must match launch resolution, including CLAUDE_CODE_EXECUTABLE.
         self.resolve_executable().is_ok()
     }
     fn executable_path(&self) -> Option<PathBuf> {
         self.resolve_executable().ok()
     }
-    /// Credential and executable identity scopes both initialize and catalog caches.
     fn model_context(&self) -> Result<Option<crate::ModelContext>, HarnessError> {
-        crate::model_context::context(self.id(), &self.resolve_executable()?, &[]).map(Some)
+        self.discovery_context().map(Some)
     }
     fn fallback_models(&self) -> Vec<Model> {
         catalog::configured_models()
     }
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
-        self.model_context()?.unwrap().log();
+        self.discovery_context()?.log();
         self.models_cache
             .get_with_timeout(
                 force,
                 Duration::from_secs(35),
-                || self.model_context().map(|c| c.unwrap().key()),
+                || self.discovery_context().map(|context| context.key()),
                 || async {
                     let response = self.initialize().await?;
                     catalog::with_discovered_models(catalog::configured_models(), &response)
@@ -395,6 +370,11 @@ impl Harness for ClaudeHarness {
             )
             .await
     }
+    async fn commands(&self, cwd: &std::path::Path) -> Result<Vec<SlashCommand>, HarnessError> {
+        let response = self.probe_initialize(Some(cwd)).await?;
+        Ok(parse_initialize_commands(&response))
+    }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         self.resolve_executable()?;
         match self.model_catalog(false).await {
@@ -463,12 +443,19 @@ impl ClaudeHarness {
         let (stdin_tx, stdin_rx) = mpsc::unbounded_channel::<StdinMsg>();
         tokio::spawn(stdin_writer(stdin, stdin_rx));
 
-        // The initial prompt as the first stdin user line (streaming-input
-        // mode). Ultrathink rides every user message — steers included.
-        let first = wire::user_message_line(&apply_ultrathink(request.reasoning, &request.prompt));
+        let (images, image_problems) = load_image_blocks(&request.attachments).await;
+        let first = wire::user_message_line(
+            &apply_ultrathink(request.reasoning, &request.prompt),
+            &images,
+        );
         stdin_tx.send(StdinMsg::Line(first)).ok();
 
         let (event_tx, event_rx) = mpsc::channel::<Result<AgentEvent, HarnessError>>(256);
+        for message in image_problems {
+            if event_tx.try_send(Ok(AgentEvent::Error { message })).is_err() {
+                log::debug!("claude run consumer gone before an image problem was reported");
+            }
+        }
         tokio::spawn(run_session(Session {
             normalizer,
             auto_approve: request.auto_approve,
@@ -492,13 +479,71 @@ impl ClaudeHarness {
 
 enum StdinMsg {
     Line(String),
-    /// Close stdin (end of steering input): the CLI finishes the current turn
-    /// and exits, which ends the run stream at stdout EOF.
     Close,
 }
 
-/// Owns the child's stdin; a write failure (EPIPE after the child died) is
-/// tolerated and logged.
+// The API rejects larger inline images.
+const MAX_INLINE_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+
+fn image_media_type(path: &std::path::Path, bytes: &[u8]) -> Option<&'static str> {
+    let by_extension = match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => Some("image/png"),
+        Some("jpg" | "jpeg") => Some("image/jpeg"),
+        Some("gif") => Some("image/gif"),
+        Some("webp") => Some("image/webp"),
+        _ => None,
+    };
+    let by_content = match bytes {
+        [0x89, b'P', b'N', b'G', ..] => Some("image/png"),
+        [0xFF, 0xD8, 0xFF, ..] => Some("image/jpeg"),
+        [b'G', b'I', b'F', b'8', ..] => Some("image/gif"),
+        [b'R', b'I', b'F', b'F', _, _, _, _, rest @ ..] if rest.starts_with(b"WEBP") => {
+            Some("image/webp")
+        }
+        _ => None,
+    };
+    by_content.or(by_extension)
+}
+
+async fn load_image_blocks(paths: &[String]) -> (Vec<wire::ImageBlock>, Vec<String>) {
+    use base64::Engine as _;
+    let mut blocks = Vec::new();
+    let mut problems = Vec::new();
+    for path in paths {
+        let name = std::path::Path::new(path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        let bytes = match tokio::fs::read(path).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                problems.push(format!("{name} wasn't sent: {error}"));
+                continue;
+            }
+        };
+        if bytes.len().div_ceil(3) * 4 > MAX_INLINE_IMAGE_BYTES {
+            problems.push(format!("{name} wasn't sent: Claude only accepts images up to 5 MB."));
+            continue;
+        }
+        let Some(media_type) = image_media_type(std::path::Path::new(path), &bytes) else {
+            problems.push(format!(
+                "{name} wasn't sent: only PNG, JPEG, GIF and WebP images are supported."
+            ));
+            continue;
+        };
+        blocks.push(wire::ImageBlock {
+            media_type,
+            base64_data: base64::engine::general_purpose::STANDARD.encode(&bytes),
+        });
+    }
+    (blocks, problems)
+}
+
 async fn stdin_writer(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<StdinMsg>) {
     while let Some(msg) = rx.recv().await {
         match msg {
@@ -514,7 +559,9 @@ async fn stdin_writer(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<Std
                 }
             }
             StdinMsg::Close => {
-                let _ = stdin.shutdown().await;
+                if let Err(error) = stdin.shutdown().await {
+                    log::debug!("claude stdin shutdown failed: {error}");
+                }
                 return;
             }
         }
@@ -532,12 +579,9 @@ struct Session {
     reasoning: Option<ReasoningLevel>,
     interrupt_grace: Duration,
     kill_grace: Duration,
-    /// Rolling stderr tail for the crash message on an unexpected exit.
     stderr_tail: crate::StderrTail,
 }
 
-/// The per-run event loop: one task multiplexing stdout frames, the steering
-/// mailbox, the interrupt token, and consumer liveness.
 async fn run_session(session: Session) {
     let Session {
         normalizer: mut norm,
@@ -560,18 +604,12 @@ async fn run_session(session: Session) {
     let request_input = Arc::new(request_input);
 
     let mut pending_steers = std::collections::VecDeque::new();
-    // Top-level tool calls in flight: a steer must not abort them (see
-    // `wire::steer_message_line`).
     let mut open_tools = std::collections::HashSet::new();
     let mut steering_open = true;
     let mut interrupted = false;
     let mut interrupt_sent = false;
     let mut any_done = false;
-    // A turn end held back while steers wait for their replay. Rapid `now`
-    // steers each interrupt the turn the previous one started, and the CLI
-    // replays only the last (verified on 2.1.280; the earlier texts still
-    // reach the model). If nothing follows the held result, the steers were
-    // absorbed: release them and the turn end instead of spinning forever.
+    // Steers can be absorbed without a replay, so a held turn end must time out.
     const HELD_DONE_SETTLE: Duration = Duration::from_secs(5);
     let mut held_done: Option<(AgentEvent, tokio::time::Instant)> = None;
     let mut done_after_interrupt = false;
@@ -585,8 +623,6 @@ async fn run_session(session: Session) {
                     if line.is_empty() {
                         continue;
                     }
-                    // The CLI is still producing: whatever it is doing is not
-                    // the quiet end the held turn end waits for.
                     if let Some((_, deadline)) = held_done.as_mut() {
                         *deadline = tokio::time::Instant::now() + HELD_DONE_SETTLE;
                     }
@@ -601,11 +637,8 @@ async fn run_session(session: Session) {
                         handle_control_request(req, auto_approve, &request_input, &stdin_tx);
                         continue;
                     }
-                    // Only the CLI's replay confirms that a prompt joined its
-                    // conversation. Writing stdin must not split ongoing text.
                     if let Frame::User(ref user) = frame {
-                        // A replay confirms its steer and every earlier one:
-                        // superseded steers are never replayed themselves.
+                        // Superseded steers are never replayed, so a replay confirms every earlier steer.
                         if user.parent_tool_use_id.is_none()
                             && let Some(at) = user
                                 .uuid
@@ -633,9 +666,7 @@ async fn run_session(session: Session) {
                             _ => {}
                         }
                         let is_done = matches!(ev, AgentEvent::Done { .. });
-                        // A `now` steer ends the turn it interrupts with a
-                        // result frame; the steer continues the run, so that
-                        // result is a steer boundary, not the end of the turn.
+                        // A `now` steer ends the turn it interrupts with a result frame.
                         if is_done && !interrupted && !pending_steers.is_empty() {
                             held_done =
                                 Some((ev, tokio::time::Instant::now() + HELD_DONE_SETTLE));
@@ -645,7 +676,7 @@ async fn run_session(session: Session) {
                             held_done = None;
                         }
                         if event_tx.send(Ok(ev)).await.is_err() {
-                            break 'main; // consumer gone — reap below
+                            break 'main;
                         }
                         if is_done {
                             any_done = true;
@@ -656,9 +687,11 @@ async fn run_session(session: Session) {
                         }
                     }
                 }
-                Ok(None) => break 'main, // stdout EOF: the CLI exited
+                Ok(None) => break 'main,
                 Err(e) => {
-                    let _ = event_tx.send(Err(HarnessError::Io(e))).await;
+                    if event_tx.send(Err(HarnessError::Io(e))).await.is_err() {
+                        log::debug!("claude run consumer gone before a stdout error was delivered");
+                    }
                     break 'main;
                 }
             },
@@ -666,8 +699,15 @@ async fn run_session(session: Session) {
             steer = steering.recv(), if steering_open && !interrupted => match steer {
                 Some(msg) => {
                     let id = uuid::Uuid::new_v4().to_string();
+                    let (images, image_problems) = load_image_blocks(&msg.attachments).await;
+                    for message in image_problems {
+                        if event_tx.send(Ok(AgentEvent::Error { message })).await.is_err() {
+                            break 'main;
+                        }
+                    }
                     let line = wire::steer_message_line(
                         &apply_ultrathink(reasoning, &msg.prompt),
+                        &images,
                         &id,
                         open_tools.is_empty(),
                     );
@@ -675,52 +715,43 @@ async fn run_session(session: Session) {
                     if stdin_tx.send(StdinMsg::Line(line)).is_err() { break 'main; }
                 }
                 None => {
-                    // Mailbox closed: end the input so the run can finish
-                    // after the current turn.
                     steering_open = false;
-                    let _ = stdin_tx.send(StdinMsg::Close);
+                    if stdin_tx.send(StdinMsg::Close).is_err() {
+                        log::debug!("claude stdin writer gone before stdin was closed");
+                    }
                 }
             },
 
             _ = interrupt.cancelled(), if !interrupt_sent => {
                 interrupt_sent = true;
                 interrupted = true;
-                let _ = stdin_tx.send(StdinMsg::Line(wire::interrupt_request_line("int_1")));
-                // Escalate if the CLI doesn't wind down within the grace
-                // periods: SIGTERM (kills bash trees, runs SessionEnd hooks),
-                // then SIGKILL. Aborted once the child is reaped.
-                if let Some(pid) = crate::process::signal_target(&child) {
-                    escalation = Some(tokio::spawn(async move {
-                        tokio::time::sleep(interrupt_grace).await;
-                        send_signal(&pid, Signal::Term);
-                        tokio::time::sleep(kill_grace).await;
-                        send_signal(&pid, Signal::Kill);
-                    }));
+                if stdin_tx.send(StdinMsg::Line(wire::interrupt_request_line("int_1"))).is_err() {
+                    log::debug!("claude stdin closed before the interrupt was sent");
                 }
+                escalation = crate::process::escalate_interrupt(&child, interrupt_grace, kill_grace);
             },
 
             _ = tokio::time::sleep_until(
                 held_done.as_ref().map_or_else(tokio::time::Instant::now, |(_, d)| *d)
             ), if held_done.is_some() => {
-                // The steers were absorbed into the turn that just ended.
                 while pending_steers.pop_front().is_some() {
                     let (prev, next) = norm.rotate_for_steer();
                     if event_tx.send(Ok(AgentEvent::Steered {
                         assistant_message_id: Some(prev), next_assistant_message_id: Some(next),
                     })).await.is_err() { break 'main; }
                 }
-                let (done, _) = held_done.take().expect("guarded by if");
-                if event_tx.send(Ok(done)).await.is_err() {
-                    break 'main;
+                if let Some((done, _)) = held_done.take() {
+                    if event_tx.send(Ok(done)).await.is_err() {
+                        break 'main;
+                    }
+                    any_done = true;
                 }
-                any_done = true;
             },
 
             _ = event_tx.closed() => break 'main,
         }
     }
 
-    // A turn end still held when the CLI exited is the run's real end.
     if let Some((done, _)) = held_done.take()
         && !event_tx.is_closed()
         && event_tx.send(Ok(done)).await.is_ok()
@@ -728,28 +759,34 @@ async fn run_session(session: Session) {
         any_done = true;
     }
 
-    // Terminal bookkeeping: never end the stream without a Done unless the
-    // consumer already hung up.
     if !event_tx.is_closed() {
         if interrupted && !done_after_interrupt {
-            let _ = event_tx
+            if event_tx
                 .send(Ok(AgentEvent::Done {
                     status: DoneStatus::Interrupted,
                     result: None,
                     error: None,
                     session_id: norm.session_id.clone(),
                 }))
-                .await;
+                .await
+                .is_err()
+            {
+                log::debug!("claude run consumer gone before the interrupted Done was delivered");
+            }
         } else if !interrupted && !any_done {
             let status = child.try_wait().ok().flatten();
-            let _ = event_tx
+            if event_tx
                 .send(Ok(AgentEvent::Done {
                     status: DoneStatus::Errored,
                     result: None,
                     error: Some(crate::crash_message("claude", status, &stderr_tail)),
                     session_id: norm.session_id.clone(),
                 }))
-                .await;
+                .await
+                .is_err()
+            {
+                log::debug!("claude run consumer gone before the crash Done was delivered");
+            }
         }
     }
 
@@ -765,12 +802,7 @@ type RequestInputFn = Box<
         + Sync,
 >;
 
-/// Serve one `can_use_tool` control request (the CLI blocks until SOME
-/// response arrives, so every request must be answered). Tools are allowed
-/// outright when the run auto-approves; otherwise they become a yes/no
-/// question. `AskUserQuestion` is always intercepted — its questions go to
-/// the host, and the answers come back keyed by question text, as the tool
-/// expects. Both wait in a subtask so the frame loop keeps flowing.
+/// The CLI blocks until every `can_use_tool` request gets a response.
 fn handle_control_request(
     req: ControlRequestFrame,
     auto_approve: bool,
@@ -791,7 +823,7 @@ fn handle_control_request(
         let stdin_tx = stdin_tx.clone();
         tokio::spawn(async move {
             let question = permission_question(&req.request.tool_name, &req.request.input);
-            // A dropped sender degrades to a denial: never silently allowed.
+            // A dropped sender must deny, never allow.
             let answers = (request_input)(vec![question.clone()])
                 .await
                 .unwrap_or_default();
@@ -818,25 +850,16 @@ fn handle_control_request(
         let request_id = req.request_id;
         let input = req.request.input;
         let questions = parse_questions(&input);
-        // The engine's input bridge is the SOLE emitter of
-        // `InputRequested`/`InputResolved`: it mints the request id, parks the
-        // resolver for `respond_input`, and surfaces both events. Emitting our
-        // own copy here (keyed by Claude's control-request id) folded a SECOND
-        // input part into the doc whose id no resolver knew — the QuestionPanel
-        // answered that unanswerable twin and the run never resumed.
-        //
-        // A dropped sender (caller went away) degrades to empty answers so the
-        // agent is unblocked rather than wedged.
+        // Don't emit InputRequested here: the engine's input bridge owns that lifecycle.
         let answers = (request_input)(questions.clone()).await.unwrap_or_default();
         let updated = updated_input_with_answers(&input, &questions, &answers);
         let line = control_response_line(&request_id, allow_response(updated));
-        let _ = stdin_tx.send(StdinMsg::Line(line));
+        if stdin_tx.send(StdinMsg::Line(line)).is_err() {
+            log::debug!("claude stdin writer gone before the AskUserQuestion answer was sent");
+        }
     });
 }
 
-/// Parse Claude's `AskUserQuestion` tool input into [`UserInputQuestion`]s
-/// (tolerant of `header`/`title`, `question`/`prompt`, string or object
-/// options — option descriptions are dropped, the wire type carries labels).
 fn parse_questions(input: &Value) -> Vec<UserInputQuestion> {
     let raw = input.get("questions").and_then(Value::as_array);
     raw.map(|a| a.as_slice())
@@ -876,8 +899,6 @@ fn parse_questions(input: &Value) -> Vec<UserInputQuestion> {
         .collect()
 }
 
-/// Merge the user's answers back into the tool input, keyed by question text
-/// (single-select ⇒ a string, multi-select ⇒ an array), as the tool expects.
 fn updated_input_with_answers(
     input: &Value,
     questions: &[UserInputQuestion],
@@ -944,7 +965,33 @@ mod tests {
         }];
         let updated = updated_input_with_answers(&input, &qs, &answers);
         assert_eq!(updated["answers"]["Pick one"], json!("B"));
-        // Original input is preserved alongside the answers.
         assert!(updated["questions"].is_array());
+    }
+
+    #[test]
+    fn image_media_type_prefers_file_contents_over_extension() {
+        let path = std::path::Path::new;
+        assert_eq!(
+            image_media_type(path("renamed.png"), b"\xFF\xD8\xFFjpeg"),
+            Some("image/jpeg")
+        );
+    }
+
+    #[test]
+    fn image_media_type_falls_back_to_extension_then_magic_bytes() {
+        let path = std::path::Path::new;
+        assert_eq!(image_media_type(path("a.PNG"), b""), Some("image/png"));
+        assert_eq!(image_media_type(path("a.jpg"), b""), Some("image/jpeg"));
+        assert_eq!(image_media_type(path("a.gif"), b""), Some("image/gif"));
+        assert_eq!(image_media_type(path("a.webp"), b""), Some("image/webp"));
+        assert_eq!(
+            image_media_type(path("paste"), b"\x89PNG\r\n"),
+            Some("image/png")
+        );
+        assert_eq!(
+            image_media_type(path("paste"), b"RIFF\0\0\0\0WEBPVP8"),
+            Some("image/webp")
+        );
+        assert_eq!(image_media_type(path("a.svg"), b"<svg"), None);
     }
 }

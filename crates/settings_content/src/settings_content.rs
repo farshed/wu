@@ -185,6 +185,9 @@ pub struct SettingsContent {
     #[serde(flatten)]
     pub remote: RemoteSettingsContent,
 
+    /// Settings for agent chats.
+    pub agent_chat: Option<AgentChatSettingsContent>,
+
     /// Settings related to the file finder.
     pub file_finder: Option<FileFinderSettingsContent>,
 
@@ -322,7 +325,8 @@ impl SettingsContent {
 fallible_options::flattened_deserialize!(SettingsContent {
     sections: { project, theme, extension, workspace, editor, remote },
     options: {
-        call_hierarchy, file_finder, git_panel, tabs, tab_bar, status_bar, activity_bar, preview_tabs,
+        agent_chat, call_hierarchy, file_finder, git_panel, tabs, tab_bar, status_bar, activity_bar,
+        preview_tabs,
         auto_update, base_keymap, debugger, diagnostics,
         git,
         global_lsp_settings, image_viewer, markdown_preview, hide_mouse,
@@ -1000,6 +1004,94 @@ pub struct MarkdownPreviewSettingsContent {
     ///
     /// Default: 800
     pub max_width: Option<PixelSetting>,
+}
+
+/// Settings for agent chats.
+#[with_fallible_options]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, MergeFrom, Default, PartialEq)]
+pub struct AgentChatSettingsContent {
+    /// Which key sends a message from the chat box.
+    ///
+    /// Default: "enter"
+    pub send_with: Option<AgentChatSendKey>,
+    /// Fold each turn's thinking, tool calls and narration into one line, leaving only the reply.
+    ///
+    /// Default: false
+    pub compact_transcript: Option<bool>,
+    /// The layout of the model and effort picker.
+    ///
+    /// Default: "full"
+    pub model_picker: Option<AgentChatModelPickerLayout>,
+    /// Show a microphone button in the chat box for on-device dictation.
+    ///
+    /// Default: true
+    pub dictation: Option<bool>,
+    /// Play a sound when an agent finishes.
+    ///
+    /// Default: true
+    pub sound_when_done: Option<bool>,
+    /// Play a sound when an agent needs your input.
+    ///
+    /// Default: true
+    pub sound_when_needs_input: Option<bool>,
+    /// Play a sound when an agent fails.
+    ///
+    /// Default: true
+    pub sound_on_error: Option<bool>,
+    /// Show a desktop notification when an agent finishes, needs input or fails.
+    ///
+    /// Default: true
+    pub notifications: Option<bool>,
+    /// Only notify when Wu is not the active app.
+    ///
+    /// Default: true
+    pub notify_only_in_background: Option<bool>,
+}
+
+#[with_fallible_options]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    Default,
+    PartialEq,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentChatSendKey {
+    /// Enter sends; Shift-Enter adds a line.
+    #[default]
+    Enter,
+    /// Cmd-Enter (Ctrl-Enter on Linux and Windows) sends; Enter adds a line.
+    ModifierEnter,
+}
+
+#[with_fallible_options]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    Default,
+    PartialEq,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentChatModelPickerLayout {
+    /// A model list with an effort row and options below it.
+    #[default]
+    Full,
+    /// An effort slider above a short model list.
+    Compact,
 }
 
 /// The settings for the image viewer.

@@ -414,16 +414,19 @@ fn main() {
     );
 
     let (shell_env_loaded_tx, shell_env_loaded_rx) = oneshot::channel();
+    let (agent_shell_env_tx, agent_shell_env_rx) = oneshot::channel();
     if !stdout_is_a_pty() {
         app.background_executor()
             .spawn(async {
                 #[cfg(unix)]
                 util::load_login_shell_environment().await.log_err();
                 shell_env_loaded_tx.send(()).ok();
+                agent_shell_env_tx.send(()).ok();
             })
             .detach();
     } else {
-        drop(shell_env_loaded_tx)
+        drop(shell_env_loaded_tx);
+        drop(agent_shell_env_tx);
     }
 
     app.on_open_urls({
@@ -623,7 +626,7 @@ fn main() {
         project_symbols::init(cx);
         project_panel::init(cx);
         outline_panel::init(cx);
-        agent_chat::init(cx);
+        agent_chat::init(Some(agent_shell_env_rx), cx);
         tasks_ui::init(cx);
         snippets_ui::init(cx);
         search::init(cx);

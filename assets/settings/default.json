@@ -106,6 +106,20 @@
     // workspace when the centered layout is used.
     "right_padding": 0.2,
   },
+  // Agent chat settings
+  "agent_chat": {
+    // "modifier_enter" means Cmd-Enter on macOS and Ctrl-Enter elsewhere.
+    "send_with": "enter",
+    "compact_transcript": false,
+    "model_picker": "full",
+    // Downloads a speech model on first use.
+    "dictation": true,
+    "sound_when_done": true,
+    "sound_when_needs_input": true,
+    "sound_on_error": true,
+    "notifications": true,
+    "notify_only_in_background": true,
+  },
   // Image viewer settings
   "image_viewer": {
     // The unit for image file sizes: "binary" (KiB, MiB) or decimal (KB, MB)

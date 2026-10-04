@@ -1218,10 +1218,34 @@
     },
   },
   {
-    "context": "AgentComposer > Editor && mode == auto_height",
+    "context": "AgentComposer && !send_with_modifier > Editor && mode == auto_height",
     "bindings": {
       "enter": "agent_chat::Send",
       "shift-enter": "editor::Newline",
+      "ctrl-enter": "agent_chat::Send",
+    },
+  },
+  {
+    "context": "AgentComposer && send_with_modifier > Editor && mode == auto_height",
+    "bindings": {
+      "ctrl-enter": "agent_chat::Send",
+      "enter": "editor::Newline",
+    },
+  },
+  {
+    "context": "AgentComposer > Editor",
+    "bindings": {
+      "ctrl-d": "agent_chat::ToggleDictation",
+    },
+  },
+  {
+    "context": "AgentComposer && command_menu > Editor",
+    "bindings": {
+      "up": "agent_chat::SelectPreviousCommand",
+      "down": "agent_chat::SelectNextCommand",
+      "enter": "agent_chat::AcceptCommand",
+      "tab": "agent_chat::AcceptCommand",
+      "escape": "agent_chat::DismissCommands",
     },
   },
 ]

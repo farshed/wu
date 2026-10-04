@@ -1,6 +1,6 @@
 use crate::{
     AgentKind,
-    chat_style::{accent, ink, text_faint, ui},
+    chat_style::{accent, ink, popover_card, text_faint, ui},
     session::{AgentStore, ContextSnapshot},
 };
 use gpui::{
@@ -9,7 +9,7 @@ use gpui::{
     canvas, div, point, px, relative,
 };
 use theme::ActiveTheme as _;
-use ui::prelude::*;
+use ui::{Icon, IconName, IconSize, prelude::*};
 
 const CONTEXT_WARNING: f32 = 0.75;
 const CONTEXT_DANGER: f32 = 0.9;
@@ -136,23 +136,6 @@ pub(crate) fn context_details(context: Option<ContextSnapshot>) -> String {
     }
 }
 
-fn popover_card(cx: &App) -> gpui::Div {
-    let colors = cx.theme().colors();
-    div()
-        .flex()
-        .flex_col()
-        .border_1()
-        .border_color(colors.border)
-        .rounded(px(12.))
-        .shadow_lg()
-        .bg(colors.elevated_surface_background)
-        .p(px(4.))
-        .gap(px(2.))
-        .overflow_hidden()
-        .text_size(ui(13.))
-        .text_color(colors.text)
-}
-
 fn menu_heading(label: &str, cx: &App) -> impl IntoElement {
     div()
         .px(px(8.))
@@ -233,7 +216,10 @@ pub struct UsageCard {
 
 impl UsageCard {
     pub fn new(store: Entity<AgentStore>, kind: AgentKind, cx: &mut Context<Self>) -> Self {
-        store.update(cx, |store, cx| store.refresh_plan_usage(kind, true, cx));
+        store.update(cx, |store, cx| {
+            store.refresh_plan_usage(kind, true, cx);
+            store.refresh_accounts(kind, cx);
+        });
         Self {
             _subscription: cx.observe(&store, |_, _, cx| cx.notify()),
             store,
@@ -344,6 +330,137 @@ impl Render for UsageCard {
                         )
                     }),
             )
+            .children(self.render_accounts(cx))
+    }
+}
+
+impl UsageCard {
+    fn render_accounts(&self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
+        let state = self.store.read(cx).accounts(self.kind)?;
+        if state.accounts.is_empty() && state.error.is_none() {
+            return None;
+        }
+        let colors = cx.theme().colors();
+        let status = cx.theme().status();
+        let switching = state.switching.clone();
+        let rows = state.accounts.iter().map(|account| {
+            let usage_fraction = if account.active {
+                None
+            } else {
+                state
+                    .usage
+                    .get(&account.id)
+                    .and_then(|usage| usage.as_ref().ok())
+                    .and_then(|usage| {
+                        usage
+                            .windows
+                            .iter()
+                            .map(|window| window.used_fraction.clamp(0.0, 1.0))
+                            .reduce(f32::max)
+                    })
+            };
+            let account_id = account.id.clone();
+            let is_switching = switching.as_deref() == Some(account.id.as_str());
+            let active = account.active;
+            let hover = colors.element_hover;
+            v_flex()
+                .id(SharedString::from(format!("agent-account-{}", account.id)))
+                .px(px(8.))
+                .py(px(6.))
+                .gap(px(4.))
+                .rounded(px(7.))
+                .when(!active, |this| {
+                    this.cursor_pointer().hover(move |style| style.bg(hover))
+                })
+                .child(
+                    h_flex()
+                        .gap(px(6.))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_size(ui(12.5))
+                                .text_color(colors.text)
+                                .child(account.label.clone()),
+                        )
+                        .when_some(account.plan.clone(), |this, plan| {
+                            this.child(
+                                div()
+                                    .text_size(ui(11.))
+                                    .text_color(colors.text_muted)
+                                    .child(plan),
+                            )
+                        })
+                        .when(active, |this| {
+                            this.child(
+                                Icon::new(IconName::AgentCheck)
+                                    .size(IconSize::XSmall)
+                                    .color(Color::Accent),
+                            )
+                        })
+                        .when(is_switching, |this| {
+                            this.child(
+                                div()
+                                    .text_size(ui(11.))
+                                    .text_color(colors.text_muted)
+                                    .child("Switching…"),
+                            )
+                        }),
+                )
+                .when_some(usage_fraction, |this, fraction| {
+                    let color = if fraction >= USAGE_DANGER {
+                        status.error
+                    } else if fraction >= USAGE_WARNING {
+                        status.warning
+                    } else {
+                        accent(cx)
+                    };
+                    this.child(
+                        div()
+                            .h(px(3.))
+                            .w_full()
+                            .rounded_full()
+                            .bg(ink(0.08, cx))
+                            .child(div().h_full().w(relative(fraction)).rounded_full().bg(color)),
+                    )
+                })
+                .when(!active, |this| {
+                    this.on_click(cx.listener(move |this, _, _, cx| {
+                        let account_id = account_id.clone();
+                        this.store.update(cx, |store, cx| {
+                            store.activate_account(this.kind, account_id, cx)
+                        });
+                    }))
+                })
+        });
+        Some(
+            v_flex()
+                .border_t_1()
+                .border_color(colors.border_variant)
+                .pt(px(2.))
+                .child(menu_heading("Accounts", cx))
+                .children(rows)
+                .when_some(state.error.clone(), |this, error| {
+                    this.child(
+                        div()
+                            .px(px(8.))
+                            .pb(px(6.))
+                            .text_size(ui(12.))
+                            .text_color(colors.text_muted)
+                            .child(error),
+                    )
+                })
+                .child(
+                    div()
+                        .px(px(8.))
+                        .pb(px(6.))
+                        .text_size(ui(11.))
+                        .text_color(text_faint(cx))
+                        .child("Sign in to another account in the CLI and Wu remembers it here."),
+                )
+                .into_any_element(),
+        )
     }
 }
 

@@ -1,6 +1,3 @@
-//! Stable ownership of child traffic. A thread belongs to its original spawn
-//! call; activity ids and early thread notifications are never document ids.
-
 use std::collections::{HashMap, HashSet};
 
 use crate::AgentEvent;
@@ -41,8 +38,6 @@ impl Subagents {
         }
     }
 
-    /// thread/resume returns the stored parent items. Rebuild ownership without
-    /// replaying chips or content that already lives in the transcript.
     pub(super) fn restore(&mut self, thread: &Value) {
         for item in thread
             .get("turns")
@@ -114,8 +109,7 @@ impl Subagents {
         let mut events: Vec<_> = map_item(phase, &item)
             .into_iter()
             .filter(|event| match event {
-                // Completed items refresh tool metadata, but a spawn chip must
-                // appear once even when its parent text segment has already ended.
+                // Completed items repeat the spawn call; emit its chip only once.
                 AgentEvent::ToolCall { id, call } if call.is_subagent_spawn() => {
                     self.emitted_spawns.insert(id.clone())
                 }
@@ -129,8 +123,7 @@ impl Subagents {
         events
     }
 
-    /// Call only for a spawn. Emit its parent chip BEFORE the returned events,
-    /// so even a child that finished before registration binds to a real chip.
+    /// Emit the spawn's parent chip before the returned events.
     pub(super) fn bind(&mut self, child: &str, spawn: &str) -> Vec<AgentEvent> {
         if child.is_empty() || child == self.root || spawn.is_empty() {
             return Vec::new();
@@ -153,8 +146,7 @@ impl Subagents {
         if let Some(owner) = self.spawns.get(child) {
             return events.into_iter().map(|e| tag(owner, e)).collect();
         }
-        // A child's output may beat both thread/started and the spawn result.
-        // Bound the aggregate backlog for threads that never acquire a spawn.
+        // A child's output may arrive before the spawn item that owns it.
         for event in events {
             let bytes = serde_json::to_vec(&event).map_or(MAX_PENDING_BYTES, |v| v.len());
             if self.pending_bytes.saturating_add(bytes) > MAX_PENDING_BYTES {

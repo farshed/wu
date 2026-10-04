@@ -1,9 +1,4 @@
-//! One interface over coding agent CLIs. Portions are MIT licensed, see
-//! LICENSE-THIRD-PARTY.
-//!
-//! Native drivers speak each agent's own wire directly: Claude Code over
-//! stream-json ([`ClaudeHarness`]) and Codex over the app-server JSON-RPC
-//! ([`CodexHarness`]).
+//! Portions are MIT licensed, see LICENSE-THIRD-PARTY.
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
@@ -24,27 +19,22 @@ pub enum HarnessError {
     Io(#[from] std::io::Error),
 }
 
-/// A steer prompt pushed into a live run; delivered at the harness's steering boundary.
 pub struct SteerMessage {
     pub prompt: String,
     pub message_id: Option<String>,
+    /// Absolute image file paths.
+    pub attachments: Vec<String>,
+    pub skills: Vec<SkillRef>,
 }
 
-/// Host-side controls handed to a run: input-request bridge + steering mailbox.
 pub struct RunControls {
-    /// The run sends questions and awaits answers (blocks the agent).
     pub request_input: Box<
         dyn Fn(Vec<UserInputQuestion>) -> oneshot::Receiver<Vec<UserInputAnswer>> + Send + Sync,
     >,
-    /// Steer prompts consumed at step/turn boundaries.
     pub steering: mpsc::Receiver<SteerMessage>,
-    /// Cancel to interrupt the live run: the harness sends its protocol-level
-    /// interrupt, then escalates to SIGTERM/SIGKILL on the child after a grace
-    /// period. The run's stream ends with `Done { status: Interrupted }`.
     pub interrupt: CancellationToken,
 }
 
-/// Catalog provenance stays internal; callers retain the Vec<Model> shape.
 #[derive(Clone, Debug)]
 pub struct ModelCatalog {
     pub models: Vec<Model>,
@@ -65,11 +55,9 @@ pub trait Harness: Send + Sync {
     fn supports_steering(&self) -> bool;
     fn steering_mode(&self) -> SteeringMode;
     fn reasoning_levels(&self) -> &[ReasoningLevel];
-    /// Whether the agent's own CLI is present on this device.
     fn installed(&self) -> bool {
         true
     }
-    /// Absolute path to the independently-installed agent CLI.
     fn executable_path(&self) -> Option<std::path::PathBuf> {
         None
     }
@@ -87,7 +75,14 @@ pub trait Harness: Send + Sync {
         })
     }
 
-    /// Run one (persistent) session; the stream ends with `AgentEvent::Done`.
+    async fn commands(&self, _cwd: &std::path::Path) -> Result<Vec<SlashCommand>, HarnessError> {
+        Ok(Vec::new())
+    }
+
+    async fn skills(&self, _cwd: &std::path::Path) -> Result<Vec<Skill>, HarnessError> {
+        Ok(Vec::new())
+    }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -95,6 +90,7 @@ pub trait Harness: Send + Sync {
     ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError>;
 }
 
+pub mod accounts;
 mod catalog;
 mod catalog_failure;
 pub use catalog_failure::{CatalogFailure, CatalogFailureCode};
@@ -105,12 +101,9 @@ pub(crate) mod jsonrpc;
 mod model_context;
 pub mod process;
 mod proto;
-pub mod shell_env;
 pub mod usage;
 pub mod view;
 
-/// The `/name args` command at the start of a prompt. Text indented like a
-/// code block (a tab, or four or more spaces on its line) stays literal.
 pub fn leading_command(text: &str) -> Option<(&str, &str)> {
     let trimmed = text.trim_start_matches([' ', '\t', '\r', '\n']);
     let indent = text[..text.len() - trimmed.len()]
@@ -126,18 +119,7 @@ pub fn leading_command(text: &str) -> Option<(&str, &str)> {
     Some((name, parts.next().unwrap_or_default().trim()))
 }
 
-/// Add the login shell's PATH to a child process while preserving the PATH of
-/// the current process. This lets GUI/service launches find user-installed
-/// CLIs such as Homebrew's `gh` without changing the daemon's own environment.
-pub fn compose_login_shell_path(cmd: &mut tokio::process::Command) {
-    compose_path(cmd.as_std_mut(), std::iter::empty());
-}
-
-/// Compose the child's PATH: the resolved executable's directory first, then
-/// our own PATH, then the login-shell PATH snapshot — deduped. npm-shim CLIs
-/// are `#!/usr/bin/env node` scripts whose `node` lives beside them in the
-/// version manager's bin dir, and the CLIs themselves shell out to tools
-/// (git, rg, node) that a GUI/service launch's own PATH may lack.
+/// npm-shim CLIs are `#!/usr/bin/env node` scripts whose `node` sits beside them.
 pub fn compose_child_path(cmd: &mut process::Command, exe: &std::path::Path) {
     compose_path(
         cmd.as_std_mut(),
@@ -156,9 +138,6 @@ fn compose_path<'a>(
     if let Some(path) = std::env::var_os("PATH") {
         paths.extend(std::env::split_paths(&path));
     }
-    if let Some(shell_path) = shell_env::login_shell_path() {
-        paths.extend(std::env::split_paths(shell_path));
-    }
     let mut seen = std::collections::HashSet::new();
     paths.retain(|p| !p.as_os_str().is_empty() && seen.insert(p.clone()));
     if let Ok(joined) = std::env::join_paths(paths) {
@@ -166,9 +145,6 @@ fn compose_path<'a>(
     }
 }
 
-/// Rolling tail of a child's stderr, shared between the reader task and the
-/// crash-message composer: an unexpected exit surfaces "<name> exited
-/// unexpectedly (<status>): <last stderr lines>" instead of a bare shrug.
 #[derive(Clone, Default)]
 pub(crate) struct StderrTail(std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>);
 
@@ -191,7 +167,6 @@ impl StderrTail {
         }
     }
 
-    /// The captured tail as one display string, `None` when nothing arrived.
     pub(crate) fn snapshot(&self) -> Option<String> {
         let tail = self
             .0
@@ -210,8 +185,6 @@ impl StderrTail {
     }
 }
 
-/// "exit code 137" / "signal 9 (killed)" / "unknown" — the status half of a
-/// crash message, from a `try_wait` result after the stream ended.
 pub(crate) fn describe_exit(status: Option<std::process::ExitStatus>) -> String {
     let Some(status) = status else {
         return "still running".into();
@@ -229,7 +202,6 @@ pub(crate) fn describe_exit(status: Option<std::process::ExitStatus>) -> String 
     "unknown exit".into()
 }
 
-/// Remove recognizable credentials at the boundary where diagnostics become UI text.
 fn redact_secrets(text: &str) -> String {
     let lower = text.to_ascii_lowercase();
     let markers = ["bearer ", "basic ", "sk-", "ghp_", "xox", "api_key="];
@@ -260,7 +232,6 @@ fn redact_secrets(text: &str) -> String {
             .map_or(text.len(), |at| credential + at);
         result.push_str(&text[offset..credential]);
         result.push_str("[REDACTED]");
-        // Empty credentials still advance past the marker.
         offset = end.max(start + marker.len());
     }
     result.push_str(&text[offset..]);
@@ -291,7 +262,6 @@ fn crash_diagnostics_redact_credentials_but_keep_context() {
     assert!(!message.contains("secret-one"));
 }
 
-/// The full crash message: status plus the stderr tail when there is one.
 pub(crate) fn crash_message(
     name: &str,
     status: Option<std::process::ExitStatus>,
@@ -310,20 +280,14 @@ pub(crate) fn crash_message(
 pub use claude::ClaudeHarness;
 pub use codex::CodexHarness;
 
-// ---------------------------------------------------------------------------
-// Child lifecycle
-// ---------------------------------------------------------------------------
-
-/// Reap the child: Unix sends SIGTERM then SIGKILL after `kill_grace`;
-/// Windows kills the child.
+#[cfg_attr(not(unix), allow(unused_variables))]
 pub(crate) async fn shutdown_child(child: &mut process::Child, kill_grace: std::time::Duration) {
-    #[cfg(windows)]
+    #[cfg(not(unix))]
     {
-        let _ = kill_grace;
         child.start_kill().ok();
         child.wait().await.ok();
     }
-    #[cfg(not(windows))]
+    #[cfg(unix)]
     {
         let target = process::signal_target(child);
         if matches!(child.try_wait(), Ok(Some(_))) {
@@ -344,8 +308,10 @@ pub(crate) async fn shutdown_child(child: &mut process::Child, kill_grace: std::
         if let Some(pid) = target {
             send_signal(&pid, Signal::Kill);
         }
-        let _ = child.start_kill();
-        let _ = child.wait().await;
+        child.start_kill().ok();
+        if let Err(error) = child.wait().await {
+            log::warn!("failed to reap agent process: {error}");
+        }
     }
 }
 
@@ -363,7 +329,6 @@ pub(crate) fn send_signal(pid: &i32, signal: Signal) {
         Signal::Kill => libc::SIGKILL,
     };
     // SAFETY: kill(2) targets an owned child or its private process group.
-    // Negative targets include descendants after the group leader exits.
     unsafe {
         libc::kill(*pid, sig);
     }

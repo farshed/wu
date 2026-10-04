@@ -62,6 +62,7 @@ pub(crate) fn settings_data(cx: &App) -> Vec<SettingsPage> {
         debugger_page(),
         terminal_page(),
         version_control_page(),
+        agent_chat_page(),
         network_page(),
         developer_page(),
     ]
@@ -7145,6 +7146,160 @@ fn version_control_page() -> SettingsPage {
             file_diff_section(),
             git_hunks_section(),
         ],
+    }
+}
+
+fn agent_chat_page() -> SettingsPage {
+    fn chat_section() -> [SettingsPageItem; 5] {
+        [
+            SettingsPageItem::SectionHeader("Chat"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Send With",
+                description: "Which key sends a message from the chat box.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.send_with"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.send_with.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().send_with = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Compact Transcript",
+                description: "Fold each turn's thinking, tool calls and narration into one line, leaving only the reply.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.compact_transcript"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.compact_transcript.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().compact_transcript = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Model Picker",
+                description: "The layout of the model and effort picker.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.model_picker"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.model_picker.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().model_picker = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Dictation",
+                description: "Show a microphone button for on-device dictation.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.dictation"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.dictation.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().dictation = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+        ]
+    }
+
+    fn notifications_section() -> [SettingsPageItem; 6] {
+        [
+            SettingsPageItem::SectionHeader("Notifications"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Sound When Done",
+                description: "Play a sound when an agent finishes.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.sound_when_done"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.sound_when_done.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().sound_when_done = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Sound When Input Is Needed",
+                description: "Play a sound when an agent needs your input.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.sound_when_needs_input"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.sound_when_needs_input.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().sound_when_needs_input = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Sound On Error",
+                description: "Play a sound when an agent fails.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.sound_on_error"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.sound_on_error.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().sound_on_error = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Desktop Notifications",
+                description: "Show a notification when an agent finishes, needs input or fails.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.notifications"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.notifications.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().notifications = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Only In Background",
+                description: "Only notify when Wu is not the active app.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.notify_only_in_background"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.notify_only_in_background.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().notify_only_in_background = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+        ]
+    }
+
+    SettingsPage {
+        title: "Agent Chat",
+        items: concat_sections![chat_section(), notifications_section()],
     }
 }
 

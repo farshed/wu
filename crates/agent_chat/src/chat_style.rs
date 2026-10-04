@@ -1,14 +1,11 @@
-//! Shared visual roles and small pieces of the chat UI.
-
 use gpui::{
     Animation, AnimationExt as _, AnyElement, App, ClickEvent, CursorStyle, ElementId, Hsla,
     IntoElement, ParentElement, Rems, RenderOnce, Styled, Window, div, hsla, px, rems, rgb,
 };
 use std::time::Duration;
 use theme::ActiveTheme as _;
-use ui::{Clickable, Toggleable, prelude::*};
+use ui::{Clickable, Toggleable, Tooltip, prelude::*};
 
-/// A size designed at a 16px baseline, scaling with the UI font size.
 pub(crate) fn ui(pixels_at_default: f32) -> Rems {
     rems(pixels_at_default / 16.0)
 }
@@ -44,7 +41,6 @@ pub(crate) fn wash(alpha: f32, cx: &App) -> Hsla {
     }
 }
 
-/// The opaque page color, for glyphs drawn on solid text-colored plates.
 pub(crate) fn page(cx: &App) -> Hsla {
     cx.theme().colors().background.opacity(1.0)
 }
@@ -70,12 +66,38 @@ pub(crate) fn accent(cx: &App) -> Hsla {
     cx.theme().colors().text_accent
 }
 
+pub(crate) fn selected_row(cx: &App) -> Hsla {
+    if is_dark(cx) {
+        wash(0.11, cx)
+    } else {
+        wash(0.06, cx)
+    }
+}
+
+pub(crate) fn popover_card(cx: &App) -> gpui::Div {
+    let colors = cx.theme().colors();
+    div()
+        .flex()
+        .flex_col()
+        .border_1()
+        .border_color(colors.border)
+        .rounded(px(12.))
+        .shadow_lg()
+        .bg(colors.elevated_surface_background)
+        .p(px(4.))
+        .gap(px(2.))
+        .overflow_hidden()
+        .text_size(ui(13.))
+        .text_color(colors.text)
+}
+
 #[derive(IntoElement)]
 pub(crate) struct Chip {
     id: ElementId,
     child: AnyElement,
     radius: f32,
     selected: bool,
+    tooltip: Option<SharedString>,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
 }
 
@@ -86,8 +108,14 @@ impl Chip {
             child: child.into_any_element(),
             radius,
             selected: false,
+            tooltip: None,
             on_click: None,
         }
+    }
+
+    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(text.into());
+        self
     }
 }
 
@@ -120,6 +148,7 @@ impl RenderOnce for Chip {
             .when(self.selected, |this| this.bg(hover))
             .hover(|style| style.bg(hover))
             .child(self.child)
+            .when_some(self.tooltip, |this, text| this.tooltip(Tooltip::text(text)))
             .when_some(self.on_click, |this, on_click| {
                 this.on_click(move |event, window, cx| on_click(event, window, cx))
             })

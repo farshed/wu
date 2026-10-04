@@ -1,4 +1,3 @@
-//! One initialize response feeds both picker catalogs for two minutes.
 use crate::HarnessError;
 use serde_json::Value;
 use std::{future::Future, time::Duration};

@@ -5632,7 +5632,7 @@ mod tests {
             git_ui::init(cx);
             project_panel::init(cx);
             outline_panel::init(cx);
-            agent_chat::init(cx);
+            agent_chat::init(None, cx);
             terminal_view::init(cx);
             image_viewer::init(cx);
             tasks_ui::init(cx);

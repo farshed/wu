@@ -1,0 +1,18 @@
+[package]
+name = "mermaid_render"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/mermaid_render.rs"
+doctest = false
+
+[dependencies]
+mermaid-rs-renderer.workspace = true
+thiserror.workspace = true
+usvg.workspace = true

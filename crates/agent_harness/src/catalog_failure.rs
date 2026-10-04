@@ -1,4 +1,3 @@
-//! Stable failure codes for model discovery without changing the model RPC shape.
 use crate::HarnessError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -52,8 +52,6 @@ async fn initialize_is_shared_and_curated_metadata_survives_the_live_union() {
             ReasoningLevel::Ultrathink
         ]
     );
-    // Explicit gateway settings from the environment remain selectable, but
-    // initialize must not introduce or promote an unresolved alias.
     for alias in ["default", "opus[1m]", "fable[1m]", "sonnet"] {
         assert_eq!(
             catalog.models.iter().filter(|m| m.id == alias).count(),

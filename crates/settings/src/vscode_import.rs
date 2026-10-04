@@ -171,6 +171,7 @@ impl VsCodeSettings {
 
     pub fn settings_content(&self) -> SettingsContent {
         SettingsContent {
+            agent_chat: None,
             auto_update: None,
             base_keymap: Some(BaseKeymapContent::VSCode),
             credentials_url: None,

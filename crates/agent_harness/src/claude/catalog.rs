@@ -1,16 +1,5 @@
-//! Model catalog + effort mapping for Claude Code, mirroring Claude Code's own
-//! model picker.
-//!
-//! Runtime initialize discovery appends concrete model ids to this curated list.
-//! Curated rows retain their labels, effort ladders, and option sets because the
-//! CLI can under-report supported modes. The shared initialize probe also supplies
-//! slash commands and is cached by credential and binary context.
-
 use crate::{Model, ModelOption, ModelOptionChoice, ReasoningLevel};
 
-/// The ultrathink directive rides every user message as a prompt prefix — that
-/// is how the mode actually works in Claude Code (a prompt convention, not an
-/// effort flag). Applied to the initial prompt AND every steer.
 pub(crate) const ULTRATHINK_PREFIX: &str = "Ultrathink:\n";
 
 pub(crate) fn apply_ultrathink(reasoning: Option<ReasoningLevel>, text: &str) -> String {
@@ -25,9 +14,6 @@ fn contains_any(hay: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| hay.contains(n))
 }
 
-/// Models whose CLI accepts `xhigh` natively; elsewhere it clamps to `max`
-/// (mirroring Claude Code's own normalization). Substring port of claude.ts's
-/// `/fable-5|opus-4-[7-9]|opus-[5-9]|sonnet-[5-9]/`.
 pub(crate) fn supports_xhigh(model: &str) -> bool {
     contains_any(
         model,
@@ -38,10 +24,6 @@ pub(crate) fn supports_xhigh(model: &str) -> bool {
     )
 }
 
-/// Map the unified level to the `--effort` flag value the CLI accepts for this
-/// model. The special modes don't translate directly: `ultrathink` is a prompt
-/// prefix (no flag), `ultracode` runs as `xhigh` plus the ultracode setting,
-/// and `ultra` is a Codex-only tier (Claude tops out at `max`).
 pub(crate) fn to_effort(
     reasoning: Option<ReasoningLevel>,
     model: Option<&str>,
@@ -60,8 +42,6 @@ pub(crate) fn to_effort(
     Some(base)
 }
 
-/// A boolean toggle rendered as an off/on select (the Rust `ModelOption` wire
-/// type has no dedicated boolean kind).
 fn toggle(id: &str, label: &str) -> ModelOption {
     ModelOption {
         id: id.into(),
@@ -80,9 +60,6 @@ fn toggle(id: &str, label: &str) -> ModelOption {
     }
 }
 
-/// The 200K/1M context-window select carried by the long-context models. The
-/// 1M window is selected via a model-id suffix (`<model>[1m]`), exactly how the
-/// CLI itself does it.
 pub(crate) fn context_window() -> ModelOption {
     ModelOption {
         id: "contextWindow".into(),
@@ -111,8 +88,6 @@ const FULL_LADDER: &[ReasoningLevel] = &[
     ReasoningLevel::Ultrathink,
 ];
 
-/// opus-4-7 / sonnet-5+ tier (claude.ts `claudeEffortsFor`): xhigh native,
-/// no ultracode.
 const XHIGH_LADDER: &[ReasoningLevel] = &[
     ReasoningLevel::Low,
     ReasoningLevel::Medium,
@@ -138,15 +113,6 @@ fn model(
     }
 }
 
-/// The curated model list, mirroring claude.ts's `claudeEffortsFor` /
-/// `claudeOptionsFor` ladders: full ladder (through ultracode/ultrathink) on
-/// Fable 5, `max`-topped ladders on Opus/Sonnet, no efforts but a thinking
-/// toggle on Haiku; context-window select on the long-context families and
-/// fast mode on Opus 4.5+.
-///
-/// `pub`: besides the discovery-side enrichment here, the UI's display-side
-/// normalization borrows these labels so alias rows served by older engines
-/// still read with their version numbers ("Opus 5.5", not "Opus").
 pub(crate) fn configured_models() -> Vec<Model> {
     let root = std::env::var_os("CLAUDE_CONFIG_DIR")
         .filter(|v| !v.is_empty())
@@ -217,7 +183,6 @@ fn settings_models_keep_manifest_and_full_ladder() {
     assert_eq!(models_with_settings(&path), static_models());
 }
 
-/// Overlay only new concrete model IDs; curated metadata remains authoritative.
 pub(super) fn with_discovered_models(
     mut models: Vec<Model>,
     response: &serde_json::Value,
@@ -243,7 +208,7 @@ pub(super) fn with_discovered_models(
         let Some(id) = text("resolvedModel").or_else(|| text("value")) else {
             continue;
         };
-        // Bare aliases cannot become persisted selections. Prefer resolvedModel.
+        // Bare aliases cannot be persisted as selections.
         if matches!(
             id.strip_suffix("[1m]").unwrap_or(id),
             "default" | "opus" | "sonnet" | "haiku" | "fable"
@@ -294,9 +259,7 @@ pub(super) fn with_discovered_models(
         ));
     }
     if let Some(default) = default {
-        // The picker folds long-context duplicates into their curated base.
-        // Put that base immediately behind the concrete default so folding
-        // keeps the CLI's default family first without changing curated rows.
+        // The picker folds `[1m]` rows into their base, so the base must follow the default.
         if let Some(base) = default.strip_suffix("[1m]")
             && let Some(index) = models.iter().position(|m| m.id == base)
         {
@@ -381,12 +344,10 @@ mod tests {
             to_effort(Some(ReasoningLevel::Ultra), Some("claude-fable-5")),
             Some("max")
         );
-        // ultracode -> xhigh where supported…
         assert_eq!(
             to_effort(Some(ReasoningLevel::Ultracode), Some("claude-fable-5")),
             Some("xhigh")
         );
-        // …and xhigh clamps to max elsewhere.
         assert_eq!(
             to_effort(Some(ReasoningLevel::XHigh), Some("claude-opus-4-5")),
             Some("max")

@@ -1,8 +1,6 @@
-//! Plan usage for the active CLI login. Credentials are only read, never
-//! refreshed or written back: the running CLI owns its single-use refresh token.
+//! Never refresh or write credentials: the running CLI owns its single-use refresh token.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -27,7 +25,7 @@ pub struct PlanUsage {
 }
 
 impl PlanUsage {
-    /// The binding limit: the most-used window.
+    /// The most-used window.
     pub fn used_fraction(&self) -> Option<f32> {
         self.windows
             .iter()
@@ -36,7 +34,6 @@ impl PlanUsage {
     }
 }
 
-/// One authenticated GET against the provider's usage endpoint.
 pub struct UsageRequest {
     pub url: &'static str,
     pub headers: Vec<(&'static str, String)>,
@@ -44,7 +41,6 @@ pub struct UsageRequest {
 }
 
 impl UsageRequest {
-    /// Parse the endpoint's response body into usage windows.
     pub fn parse(&self, harness: HarnessId, body: &Value) -> Option<PlanUsage> {
         let mut usage = match harness {
             HarnessId::ClaudeCode => claude_usage_windows(body),
@@ -57,63 +53,68 @@ impl UsageRequest {
     }
 }
 
-/// Build the usage request for the CLI's current login, or explain why usage
-/// is unavailable.
 pub async fn usage_request(harness: HarnessId) -> Result<UsageRequest, String> {
     match harness {
         HarnessId::ClaudeCode => {
             let credentials = read_claude_credentials()
                 .await?
                 .ok_or_else(|| "Sign in to Claude Code to see usage".to_string())?;
-            let oauth = credentials
-                .get("claudeAiOauth")
-                .ok_or_else(|| "Usage is only reported for Claude subscriptions".to_string())?;
-            let access_token = str_field(oauth, "accessToken")
-                .ok_or_else(|| "Sign in to Claude Code to see usage".to_string())?;
-            let plan_label = claude_plan(
-                str_field(oauth, "subscriptionType")
-                    .map(|kind| format!("claude_{kind}"))
-                    .as_deref(),
-                str_field(oauth, "rateLimitTier").as_deref(),
-            );
-            Ok(UsageRequest {
-                url: CLAUDE_USAGE_URL,
-                headers: vec![
-                    ("Authorization", format!("Bearer {access_token}")),
-                    ("anthropic-beta", "oauth-2025-04-20".into()),
-                    ("Content-Type", "application/json".into()),
-                ],
-                plan_label,
-            })
+            claude_usage_request(&credentials)
         }
         HarnessId::Codex => {
             let auth = read_json(&codex_home().join("auth.json"))
                 .ok_or_else(|| "Sign in to Codex to see usage".to_string())?;
-            let Some(tokens) = auth.get("tokens") else {
-                return Err(if str_field(&auth, "OPENAI_API_KEY").is_some() {
-                    "Usage isn't reported for API keys".into()
-                } else {
-                    "Sign in to Codex to see usage".into()
-                });
-            };
-            let access_token = str_field(tokens, "access_token")
-                .ok_or_else(|| "Sign in to Codex to see usage".to_string())?;
-            Ok(UsageRequest {
-                url: CODEX_USAGE_URL,
-                headers: vec![
-                    ("Authorization", format!("Bearer {access_token}")),
-                    (
-                        "chatgpt-account-id",
-                        str_field(tokens, "account_id").unwrap_or_default(),
-                    ),
-                ],
-                plan_label: None,
-            })
+            codex_usage_request(&auth)
         }
     }
 }
 
-/// A usage HTTP status as a short reason.
+pub(crate) fn claude_usage_request(credentials: &Value) -> Result<UsageRequest, String> {
+    let oauth = credentials
+        .get("claudeAiOauth")
+        .ok_or_else(|| "Usage is only reported for Claude subscriptions".to_string())?;
+    let access_token = str_field(oauth, "accessToken")
+        .ok_or_else(|| "Sign in to Claude Code to see usage".to_string())?;
+    let plan_label = claude_plan(
+        str_field(oauth, "subscriptionType")
+            .map(|kind| format!("claude_{kind}"))
+            .as_deref(),
+        str_field(oauth, "rateLimitTier").as_deref(),
+    );
+    Ok(UsageRequest {
+        url: CLAUDE_USAGE_URL,
+        headers: vec![
+            ("Authorization", format!("Bearer {access_token}")),
+            ("anthropic-beta", "oauth-2025-04-20".into()),
+            ("Content-Type", "application/json".into()),
+        ],
+        plan_label,
+    })
+}
+
+pub(crate) fn codex_usage_request(auth: &Value) -> Result<UsageRequest, String> {
+    let Some(tokens) = auth.get("tokens") else {
+        return Err(if str_field(auth, "OPENAI_API_KEY").is_some() {
+            "Usage isn't reported for API keys".into()
+        } else {
+            "Sign in to Codex to see usage".into()
+        });
+    };
+    let access_token = str_field(tokens, "access_token")
+        .ok_or_else(|| "Sign in to Codex to see usage".to_string())?;
+    Ok(UsageRequest {
+        url: CODEX_USAGE_URL,
+        headers: vec![
+            ("Authorization", format!("Bearer {access_token}")),
+            (
+                "chatgpt-account-id",
+                str_field(tokens, "account_id").unwrap_or_default(),
+            ),
+        ],
+        plan_label: None,
+    })
+}
+
 pub fn status_message(status: u16) -> String {
     match status {
         401 | 403 => "Sign in again to see usage".into(),
@@ -144,10 +145,9 @@ fn str_field(value: &Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Claude Code's Keychain service name: `Claude Code-credentials`, suffixed
-/// with the first 8 hex of sha256(config dir) when `CLAUDE_CONFIG_DIR`
-/// relocates the config, since each config dir is its own login.
-fn claude_keychain_service(config_dir: Option<&Path>) -> String {
+/// Must match the service name Claude Code itself writes.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn claude_keychain_service(config_dir: Option<&Path>) -> String {
     match config_dir {
         None => "Claude Code-credentials".to_string(),
         Some(dir) => {
@@ -158,8 +158,7 @@ fn claude_keychain_service(config_dir: Option<&Path>) -> String {
     }
 }
 
-/// Same precedence as Claude Code itself: the Keychain first, the
-/// `.credentials.json` file only when the Keychain holds nothing.
+/// Keychain first, matching Claude Code's own precedence.
 async fn read_claude_credentials() -> Result<Option<Value>, String> {
     let config_dir = env_dir("CLAUDE_CONFIG_DIR");
     let file = config_dir
@@ -175,19 +174,15 @@ async fn read_claude_credentials() -> Result<Option<Value>, String> {
             Err(warning) => return read_json(&file).map(Some).ok_or(warning),
         }
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = claude_keychain_service;
     Ok(read_json(&file))
 }
 
-/// Reads use `security find-generic-password`, two-step (the existence probe
-/// needs no authorization, then `-w` for the secret) so a denial is
-/// distinguishable from "not logged in". Every call is bounded: an
-/// unanswered Keychain consent dialog blocks `security` indefinitely.
 #[cfg(target_os = "macos")]
-mod keychain {
+pub(crate) mod keychain {
     use super::*;
+    use std::time::Duration;
 
+    // An unanswered Keychain consent dialog blocks `security` indefinitely.
     const EXEC_TIMEOUT: Duration = Duration::from_secs(15);
 
     async fn exec(args: &[&str]) -> (bool, String) {
@@ -205,23 +200,20 @@ mod keychain {
         }
     }
 
-    fn account() -> String {
+    pub(crate) fn account() -> String {
         std::env::var("USER").unwrap_or_else(|_| "unknown".into())
     }
 
-    pub(super) async fn read_credentials(service: &str) -> Result<Option<Value>, String> {
-        if !exec(&["find-generic-password", "-s", service]).await.0 {
+    pub(crate) async fn item_exists(service: &str) -> bool {
+        exec(&["find-generic-password", "-s", service]).await.0
+    }
+
+    pub(crate) async fn read_credentials(service: &str) -> Result<Option<Value>, String> {
+        // This probe needs no authorization, so a later failure means access was denied.
+        if !item_exists(service).await {
             return Ok(None);
         }
-        let (ok, stdout) = exec(&[
-            "find-generic-password",
-            "-a",
-            &account(),
-            "-s",
-            service,
-            "-w",
-        ])
-        .await;
+        let (ok, stdout) = exec(&["find-generic-password", "-s", service, "-w"]).await;
         if !ok {
             return Err("macOS Keychain denied access to the Claude Code login".into());
         }
@@ -241,7 +233,7 @@ fn parse_when(value: Option<&Value>) -> Option<DateTime<Utc>> {
     }
 }
 
-fn claude_plan(org_type: Option<&str>, tier: Option<&str>) -> Option<String> {
+pub(crate) fn claude_plan(org_type: Option<&str>, tier: Option<&str>) -> Option<String> {
     let base = match org_type {
         Some("claude_max") => "Max",
         Some("claude_pro") => "Pro",
@@ -249,7 +241,6 @@ fn claude_plan(org_type: Option<&str>, tier: Option<&str>) -> Option<String> {
         Some("claude_enterprise") => "Enterprise",
         _ => return None,
     };
-    // "…_20x" style tiers carry a multiplier suffix.
     let mult = tier.and_then(|t| {
         let stem = t.strip_suffix('x')?;
         let digits: String = stem
@@ -270,7 +261,7 @@ fn claude_plan(org_type: Option<&str>, tier: Option<&str>) -> Option<String> {
     })
 }
 
-fn codex_plan(plan: Option<&str>) -> Option<String> {
+pub(crate) fn codex_plan(plan: Option<&str>) -> Option<String> {
     let plan = plan?;
     let mut chars = plan.chars();
     let first = chars.next()?;
@@ -281,9 +272,6 @@ fn codex_plan(plan: Option<&str>) -> Option<String> {
     ))
 }
 
-/// Meter label for a Codex rate-limit window from its `limit_window_seconds`:
-/// the free tier's window is a 30-day month, Plus runs a 5-hour primary with
-/// a weekly secondary.
 fn codex_window_label(span_seconds: i64) -> &'static str {
     const DAY: i64 = 86_400;
     if span_seconds >= 28 * DAY {
@@ -322,8 +310,6 @@ fn codex_usage_snapshot(body: &Value) -> Option<PlanUsage> {
     })
 }
 
-/// Windows from Claude's `/api/oauth/usage`: the 5-hour session and weekly
-/// buckets, each a 0-100 `utilization` with an RFC3339 `resets_at`.
 fn claude_usage_windows(body: &Value) -> Option<PlanUsage> {
     let mut windows = Vec::new();
     for (key, label) in [("five_hour", "Session"), ("seven_day", "Week")] {

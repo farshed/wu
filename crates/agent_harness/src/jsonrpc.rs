@@ -1,19 +1,6 @@
-//! Minimal JSON-RPC 2.0 client over a child agent's stdio (newline-delimited
-//! frames, id-multiplexed), ported from codex.ts's `startAppServer`. Shared by
-//! the Codex app-server harness and the ACP harness — both protocols are
-//! newline-framed JSON-RPC 2.0 over stdio.
-//!
-//! - Responses are matched to callers by numeric id (a shared pending map the
-//!   reader task resolves directly, so requests can be awaited from anywhere —
-//!   including inside the session loop — without starving notifications).
-//! - Notifications and server→client requests (approvals) are pumped into an
-//!   [`Incoming`] channel the session loop drains.
-//! - Writes to a dead child's stdin (EPIPE) are tolerated and logged, matching
-//!   the TS harness's swallowed-EPIPE behavior.
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -22,21 +9,18 @@ use tokio::sync::{mpsc, oneshot};
 use crate::HarnessError;
 use crate::process::{ChildStdin, ChildStdout};
 
-/// A non-response line from the app server, in stdout order.
 #[derive(Debug)]
 pub(crate) enum Incoming {
     Notification {
         method: String,
         params: Value,
     },
-    /// Server→client request (approvals); must be answered via
-    /// [`RpcClient::respond`] / [`RpcClient::respond_error`].
+    /// Must be answered via [`RpcClient::respond`] or [`RpcClient::respond_error`].
     Request {
         id: Value,
         method: String,
         params: Value,
     },
-    /// stdout EOF: the app server exited. All pending requests fail.
     Eof,
 }
 
@@ -53,8 +37,6 @@ pub(crate) struct RpcClient {
 }
 
 impl RpcClient {
-    /// Spawn the writer + reader tasks over the child's stdio; returns the
-    /// client and the incoming (notification/request) channel.
     pub fn new(stdin: ChildStdin, stdout: ChildStdout) -> (Self, mpsc::Receiver<Incoming>) {
         Self::with_stdout_observer(stdin, stdout, None)
     }
@@ -91,14 +73,11 @@ impl RpcClient {
         self.closed.load(Ordering::Acquire)
     }
 
-    /// Send a request and await its response (resolved by the reader task).
     pub async fn request(&self, method: &str, params: Value) -> Result<Value, HarnessError> {
         self.request_now(method, params).await
     }
 
-    /// [`Self::request`], but the line is queued for writing before this
-    /// returns rather than on first poll — so a notification sent afterwards
-    /// (a steer's `session/cancel`) can never overtake it on the wire.
+    /// Queues the line before returning, so a later notification cannot overtake it.
     pub fn request_now(
         &self,
         method: &str,
@@ -108,9 +87,8 @@ impl RpcClient {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let (tx, rx) = oneshot::channel();
         {
-            let mut pending = self.pending.lock().expect("pending lock");
-            // Check under the same lock as EOF cleanup: a request racing the
-            // reader exit must either be rejected here or cleared by it.
+            let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+            // Checked under the EOF-cleanup lock so a racing request is rejected or cleared.
             if self.is_closed() {
                 return Box::pin(async move {
                     Err(HarnessError::Protocol(format!(
@@ -122,7 +100,10 @@ impl RpcClient {
         }
         let line = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
         if self.writer.send(line.to_string()).is_err() {
-            self.pending.lock().expect("pending lock").remove(&id);
+            self.pending
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&id);
             return Box::pin(async move {
                 Err(HarnessError::Protocol(format!(
                     "{method}: app-server stdin closed"
@@ -133,7 +114,6 @@ impl RpcClient {
             match rx.await {
                 Ok(Ok(result)) => Ok(result),
                 Ok(Err(message)) => Err(HarnessError::Protocol(format!("{method}: {message}"))),
-                // Sender dropped: the reader hit EOF and failed all pending.
                 Err(_) => Err(HarnessError::Protocol(format!(
                     "{method}: app-server exited before responding"
                 ))),
@@ -141,34 +121,35 @@ impl RpcClient {
         })
     }
 
-    /// Fire a notification (no id, no response).
     pub fn notify(&self, method: &str, params: Option<Value>) {
         let line = match params {
             Some(params) => json!({ "jsonrpc": "2.0", "method": method, "params": params }),
             None => json!({ "jsonrpc": "2.0", "method": method }),
         };
-        let _ = self.writer.send(line.to_string());
+        self.write_line(line);
     }
 
-    /// Answer a server→client request.
     pub fn respond(&self, id: &Value, result: Value) {
         let line = json!({ "jsonrpc": "2.0", "id": id, "result": result });
-        let _ = self.writer.send(line.to_string());
+        self.write_line(line);
     }
 
-    /// Reject a server→client request (e.g. unknown method).
     pub fn respond_error(&self, id: &Value, code: i64, message: &str) {
         let line = json!({
             "jsonrpc": "2.0",
             "id": id,
             "error": { "code": code, "message": message },
         });
-        let _ = self.writer.send(line.to_string());
+        self.write_line(line);
+    }
+
+    fn write_line(&self, line: Value) {
+        if self.writer.send(line.to_string()).is_err() {
+            tracing::debug!(target: "agent_harness::rpc", "stdin writer gone, dropping frame");
+        }
     }
 }
 
-/// Owns the child's stdin; a write failure (EPIPE after the child died) is
-/// tolerated and logged.
 async fn write_loop(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<String>) {
     while let Some(line) = rx.recv().await {
         let write = async {
@@ -183,10 +164,7 @@ async fn write_loop(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<Strin
     }
 }
 
-/// The id of a response, tolerantly. We always send numeric ids, but
-/// JSON-RPC lets a server echo them re-encoded — a string `"5"` or float
-/// `5.0` still names request 5. Dropping such a response would strand its
-/// caller forever (the session would spin Working with no per-turn timeout).
+/// Servers may echo our numeric ids re-encoded as `"5"` or `5.0`; dropping those strands the caller.
 fn response_id(id: &Value) -> Option<i64> {
     if let Some(n) = id.as_i64() {
         return Some(n);
@@ -197,7 +175,6 @@ fn response_id(id: &Value) -> Option<i64> {
     id.as_f64().filter(|f| f.fract() == 0.0).map(|f| f as i64)
 }
 
-/// Preserve the agent's rejection reason as well as the generic RPC label.
 fn response_error(error: &Value) -> String {
     let Some(message) = error.get("message").and_then(Value::as_str) else {
         return error.to_string();
@@ -219,9 +196,6 @@ fn response_error(error: &Value) -> String {
     rendered
 }
 
-/// Parse stdout lines: responses resolve the pending map, everything else is
-/// forwarded in order. Non-JSON noise is skipped; on EOF all pending requests
-/// fail (their senders drop) and one final [`Incoming::Eof`] is delivered.
 async fn read_loop(
     stdout: ChildStdout,
     pending: Pending,
@@ -230,8 +204,6 @@ async fn read_loop(
     observer: Option<StdoutObserver>,
 ) {
     let mut lines = BufReader::new(stdout).lines();
-    // A read error ends the loop like EOF: either way the child's stdout is
-    // unusable, pending requests must fail, and the session loop must know.
     while let Ok(Some(line)) = lines.next_line().await {
         let line = line.trim();
         if let Some(url) =
@@ -255,13 +227,16 @@ async fn read_loop(
         let method = msg.get("method").and_then(Value::as_str);
         let id = msg.get("id");
         match (method, id) {
-            // Response: resolve the awaiting request.
             (None, Some(id)) => {
                 if msg.get("result").is_none() && msg.get("error").is_none() {
                     continue;
                 }
                 let Some(id) = response_id(id) else { continue };
-                let Some(sender) = pending.lock().expect("pending lock").remove(&id) else {
+                let Some(sender) = pending
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .remove(&id)
+                else {
                     continue;
                 };
                 let outcome = match msg.get("error") {
@@ -271,9 +246,10 @@ async fn read_loop(
                         .map(Value::take)
                         .unwrap_or(Value::Null)),
                 };
-                let _ = sender.send(outcome);
+                if sender.send(outcome).is_err() {
+                    tracing::debug!(target: "agent_harness::rpc", "response {id} arrived after its caller gave up");
+                }
             }
-            // Server→client request (approvals).
             (Some(method), Some(id)) => {
                 let incoming = Incoming::Request {
                     id: id.clone(),
@@ -287,7 +263,6 @@ async fn read_loop(
                     return;
                 }
             }
-            // Notification.
             (Some(method), None) => {
                 let incoming = Incoming::Notification {
                     method: method.to_owned(),
@@ -303,10 +278,14 @@ async fn read_loop(
             (None, None) => {}
         }
     }
-    // EOF/read error: fail every awaiting request, then signal the loop.
     closed.store(true, Ordering::Release);
-    pending.lock().expect("pending lock").clear();
-    let _ = tx.send(Incoming::Eof).await;
+    pending
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clear();
+    if tx.send(Incoming::Eof).await.is_err() {
+        tracing::debug!(target: "agent_harness::rpc", "incoming receiver gone before EOF");
+    }
 }
 
 #[cfg(test)]

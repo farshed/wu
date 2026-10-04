@@ -16,6 +16,7 @@ util::fs_embed! {
         "icons/**/*",
         "icon_themes/**/*",
         "images/**/*",
+        "sounds/**/*",
         "themes/**/*",
         "*.md",
     ],

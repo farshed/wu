@@ -1,13 +1,18 @@
+mod agent_chat_settings;
 mod agent_panel;
 mod chat_style;
 mod chat_view;
 mod model_picker;
+mod notifications;
 mod session;
+mod slash_commands;
 mod usage_rings;
 
+pub use agent_chat_settings::AgentChatSettings;
 pub use agent_panel::AgentPanel;
 pub use chat_view::ChatView;
 
+use futures::FutureExt as _;
 use gpui::{App, actions};
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +29,16 @@ actions!(
         Send,
         /// Stops the agent's current turn.
         Stop,
+        /// Highlights the previous command in the slash command menu.
+        SelectPreviousCommand,
+        /// Highlights the next command in the slash command menu.
+        SelectNextCommand,
+        /// Picks the highlighted command in the slash command menu.
+        AcceptCommand,
+        /// Closes the slash command menu.
+        DismissCommands,
+        /// Starts or stops dictation in the chat box.
+        ToggleDictation,
     ]
 );
 
@@ -43,6 +58,10 @@ impl AgentKind {
     }
 }
 
-pub fn init(cx: &mut App) {
+/// `shell_env_loaded` resolves once the login shell's PATH is applied, so agent CLIs can be found.
+pub fn init(shell_env_loaded: Option<futures::channel::oneshot::Receiver<()>>, cx: &mut App) {
+    if let Some(loaded) = shell_env_loaded {
+        cx.set_global(session::ShellEnvLoaded(loaded.shared()));
+    }
     agent_panel::init(cx);
 }

@@ -1,5 +1,3 @@
-//! Cross-platform executable discovery shared by native and ACP harnesses.
-
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
@@ -23,7 +21,6 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
     home_dir_with(&|key| std::env::var_os(key), Platform::current())
 }
 
-/// Resolve a portable user base directory without assuming Unix's `/` exists.
 pub(crate) fn home_or_current_dir() -> PathBuf {
     home_or_current_dir_with(
         &|key| std::env::var_os(key),
@@ -42,10 +39,6 @@ fn home_or_current_dir_with(
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// Accept a launchable executable override: native images anywhere, plus the
-/// `.cmd`/`.bat` shims npm installs on Windows (the process module launches
-/// those through `cmd.exe` with per-argument escaping). The path must exist,
-/// so `installed()` and the launch path agree on what an override means.
 pub(crate) fn validate_native_override(path: &Path) -> Result<PathBuf, crate::HarnessError> {
     validate_native_override_with(path, Platform::current())
 }
@@ -84,7 +77,6 @@ pub(crate) fn find_on_paths(exe: &str, extra: Vec<PathBuf>) -> Option<PathBuf> {
         exe,
         extra,
         &|key| std::env::var_os(key),
-        crate::shell_env::login_shell_path().map(OsString::from),
         Platform::current(),
         |path| {
             if runnable(path) {
@@ -149,9 +141,7 @@ static VERSION_CACHE: std::sync::OnceLock<
     std::sync::Mutex<std::collections::HashMap<VersionKey, VersionEntry>>,
 > = std::sync::OnceLock::new();
 
-/// An explicit install may replace wrappers without changing their metadata.
-/// Clear all candidates, including canonical paths behind vendor symlinks.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn invalidate_versions(names: &[&str]) {
     if let Some(cache) = VERSION_CACHE.get() {
         cache
@@ -161,8 +151,7 @@ pub(crate) fn invalidate_versions(names: &[&str]) {
     }
 }
 
-/// Probe once per executable identity. Failures are cached too, including timeout.
-/// Keep the lock during the short probe so concurrent descriptor requests coalesce.
+// The lock is held across the probe so concurrent requests coalesce.
 #[allow(
     clippy::disallowed_methods,
     reason = "a bounded `--version` probe whose result is cached per executable"
@@ -204,7 +193,9 @@ pub fn binary_version(path: &Path) -> Option<semver::Version> {
         fn reader(pipe: impl Read + Send + 'static) -> std::thread::JoinHandle<Vec<u8>> {
             std::thread::spawn(move || {
                 let mut bytes = Vec::new();
-                let _ = pipe.take(65536).read_to_end(&mut bytes);
+                if let Err(error) = pipe.take(65536).read_to_end(&mut bytes) {
+                    log::debug!("failed to read version probe output: {error}");
+                }
                 bytes
             })
         }
@@ -217,8 +208,12 @@ pub fn binary_version(path: &Path) -> Option<semver::Version> {
                     std::thread::sleep(Duration::from_millis(10))
                 }
                 _ => {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    if let Err(error) = child.kill() {
+                        log::debug!("failed to kill version probe: {error}");
+                    }
+                    if let Err(error) = child.wait() {
+                        log::debug!("failed to reap version probe: {error}");
+                    }
                     break false;
                 }
             }
@@ -246,8 +241,7 @@ pub fn binary_version(path: &Path) -> Option<semver::Version> {
     #[cfg(windows)]
     let probe = || -> Option<semver::Version> {
         let path = path.to_path_buf();
-        // Use the native launcher for npm .cmd/.bat shims and job-tree cleanup.
-        // A separate runtime is safe even when descriptors run inside Tokio.
+        // Own thread and runtime so this is safe to call from inside Tokio.
         std::thread::spawn(move || {
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -360,10 +354,6 @@ fn node_version_manager_bins_with(
         if let Some(dir) = env_path(env, "PNPM_HOME") {
             dirs.push(dir);
         }
-        // GUI-launched processes inherit the shell-less PATH: backfill the
-        // default global install locations of the common Node ecosystems
-        // (npm's global bin, pnpm's default home, scoop, and the per-user
-        // ~/.local/bin and ~/.bun/bin used by native installers).
         let local = env_path(env, "LOCALAPPDATA").or_else(|| {
             env_path(env, "USERPROFILE").map(|profile| profile.join("AppData").join("Local"))
         });
@@ -407,15 +397,8 @@ fn env_path(env: &impl Fn(&str) -> Option<OsString>, key: &str) -> Option<PathBu
         .map(PathBuf::from)
 }
 
-/// Extensions the spawner can launch on Windows: the PATHEXT subset that maps
-/// to a native image (`com`/`exe`) or a script the Windows process module
-/// launches through `cmd.exe` (`bat`/`cmd`). Everything else on a user's
-/// PATHEXT (`.VBS`, `.MSC`, …) stays undiscoverable — we cannot spawn it.
 const LAUNCHABLE_WINDOWS_EXTENSIONS: [&str; 4] = ["com", "exe", "bat", "cmd"];
 
-/// The name variants to probe for `exe` on `platform`, in search order. On
-/// Windows the PATHEXT order (defaulting to `.COM;.EXE;.BAT;.CMD`) decides,
-/// so a directory's `foo.exe` beats its `foo.cmd` exactly like `cmd.exe`.
 fn candidate_names(
     exe: &str,
     env: &impl Fn(&str) -> Option<OsString>,
@@ -463,8 +446,6 @@ fn candidate_names(
         .collect()
 }
 
-/// Extensionless extra locations resolve through the same name variants as
-/// PATH directories; an explicit extension is taken as given.
 fn extra_variants(path: PathBuf, names: &[OsString], platform: Platform) -> Vec<PathBuf> {
     if platform != Platform::Windows || path.extension().is_some() {
         return vec![path];
@@ -493,17 +474,15 @@ pub(crate) fn find_on_paths_with(
     exe: &str,
     extra: Vec<PathBuf>,
     env: &impl Fn(&str) -> Option<OsString>,
-    login_shell_path: Option<OsString>,
     platform: Platform,
 ) -> Option<PathBuf> {
-    find_on_paths_matching_with(exe, extra, env, login_shell_path, platform, |_| true)
+    find_on_paths_matching_with(exe, extra, env, platform, |_| true)
 }
 
 pub(crate) fn find_on_paths_matching_with(
     exe: &str,
     extra: Vec<PathBuf>,
     env: &impl Fn(&str) -> Option<OsString>,
-    login_shell_path: Option<OsString>,
     platform: Platform,
     mut predicate: impl FnMut(&Path) -> bool,
 ) -> Option<PathBuf> {
@@ -517,9 +496,6 @@ pub(crate) fn find_on_paths_matching_with(
             .collect::<Vec<_>>()
     };
     let mut candidates = env("PATH").map(from_path).unwrap_or_default();
-    if let Some(shell_path) = login_shell_path {
-        candidates.extend(from_path(shell_path));
-    }
     candidates.extend(
         extra
             .into_iter()
@@ -530,10 +506,6 @@ pub(crate) fn find_on_paths_matching_with(
             .into_iter()
             .flat_map(variants),
     );
-    // npm exposes CLIs as `name.cmd` shims on Windows; those are discoverable
-    // and launchable through the PATHEXT variants above, so no per-agent
-    // node_modules payload special-casing belongs here.
-
     candidates
         .into_iter()
         .find(|path| is_runnable_candidate(path, platform) && predicate(path))
@@ -657,7 +629,7 @@ mod tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
             let started = std::time::Instant::now();
             assert_eq!(binary_version(&path), None);
-            // Other tests' probes hold the shared cache lock; 10s still proves the 30s hang is cut off.
+            // Loose bound: other tests' probes can hold the shared cache lock.
             assert!(started.elapsed() < std::time::Duration::from_secs(10));
             assert_eq!(newest_candidate(vec![path.clone()]), Some(path));
         }
@@ -688,11 +660,8 @@ mod tests {
         std::fs::create_dir_all(&both).unwrap();
         std::fs::create_dir_all(directory.join("agent.exe")).unwrap();
         std::fs::create_dir_all(&later).unwrap();
-        // An extensionless file is not a launchable candidate.
         std::fs::write(extensionless.join("agent"), b"shim").unwrap();
-        // npm's shim layout: `agent.cmd` alone is discoverable.
         std::fs::write(shim.join("agent.cmd"), b"@echo off").unwrap();
-        // Within one directory, PATHEXT order prefers .exe over .cmd.
         std::fs::write(both.join("agent.cmd"), b"@echo off").unwrap();
         std::fs::write(both.join("agent.exe"), b"MZ").unwrap();
         std::fs::write(later.join("agent.exe"), b"MZ").unwrap();
@@ -705,24 +674,18 @@ mod tests {
             &directory,
             &later,
         ]);
-        // Directory order wins across directories: the bare .cmd shim in an
-        // earlier directory beats the .exe in a later one, like cmd.exe.
         let found = find_on_paths_with(
             "agent",
             Vec::new(),
             &env(&[("PATH", path.clone())]),
-            None,
             Platform::Windows,
         );
         assert_eq!(found, Some(shim.join("agent.cmd")));
-        // Once the shim directory is gone, the mixed directory resolves its
-        // .exe first, and a directory-shaped candidate is never a match.
         std::fs::remove_dir_all(&shim).unwrap();
         let found = find_on_paths_with(
             "agent",
             Vec::new(),
             &env(&[("PATH", path)]),
-            None,
             Platform::Windows,
         );
         assert_eq!(found, Some(both.join("agent.exe")));
@@ -737,25 +700,21 @@ mod tests {
         std::fs::write(dir.join("agent.exe"), b"MZ").unwrap();
         let path = joined(&[&dir]);
 
-        // Default order: .exe before .cmd.
         assert_eq!(
             find_on_paths_with(
                 "agent",
                 Vec::new(),
                 &env(&[("PATH", path.clone())]),
-                None,
                 Platform::Windows
             ),
             Some(dir.join("agent.exe"))
         );
-        // A reordered PATHEXT is honored, but non-launchable entries are ignored.
-        // The on-disk name matches PATHEXT's casing: Windows would also match
-        // `.CMD`, but this test runs on case-sensitive filesystems too.
+        // Exact casing: this test also runs on case-sensitive filesystems.
         let reordered = env(&[
             ("PATH", path),
             ("PATHEXT", OsString::from(".cmd;.VBS;.EXE")),
         ]);
-        let found = find_on_paths_with("agent", Vec::new(), &reordered, None, Platform::Windows)
+        let found = find_on_paths_with("agent", Vec::new(), &reordered, Platform::Windows)
             .expect("shim variant resolves");
         assert_eq!(found.parent(), Some(dir.as_path()));
         assert!(
@@ -771,30 +730,22 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let bin = temp.path().join("bin");
         std::fs::create_dir_all(&bin).unwrap();
-        // Written with the exact casing the extra names below: Windows would
-        // also match `tool.cmd`, but this test runs on case-sensitive
-        // filesystems too.
+        // Exact casing: this test also runs on case-sensitive filesystems.
         std::fs::write(bin.join("tool.CmD"), b"@echo off").unwrap();
-        // Extras are file candidates: an explicit extension is taken as given.
         assert_eq!(
             find_on_paths_with(
                 "tool",
                 vec![bin.join("tool.CmD")],
                 &env(&[]),
-                None,
                 Platform::Windows,
             ),
             Some(bin.join("tool.CmD")),
         );
-        // Extensionless extras (e.g. `~/.local/bin/grok`) resolve through the
-        // same name variants as PATH directories — a variant that does not
-        // exist on disk is not a match merely by being named.
         assert_eq!(
             find_on_paths_with(
                 "grok",
                 vec![temp.path().join(".local").join("bin").join("grok")],
                 &env(&[]),
-                None,
                 Platform::Windows,
             ),
             None,
@@ -808,7 +759,6 @@ mod tests {
                 "grok",
                 vec![grok_bin.join("grok")],
                 &env(&[]),
-                None,
                 Platform::Windows,
             ),
             Some(grok_bin.join("grok.cmd")),
@@ -872,16 +822,15 @@ mod tests {
             ("FNM_MULTISHELL_PATH", active.into_os_string()),
             ("FNM_DIR", explicit.into_os_string()),
         ]);
-        // Exercise selection, including fallback after a stale active link.
         for dir in defaults {
             assert_eq!(
-                find_on_paths_with("node", vec![], &lookup, None, Platform::Windows),
+                find_on_paths_with("node", vec![], &lookup, Platform::Windows),
                 Some(dir.join("node.exe"))
             );
             std::fs::remove_file(dir.join("node.exe")).unwrap();
         }
         assert_eq!(
-            find_on_paths_with("node", vec![], &lookup, None, Platform::Windows),
+            find_on_paths_with("node", vec![], &lookup, Platform::Windows),
             None
         );
     }
@@ -923,10 +872,9 @@ mod tests {
             let bin = home.join(relative);
             std::fs::create_dir_all(&bin).unwrap();
             std::fs::write(bin.join("pi"), "fixture").unwrap();
-            // Pi supplies ~/.local/bin as an explicit npm fallback.
             let extra = vec![home.join(".local/bin/pi")];
             assert_eq!(
-                find_on_paths_with("pi", extra, &lookup, None, Platform::Unix),
+                find_on_paths_with("pi", extra, &lookup, Platform::Unix),
                 Some(bin.join("pi")),
                 "{relative}"
             );
@@ -938,9 +886,8 @@ mod tests {
     fn unix_discovery_preserves_exact_name_and_source_order() {
         let temp = tempfile::tempdir().unwrap();
         let path_dir = temp.path().join("path");
-        let shell_dir = temp.path().join("shell");
         let extra_dir = temp.path().join("extra");
-        for dir in [&path_dir, &shell_dir, &extra_dir] {
+        for dir in [&path_dir, &extra_dir] {
             std::fs::create_dir_all(dir).unwrap();
             std::fs::write(dir.join("agent"), b"shim").unwrap();
         }
@@ -948,7 +895,6 @@ mod tests {
             "agent",
             vec![extra_dir.join("agent")],
             &env(&[("PATH", joined(&[&path_dir]))]),
-            Some(joined(&[&shell_dir])),
             Platform::Unix,
         );
         assert_eq!(found, Some(path_dir.join("agent")));
@@ -957,8 +903,6 @@ mod tests {
     #[test]
     fn windows_native_overrides_accept_batch_shims_and_reject_the_unlaunchable() {
         let temp = tempfile::tempdir().unwrap();
-        // Batch shims are valid overrides (launched through cmd.exe), and the
-        // extension check is case-insensitive.
         for name in [
             "agent.cmd",
             "agent.CmD",
@@ -973,16 +917,13 @@ mod tests {
                 path
             );
         }
-        // Extensions the spawner cannot launch are rejected…
         let script = temp.path().join("agent.ps1");
         std::fs::write(&script, b"exit 0").unwrap();
         let error = validate_native_override_with(&script, Platform::Windows).unwrap_err();
         assert!(error.to_string().contains("launchable"), "{error}");
-        // …and so are overrides that do not exist.
         let missing = temp.path().join("missing.exe");
         let error = validate_native_override_with(&missing, Platform::Windows).unwrap_err();
         assert!(error.to_string().contains("does not exist"), "{error}");
-        // Unix keeps extension-free judgment and still checks existence.
         let unix_script = temp.path().join("agent.sh");
         std::fs::write(&unix_script, b"#!/bin/sh\n").unwrap();
         assert_eq!(

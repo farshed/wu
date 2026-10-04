@@ -1,5 +1,3 @@
-//! A failed refresh is not a new catalog. Keep the last successful response
-//! for the same credential context, coalesce callers, and respect rate limits.
 use crate::Model;
 use crate::{CatalogFailure, CatalogFailureCode, HarnessError, ModelCatalog};
 use std::{
@@ -101,8 +99,7 @@ impl Catalog {
                     }
                     Err(e) => error = e.into(),
                 }
-                // Repeating a rate-limited or unauthenticated call cannot heal
-                // it. A subsequent login changes the context and bypasses cooldown.
+                // Retrying cannot heal a rate-limited or unauthenticated call.
                 if !error.code.allows_stale() || needs_cooldown(&error.message) {
                     break;
                 }
@@ -483,7 +480,7 @@ mod tests {
                     .get(
                         || Ok([1; 32]),
                         || async {
-                            let _ = tx.lock().unwrap().take().unwrap().send(());
+                            tx.lock().unwrap().take().unwrap().send(()).unwrap();
                             std::future::pending().await
                         },
                     )
@@ -492,7 +489,7 @@ mod tests {
         });
         rx.await.unwrap();
         task.abort();
-        let _ = task.await;
+        assert!(task.await.unwrap_err().is_cancelled());
         assert_eq!(
             cache
                 .get(

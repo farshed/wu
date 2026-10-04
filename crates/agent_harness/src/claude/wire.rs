@@ -1,13 +1,6 @@
-//! Claude CLI stream-json wire frames (stdout JSONL + stdin lines).
-//!
-//! Tolerant by construction: every field defaults, unknown frame types map to
-//! [`Frame::Other`], so a newer CLI never breaks parsing — we only read the
-//! fields the normalizer needs (spec: docs/research/harness.md).
-
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-/// One parsed stdout line.
 #[derive(Debug)]
 pub(crate) enum Frame {
     System(SystemFrame),
@@ -17,7 +10,6 @@ pub(crate) enum Frame {
     RateLimit(RateLimitFrame),
     Result(ResultFrame),
     ControlRequest(ControlRequestFrame),
-    /// control_response / control_cancel_request / anything unknown.
     Other,
 }
 
@@ -33,19 +25,12 @@ pub(crate) struct SystemFrame {
     pub cwd: String,
     #[serde(default)]
     pub session_id: String,
-    /// `task_notification`: the spawning Agent tool's id, or the latest
-    /// SendMessage id after a resume. Stop notifications may omit it.
     #[serde(default, alias = "toolUseId")]
     pub tool_use_id: Option<String>,
-    /// `task_notification` terminal status (`completed`/`failed`/`killed`…).
     #[serde(default)]
     pub status: Option<String>,
-    /// `task_started` / `task_notification`: stable agent/task id
-    /// (`SendMessage`'s `to:` address), used to retain spawn identity.
     #[serde(default, alias = "taskId")]
     pub task_id: Option<String>,
-    /// `task_started`: present only for AGENT tasks (a subagent spawning),
-    /// absent on subagent-owned background shell tasks.
     #[serde(default)]
     pub subagent_type: Option<String>,
 }
@@ -76,7 +61,6 @@ pub(crate) struct Delta {
     pub thinking: String,
 }
 
-/// An `assistant` or `user` frame (an Anthropic API message envelope).
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct MessageFrame {
     #[serde(default)]
@@ -85,7 +69,6 @@ pub(crate) struct MessageFrame {
     pub parent_tool_use_id: Option<String>,
     #[serde(default)]
     pub message: MessageBody,
-    /// Terse assistant-level error code (`rate_limit`, `billing_error`, …).
     #[serde(default)]
     pub error: Option<String>,
 }
@@ -96,7 +79,6 @@ pub(crate) struct MessageBody {
     pub model: Option<String>,
     #[serde(default)]
     pub usage: Option<Value>,
-    /// Either a plain string or an array of content blocks.
     #[serde(default)]
     pub content: Value,
 }
@@ -168,7 +150,6 @@ pub(crate) struct UsageBody {
     pub output_tokens: u64,
 }
 
-/// A CLI→client control request (`can_use_tool` is the one we act on).
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct ControlRequestFrame {
     #[serde(default)]
@@ -187,7 +168,6 @@ pub(crate) struct ControlRequestBody {
     pub input: Value,
 }
 
-/// Parse one stdout JSONL line. `Err` = not JSON; unknown types = `Other`.
 pub(crate) fn parse_frame(line: &str) -> Result<Frame, serde_json::Error> {
     let value: Value = serde_json::from_str(line)?;
     let kind = value.get("type").and_then(Value::as_str).unwrap_or("");
@@ -204,31 +184,61 @@ pub(crate) fn parse_frame(line: &str) -> Result<Frame, serde_json::Error> {
     Ok(frame)
 }
 
-/// A stdin user turn: `{"type":"user","message":{...},"parent_tool_use_id":null}`.
-/// Steering = another such line mid-run (consumed at a step boundary).
-pub(crate) fn user_message_line(text: &str) -> String {
+pub(crate) struct ImageBlock {
+    pub media_type: &'static str,
+    pub base64_data: String,
+}
+
+fn user_content(text: &str, images: &[ImageBlock]) -> Value {
+    if images.is_empty() {
+        return Value::String(text.to_owned());
+    }
+    let mut blocks: Vec<Value> = images
+        .iter()
+        .map(|image| {
+            json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image.media_type,
+                    "data": image.base64_data,
+                },
+            })
+        })
+        .collect();
+    // The API rejects empty text blocks, which image-only messages would otherwise carry.
+    if !text.trim().is_empty() {
+        blocks.push(json!({ "type": "text", "text": text }));
+    }
+    Value::Array(blocks)
+}
+
+pub(crate) fn user_message_line(text: &str, images: &[ImageBlock]) -> String {
     json!({
         "type": "user",
-        "message": { "role": "user", "content": text },
+        "message": { "role": "user", "content": user_content(text, images) },
         "parent_tool_use_id": null,
     })
     .to_string()
 }
 
-/// Fold this input into the next model step without aborting tools or tasks.
-/// A steer line. `immediate` → `priority: "now"`: streaming text/thinking
-/// stops at once and the steer is answered next (verified against CLI
-/// 2.1.280). But `now` also aborts an in-flight MCP tool call ("The tool call
-/// was interrupted before a result was received"), so while any tool is open
-/// the steer goes as `next`: the tool finishes and the steer lands right after
-/// its result, in the same turn. An interrupted turn still emits a `result`.
-pub(crate) fn steer_message_line(text: &str, id: &str, immediate: bool) -> String {
-    serde_json::json!({"type":"user", "uuid":id, "priority": if immediate { "now" } else { "next" },
-        "message":{"role":"user","content":text}, "parent_tool_use_id":null})
+/// Only pass `immediate` when no tool is open: priority `now` aborts in-flight tool calls.
+pub(crate) fn steer_message_line(
+    text: &str,
+    images: &[ImageBlock],
+    id: &str,
+    immediate: bool,
+) -> String {
+    json!({
+        "type": "user",
+        "uuid": id,
+        "priority": if immediate { "now" } else { "next" },
+        "message": { "role": "user", "content": user_content(text, images) },
+        "parent_tool_use_id": null,
+    })
     .to_string()
 }
 
-/// Success reply to a CLI control request (`can_use_tool` allow/deny payloads).
 pub(crate) fn control_response_line(request_id: &str, response: Value) -> String {
     json!({
         "type": "control_response",
@@ -241,17 +251,14 @@ pub(crate) fn control_response_line(request_id: &str, response: Value) -> String
     .to_string()
 }
 
-/// `can_use_tool` allow payload with the (possibly updated) tool input.
 pub(crate) fn allow_response(updated_input: Value) -> Value {
     json!({ "behavior": "allow", "updatedInput": updated_input })
 }
 
-/// `can_use_tool` deny payload; the message reaches the model as the tool result.
 pub(crate) fn deny_response(message: &str) -> Value {
     json!({ "behavior": "deny", "message": message })
 }
 
-/// Client→CLI interrupt control request.
 pub(crate) fn interrupt_request_line(request_id: &str) -> String {
     json!({
         "type": "control_request",
@@ -266,11 +273,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn image_only_messages_carry_no_empty_text_block() {
+        let image = ImageBlock {
+            media_type: "image/png",
+            base64_data: "AAAA".into(),
+        };
+        let content = user_content("  ", std::slice::from_ref(&image));
+        assert_eq!(content.as_array().map(Vec::len), Some(1));
+        assert_eq!(content[0]["type"], "image");
+        assert_eq!(user_content("hi", &[]), serde_json::Value::String("hi".into()));
+    }
+
+    #[test]
     fn steer_priority_follows_tool_state() {
         let now: serde_json::Value =
-            serde_json::from_str(&steer_message_line("hi", "u1", true)).unwrap();
+            serde_json::from_str(&steer_message_line("hi", &[], "u1", true)).unwrap();
         let next: serde_json::Value =
-            serde_json::from_str(&steer_message_line("hi", "u2", false)).unwrap();
+            serde_json::from_str(&steer_message_line("hi", &[], "u2", false)).unwrap();
         assert_eq!(now["priority"], "now");
         assert_eq!(next["priority"], "next");
         assert_eq!(next["uuid"], "u2");
@@ -295,10 +314,31 @@ mod tests {
 
     #[test]
     fn user_line_shape_matches_protocol() {
-        let line = user_message_line("hi");
+        let line = user_message_line("hi", &[]);
         let v: Value = serde_json::from_str(&line).expect("json");
         assert_eq!(v["type"], "user");
         assert_eq!(v["message"]["content"], "hi");
         assert!(v["parent_tool_use_id"].is_null());
+    }
+
+    #[test]
+    fn images_precede_the_text_block() {
+        let images = [ImageBlock {
+            media_type: "image/png",
+            base64_data: "AAAA".into(),
+        }];
+        for line in [
+            user_message_line("look", &images),
+            steer_message_line("look", &images, "u1", true),
+        ] {
+            let v: Value = serde_json::from_str(&line).expect("json");
+            let content = v["message"]["content"].as_array().expect("blocks");
+            assert_eq!(content.len(), 2);
+            assert_eq!(content[0]["type"], "image");
+            assert_eq!(content[0]["source"]["type"], "base64");
+            assert_eq!(content[0]["source"]["media_type"], "image/png");
+            assert_eq!(content[0]["source"]["data"], "AAAA");
+            assert_eq!(content[1], json!({ "type": "text", "text": "look" }));
+        }
     }
 }

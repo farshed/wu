@@ -1,13 +1,5 @@
-//! Model catalog + effort mapping for Codex.
-//!
-//! The live catalog comes from the app server's paginated `model/list`
-//! (experimentalApi). This snapshot is the failure/offline fallback, kept in
-//! newest-first order so a picker remains useful when discovery cannot run.
-
 use crate::{Model, ModelOption, ModelOptionChoice, ReasoningLevel, SandboxLevel};
 
-/// The unified reasoning ladder Codex accepts (`minimal` is offered but clamped
-/// on the wire — see [`to_effort`]).
 pub(crate) const REASONING_LEVELS: &[ReasoningLevel] = &[
     ReasoningLevel::Minimal,
     ReasoningLevel::Low,
@@ -18,11 +10,7 @@ pub(crate) const REASONING_LEVELS: &[ReasoningLevel] = &[
     ReasoningLevel::Ultra,
 ];
 
-/// Codex's API rejects `minimal` when default tools (web_search, image_gen)
-/// are enabled, and doesn't know Claude's ultracode/ultrathink modes. It DOES
-/// accept `max` and `ultra` natively (gpt-5.6+), so those pass straight
-/// through — only the levels Codex can't take are clamped to the nearest
-/// effort (port of codex.ts `toEffort`).
+/// Codex rejects `minimal` when default tools like web_search are enabled.
 pub(crate) fn to_effort(reasoning: Option<ReasoningLevel>) -> Option<&'static str> {
     Some(match reasoning? {
         ReasoningLevel::Minimal | ReasoningLevel::Low => "low",
@@ -34,7 +22,6 @@ pub(crate) fn to_effort(reasoning: Option<ReasoningLevel>) -> Option<&'static st
     })
 }
 
-/// `thread/start`'s `sandbox` param (kebab-case wire words).
 pub(crate) fn sandbox_mode(sandbox: SandboxLevel) -> &'static str {
     match sandbox {
         SandboxLevel::ReadOnly => "read-only",
@@ -43,7 +30,6 @@ pub(crate) fn sandbox_mode(sandbox: SandboxLevel) -> &'static str {
     }
 }
 
-/// `turn/start`'s `sandboxPolicy.type` (camelCase variant of the same policy).
 pub(crate) fn sandbox_policy_type(sandbox: SandboxLevel) -> &'static str {
     match sandbox {
         SandboxLevel::ReadOnly => "readOnly",
@@ -52,10 +38,6 @@ pub(crate) fn sandbox_policy_type(sandbox: SandboxLevel) -> &'static str {
     }
 }
 
-/// `turn/start`'s full `sandboxPolicy` object. Workspace-write keeps network
-/// access: agents fetch deps and hit APIs unattended, and with the
-/// approval policy pinned to "never" a network-less sandbox would fail those
-/// commands with no escalation path.
 pub(crate) fn sandbox_policy_value(sandbox: SandboxLevel) -> serde_json::Value {
     let mut policy = serde_json::Map::new();
     policy.insert("type".into(), sandbox_policy_type(sandbox).into());
@@ -89,9 +71,6 @@ const XHIGH_LADDER: &[ReasoningLevel] = &[
     ReasoningLevel::XHigh,
 ];
 
-/// The service-tier select the app server reports per model (`serviceTiers` /
-/// `additionalSpeedTiers` in `model/list`); "default" means Standard and is
-/// omitted from the wire params entirely.
 fn service_tier() -> ModelOption {
     ModelOption {
         id: "serviceTier".into(),
@@ -126,10 +105,6 @@ fn model(
     }
 }
 
-/// The curated fallback catalog: newest family first, with efforts as the
-/// app server reports them. Daybreak Blue reports NO service tiers, so it
-/// carries no trait — sending `serviceTier: priority` for it would be
-/// rejected. The live `model/list` remains authoritative whenever available.
 pub(crate) fn static_models() -> Vec<Model> {
     vec![
         model(
@@ -160,6 +135,7 @@ pub(crate) fn static_models() -> Vec<Model> {
             MAX_LADDER,
             vec![service_tier()],
         ),
+        // Codex rejects any serviceTier for this model.
         model(
             "gpt-daybreak-blue-latest",
             "Daybreak Blue",
@@ -203,7 +179,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn effort_clamps_like_codex_ts() {
+    fn effort_clamps_unsupported_levels() {
         assert_eq!(to_effort(None), None);
         assert_eq!(to_effort(Some(ReasoningLevel::Minimal)), Some("low"));
         assert_eq!(to_effort(Some(ReasoningLevel::Ultracode)), Some("xhigh"));
@@ -221,7 +197,6 @@ mod tests {
         assert!(!models[5].reasoning_levels.contains(&ReasoningLevel::Max));
         for m in &models {
             let tier = m.options.iter().find(|o| o.id == "serviceTier");
-            // Daybreak Blue reports no service tiers on the wire.
             if m.id == "gpt-daybreak-blue-latest" {
                 assert!(tier.is_none(), "{} must not carry serviceTier", m.id);
             } else {

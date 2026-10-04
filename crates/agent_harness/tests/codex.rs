@@ -1,6 +1,3 @@
-//! CodexHarness integration tests against the fake app server in
-//! `tests/fixtures/fake-codex.sh` (no real `codex` binary involved).
-
 #![cfg(unix)]
 
 use std::path::PathBuf;
@@ -11,8 +8,8 @@ use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
 use agent_harness::{
-    AgentEvent, DoneStatus, HarnessId, ReasoningLevel, RunRequest, SandboxLevel, TodoItem,
-    TodoStatus, ToolCall, UserInputAnswer, UserInputQuestion,
+    AgentEvent, DoneStatus, HarnessId, ReasoningLevel, RunRequest, SandboxLevel, Skill, SkillRef,
+    TodoItem, TodoStatus, ToolCall, UserInputAnswer, UserInputQuestion,
 };
 use agent_harness::{
     CancellationToken, CodexHarness, Harness, HarnessError, RunControls, SteerMessage,
@@ -26,7 +23,10 @@ fn fixture_path() -> PathBuf {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+        if let Err(error) = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+        {
+            eprintln!("could not mark fake-codex.sh executable: {error}");
+        }
     }
     path
 }
@@ -45,10 +45,11 @@ fn request(prompt: &str) -> RunRequest {
         sandbox: SandboxLevel::WorkspaceWrite,
         auto_approve: true,
         resume: None,
+        attachments: Vec::new(),
+        skills: Vec::new(),
     }
 }
 
-/// Controls whose `request_input` answers every question with `answer_label`.
 fn controls(
     answer_label: &'static str,
 ) -> (RunControls, mpsc::Sender<SteerMessage>, CancellationToken) {
@@ -64,7 +65,7 @@ fn controls(
                     labels: vec![answer_label.into()],
                 })
                 .collect();
-            let _ = tx.send(answers);
+            tx.send(answers).expect("receiver is returned alongside");
             rx
         }),
         steering: steer_rx,
@@ -122,7 +123,6 @@ async fn happy_path_maps_deltas_items_usage_and_done() {
     );
     let events = run_to_end(&harness(), req, controls).await;
 
-    // SessionStarted from thread/start's thread id.
     let starts: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
@@ -143,7 +143,6 @@ async fn happy_path_maps_deltas_items_usage_and_done() {
     assert_eq!(cwd, "/tmp");
     assert_eq!(session_id, "th-1");
 
-    // Deltas — both wire spellings accepted.
     assert!(events.contains(&AgentEvent::TextDelta {
         text: "Hello".into()
     }));
@@ -154,7 +153,6 @@ async fn happy_path_maps_deltas_items_usage_and_done() {
         text: "summary".into()
     }));
 
-    // commandExecution: ToolCall at started only, exit code 1 => error result.
     assert_eq!(
         events
             .iter()
@@ -175,7 +173,6 @@ async fn happy_path_maps_deltas_items_usage_and_done() {
         diff: None,
     }));
 
-    // fileChange (single add): WriteFile, refreshed at completion.
     assert_eq!(
         events
             .iter()
@@ -197,7 +194,6 @@ async fn happy_path_maps_deltas_items_usage_and_done() {
         diff: None,
     }));
 
-    // mcpToolCall with failed status.
     assert!(events.contains(&AgentEvent::ToolCall {
         id: "mcp1".into(),
         call: ToolCall::Mcp {
@@ -213,7 +209,6 @@ async fn happy_path_maps_deltas_items_usage_and_done() {
         diff: None,
     }));
 
-    // webSearch lifecycle.
     assert!(events.contains(&AgentEvent::ToolCall {
         id: "w1".into(),
         call: ToolCall::WebSearch {
@@ -227,7 +222,6 @@ async fn happy_path_maps_deltas_items_usage_and_done() {
         diff: None,
     }));
 
-    // Completion-only todoList still opens and closes the lifecycle.
     assert!(events.contains(&AgentEvent::ToolCall {
         id: "td1".into(),
         call: ToolCall::Todo {
@@ -244,14 +238,12 @@ async fn happy_path_maps_deltas_items_usage_and_done() {
         diff: None,
     }));
 
-    // Streamed agentMessage must not re-emit its completed text…
     assert!(
         !events
             .iter()
             .any(|e| matches!(e, AgentEvent::TextDelta { text } if text == "Hello world")),
         "streamed message text re-emitted: {events:?}"
     );
-    // …but a never-streamed one falls back to the completed text.
     assert!(events.contains(&AgentEvent::TextDelta {
         text: "unstreamed tail".into()
     }));
@@ -263,7 +255,6 @@ async fn happy_path_maps_deltas_items_usage_and_done() {
         2
     );
 
-    // Usage rides just before the terminal Done.
     let usage_pos = events
         .iter()
         .position(|e| {
@@ -299,6 +290,8 @@ async fn steering_uses_turn_steer_with_expected_turn_id() {
         .send(SteerMessage {
             prompt: "redirect please".into(),
             message_id: None,
+            attachments: Vec::new(),
+            skills: Vec::new(),
         })
         .await
         .expect("steer queued");
@@ -320,7 +313,7 @@ async fn steering_uses_turn_steer_with_expected_turn_id() {
     assert!(steered.0.is_some() && steered.1.is_some());
     assert_ne!(steered.0, steered.1);
 
-    // The fake only emits this delta after verifying expectedTurnId + text.
+    // The fake only emits this delta after verifying expectedTurnId and text.
     assert!(events.contains(&AgentEvent::TextDelta {
         text: "steered".into()
     }));
@@ -342,12 +335,13 @@ async fn rejected_steer_falls_back_to_a_follow_up_turn() {
         .send(SteerMessage {
             prompt: "redirect please".into(),
             message_id: None,
+            attachments: Vec::new(),
+            skills: Vec::new(),
         })
         .await
         .expect("steer queued");
     let events = run_to_end(&harness(), request("scenario:steer-race"), controls).await;
 
-    // Two turns: the raced one completes, then the fallback carries the steer.
     let dones: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
@@ -372,7 +366,7 @@ async fn rejected_steer_falls_back_to_a_follow_up_turn() {
         first_done_pos < steered_pos,
         "fallback turn starts after the raced turn ends: {events:?}"
     );
-    // Only emitted by the fake when the fallback turn/start carried the text.
+    // The fake only emits this when the fallback turn/start carried the text.
     assert!(events.contains(&AgentEvent::TextDelta {
         text: "fallback".into()
     }));
@@ -380,11 +374,6 @@ async fn rejected_steer_falls_back_to_a_follow_up_turn() {
 
 #[tokio::test]
 async fn approvals_round_trip_as_input_requests() {
-    // Approvals must reach the ENGINE's input bridge (`request_input`) — and
-    // the harness must NOT emit its own `InputRequested`/`InputResolved`
-    // twins: the bridge owns that lifecycle (it mints the request id the
-    // resolver is parked under; a harness-emitted copy folded an unanswerable
-    // duplicate chip into the doc).
     let asked: Arc<Mutex<Vec<UserInputQuestion>>> = Arc::new(Mutex::new(Vec::new()));
     let (steer_tx, steer_rx) = mpsc::channel(8);
     let _steer = steer_tx;
@@ -401,7 +390,7 @@ async fn approvals_round_trip_as_input_requests() {
                     labels: vec!["Allow".into()],
                 })
                 .collect();
-            let _ = tx.send(answers);
+            tx.send(answers).expect("receiver is returned alongside");
             rx
         }),
         steering: steer_rx,
@@ -429,7 +418,7 @@ async fn approvals_round_trip_as_input_requests() {
         "harness must not emit input lifecycle events itself: {events:?}"
     );
 
-    // The fake only completes the turn after seeing BOTH accept decisions.
+    // The fake only completes the turn after seeing both accept decisions.
     assert_eq!(
         events.last(),
         Some(&AgentEvent::Done {
@@ -474,7 +463,7 @@ async fn interrupt_sends_turn_interrupt_and_maps_aborted() {
         while let Some(ev) = stream.next().await {
             let ev = ev.expect("stream event");
             if matches!(&ev, AgentEvent::TextDelta { text } if text == "working") {
-                token.cancel(); // interrupt mid-turn
+                token.cancel();
             }
             events.push(ev);
         }
@@ -786,8 +775,6 @@ async fn child_thread_routing_tags_and_never_settles_parent() {
     let (controls, _steer, _token) = controls("Yes");
     let events = run_to_end(&harness(), request("scenario:subagent"), controls).await;
 
-    // Exactly one Done — the child's turn/completed must NOT settle the
-    // parent turn (the swallowed-catch-all bug class this table exists for).
     let dones: Vec<usize> = events
         .iter()
         .enumerate()
@@ -795,15 +782,12 @@ async fn child_thread_routing_tags_and_never_settles_parent() {
         .collect();
     assert_eq!(dones.len(), 1, "one parent Done only: {events:?}");
 
-    // Parent output that follows the child's turn/completed still streams.
     let late_parent = events
         .iter()
         .position(|e| matches!(e, AgentEvent::TextDelta { text } if text == "parent still going"))
         .expect("parent delta after child turn end");
     assert!(late_parent < dones[0]);
 
-    // The spawn chip lives on the parent feed, named from the agent path,
-    // and resolves when the activity completes.
     assert!(events.iter().any(|e| matches!(
         e,
         AgentEvent::ToolCall { id, call: ToolCall::Unknown { name, .. } }
@@ -812,7 +796,6 @@ async fn child_thread_routing_tags_and_never_settles_parent() {
     assert!(events.iter().any(
         |e| matches!(e, AgentEvent::ToolResult { id, is_error: false, .. } if id == "call_alpha")
     ));
-    // The root's own subAgentActivity produces no chip.
     assert!(
         !events
             .iter()
@@ -820,8 +803,6 @@ async fn child_thread_routing_tags_and_never_settles_parent() {
         "root self-activity must not register or render: {events:?}"
     );
 
-    // Child deltas and items arrive tagged with the spawn call id — never
-    // bare (child threads stream deltas on this wire; live-verified 0.146.1).
     assert!(events.contains(&AgentEvent::Subagent {
         parent_tool_use_id: "call_alpha".into(),
         event: Box::new(AgentEvent::TextDelta {
@@ -846,9 +827,6 @@ async fn child_thread_routing_tags_and_never_settles_parent() {
             diff: None,
         }),
     }));
-    // The parent's steer (a userMessage item on the CHILD thread) arrives as
-    // exactly one tagged UserMessage — completed only, never doubled by the
-    // started lifecycle event, never leaked untagged.
     assert_eq!(
         events
             .iter()
@@ -875,9 +853,6 @@ async fn child_thread_routing_tags_and_never_settles_parent() {
         "child tool call leaked into the parent feed: {events:?}"
     );
 
-    // The child's turn/completed (and later thread/closed) become tagged
-    // terminal events — real fan-outs never call close_agent, so the turn
-    // end is what flips the chip off "running".
     assert!(
         events
             .iter()
@@ -891,8 +866,6 @@ async fn child_thread_routing_tags_and_never_settles_parent() {
             >= 1,
         "{events:?}"
     );
-    // The tagged terminal must arrive from turn/completed — BEFORE the
-    // parent delta that follows it in the script (not only at thread/closed).
     let child_done = events
         .iter()
         .position(|e| {
@@ -911,10 +884,6 @@ async fn child_thread_routing_tags_and_never_settles_parent() {
     assert!(child_done < late_parent_delta, "{events:?}");
 }
 
-/// Run once per multi-agent mode using a wrapper supplied via
-/// CODEX_SUBAGENT_TEST_EXECUTABLE. The wrapper can set feature flags for its
-/// process without changing the user's config. This deliberately consumes
-/// model calls and is never part of the offline suite.
 #[tokio::test]
 #[ignore = "real Codex spawn, followup and resume; needs install, auth and network"]
 async fn live_subagent_spawn_and_followup_keep_one_transcript() {
@@ -941,11 +910,11 @@ async fn live_subagent_spawn_and_followup_keep_one_transcript() {
             steer.send(SteerMessage {
                 prompt: "Reuse the SAME existing subagent for one more task: reply exactly child-second. Use followup_task if available, otherwise send_input. Do not spawn a new agent. Wait for it to finish, then reply exactly parent-second. Do not inspect or change files.".into(),
                 message_id: None,
+                attachments: Vec::new(),
+                skills: Vec::new(),
             }).await.unwrap();
         }
         if turn == 2 {
-            // End the first app-server process while idle, then resume the
-            // parent in a fresh process and address its already-known child.
             interrupt.cancel();
             tokio::time::timeout(Duration::from_secs(10), async {
                 while stream.next().await.is_some() {}
@@ -1045,9 +1014,6 @@ async fn live_subagent_spawn_and_followup_keep_one_transcript() {
     assert_eq!(terminals, 3, "one child completion per assignment");
 }
 
-/// Live smoke against the REAL codex app-server (installed + authed):
-/// one trivial turn, ending on turn/completed.
-/// `cargo test -p agent_harness --test codex -- --ignored`.
 #[tokio::test]
 #[ignore = "spawns the real codex app-server; needs install + auth + network"]
 async fn live_real_app_server_single_turn() {
@@ -1056,8 +1022,7 @@ async fn live_real_app_server_single_turn() {
     req.cwd = std::env::temp_dir().display().to_string();
     let (controls, _steer, _token) = controls("Yes");
     let mut stream = harness.run(req, controls).await.expect("run starts");
-    // The session parks after the turn (steering mailbox open) — collect up
-    // to the first Done, not stream end.
+    // The session stays open after the turn, so stop at the first Done.
     let events = tokio::time::timeout(Duration::from_secs(120), async {
         let mut events = Vec::new();
         while let Some(ev) = stream.next().await {
@@ -1086,10 +1051,6 @@ async fn live_real_app_server_single_turn() {
         })
     ));
 }
-
-// ---------------------------------------------------------------------------
-// Slash-command discovery
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn image_generation_fake_lifecycle_reaches_done_without_inline_payload() {
@@ -1132,8 +1093,6 @@ async fn image_generation_fake_lifecycle_reaches_done_without_inline_payload() {
     }
 }
 
-/// Opt-in provider smoke; the engine integration test verifies the subsequent
-/// import lands under profile uploads. See docs/generated-images-validation.md.
 #[tokio::test]
 #[ignore = "consumes image quota; requires real Codex auth and image generation access"]
 async fn real_image_generation_smoke() {
@@ -1231,6 +1190,8 @@ async fn native_command_during_a_turn_waits_for_its_boundary() {
                         .send(SteerMessage {
                             prompt: "/review".into(),
                             message_id: None,
+                            attachments: Vec::new(),
+                            skills: Vec::new(),
                         })
                         .await
                         .unwrap();
@@ -1270,6 +1231,8 @@ async fn ordinary_followup_cannot_overtake_a_queued_native_command() {
                             .send(SteerMessage {
                                 prompt: prompt.into(),
                                 message_id: None,
+                                attachments: Vec::new(),
+                                skills: Vec::new(),
                             })
                             .await
                             .unwrap();
@@ -1319,7 +1282,6 @@ async fn models_discovers_visible_catalog_with_pagination() {
     assert_eq!(tier.choices[1].id, "fast");
     assert_eq!(tier.choices.len(), 2, "priority and fast dedupe");
 
-    // A failed probe stays useful and includes the new model in the fallback.
     let failed_probe = tempfile::tempdir().unwrap();
     let failed_exe = failed_probe.path().join("failed-codex");
     std::fs::write(&failed_exe, "#!/bin/sh\nexit 1\n").unwrap();
@@ -1334,12 +1296,131 @@ async fn models_discovers_visible_catalog_with_pagination() {
     assert_eq!(fallback[0].id, "gpt-6-astra");
 
     let missing = CodexHarness::new().with_executable("/nonexistent/codex-nowhere");
-    // models() requires a resolvable binary… but with_executable trusts the
-    // caller's path, so only the default resolution can report NotInstalled —
-    // exercise the harness identity surface instead.
     assert_eq!(missing.id(), HarnessId::Codex);
-    // "Codex" — comet composer/defaults.ts HARNESS_LABEL (and the registry's
-    // lazy descriptor must stay in lockstep).
     assert_eq!(missing.display_name(), "Codex");
     assert_eq!(missing.reasoning_levels().len(), 7);
+}
+
+fn skill_ref(name: &str, path: &str) -> SkillRef {
+    SkillRef {
+        name: name.into(),
+        path: path.into(),
+    }
+}
+
+fn completed_with(events: &[AgentEvent], text: &str) -> bool {
+    events
+        .iter()
+        .any(|event| matches!(event, AgentEvent::TextDelta { text: delta } if delta == text))
+        && matches!(
+            events.last(),
+            Some(AgentEvent::Done {
+                status: DoneStatus::Completed,
+                ..
+            })
+        )
+}
+
+#[tokio::test]
+async fn skills_list_parses_dedupes_and_keeps_disabled_and_pathless() {
+    let cwd = tempfile::tempdir().unwrap();
+    let skills = harness().skills(cwd.path()).await.expect("skills");
+    let skill = |name: &str, description: &str, path: Option<&str>, enabled: bool| Skill {
+        name: name.into(),
+        description: description.into(),
+        path: path.map(str::to_owned),
+        enabled,
+    };
+    assert_eq!(
+        skills,
+        vec![
+            skill(
+                "imagegen",
+                "Generate or edit images",
+                Some("/skills/imagegen/SKILL.md"),
+                true
+            ),
+            skill(
+                "bare",
+                "No interface block",
+                Some("/skills/bare/SKILL.md"),
+                true
+            ),
+            skill("off", "Disabled", Some("/skills/off/SKILL.md"), false),
+            skill("pathless", "No path", None, true),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn image_attachments_become_local_image_inputs_on_start_and_steer() {
+    let (controls, steer, _) = controls("Yes");
+    steer
+        .send(SteerMessage {
+            prompt: "and this".into(),
+            message_id: None,
+            attachments: vec!["/tmp/steer.png".into()],
+            skills: Vec::new(),
+        })
+        .await
+        .unwrap();
+    drop(steer);
+    let mut req = request("scenario:attachments");
+    req.attachments = vec!["/tmp/shot.png".into()];
+    let events = run_to_end(&harness(), req, controls).await;
+    assert!(
+        completed_with(&events, "attachments accepted"),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn selected_skills_become_skill_inputs_on_start_and_steer() {
+    let (controls, steer, _) = controls("Yes");
+    steer
+        .send(SteerMessage {
+            prompt: "Also this".into(),
+            message_id: Some("skill-steer".into()),
+            attachments: Vec::new(),
+            skills: vec![skill_ref("review", "/repo/other/SKILL.md")],
+        })
+        .await
+        .unwrap();
+    drop(steer);
+    let mut req = request("scenario:native-skills");
+    req.skills = vec![skill_ref("review", "/repo/a b/SKILL.md")];
+    let events = run_to_end(&harness(), req, controls).await;
+    assert!(
+        completed_with(&events, "native skills accepted"),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn skills_survive_a_rejected_steer_falling_back_to_a_new_turn() {
+    let (controls, steer, _) = controls("Yes");
+    steer
+        .send(SteerMessage {
+            prompt: "redirect please".into(),
+            message_id: None,
+            attachments: Vec::new(),
+            skills: vec![skill_ref("followup", "/repo/followup/SKILL.md")],
+        })
+        .await
+        .unwrap();
+    let events = run_to_end(&harness(), request("scenario:steer-race"), controls).await;
+    assert!(completed_with(&events, "fallback"), "{events:?}");
+}
+
+#[tokio::test]
+async fn commands_reject_attachments_and_skills() {
+    let (ctl, _, _) = controls("Yes");
+    let mut req = request("/review");
+    req.attachments.push("/tmp/image.png".into());
+    assert!(harness().run(req, ctl).await.is_err());
+
+    let (ctl, _, _) = controls("Yes");
+    let mut req = request("/review");
+    req.skills.push(skill_ref("review", "/repo/SKILL.md"));
+    assert!(harness().run(req, ctl).await.is_err());
 }

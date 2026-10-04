@@ -432,8 +432,12 @@ pub enum CodeBlockRenderer {
         /// A function that can modify the parent container after the code block
         /// content has been appended as a child element.
         transform: Option<CodeBlockTransformFn>,
+        /// Hides the code body when it returns true, e.g. while a rendered preview replaces it.
+        hide_body: Option<CodeBlockHideFn>,
     },
 }
+
+pub type CodeBlockHideFn = Arc<dyn Fn(&CodeBlockKind, &str, &App) -> bool>;
 
 pub type CodeBlockRenderFn = Arc<
     dyn Fn(
@@ -2362,7 +2366,9 @@ impl Element for MarkdownElement {
                                     builder.push_code_block(language);
                                     builder.push_div(code_block, range, markdown_end);
                                 }
-                                (CodeBlockRenderer::Custom { render, .. }, _) => {
+                                (CodeBlockRenderer::Custom {
+                                    render, hide_body, ..
+                                }, _) => {
                                     let parent_container = render(
                                         kind,
                                         &parsed_markdown,
@@ -2387,6 +2393,16 @@ impl Element for MarkdownElement {
                                         });
                                     // A custom renderer draws the frame, so the style shapes the body.
                                     code_block.style().refine(&self.style.code_block);
+                                    let code = parsed_markdown
+                                        .source()
+                                        .get(metadata.content_range.clone())
+                                        .unwrap_or_default();
+                                    if hide_body
+                                        .as_ref()
+                                        .is_some_and(|hide_body| hide_body(kind, code, cx))
+                                    {
+                                        code_block = code_block.hidden();
+                                    }
 
                                     builder.push_text_style(self.style.code_block.text.to_owned());
                                     builder.push_code_block(language);
@@ -4613,6 +4629,7 @@ mod tests {
                             div().child("header")
                         }),
                         transform: None,
+                        hide_body: None,
                     })
             }
         }

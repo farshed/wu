@@ -1,12 +1,3 @@
-//! Display helpers for tool calls and model pickers.
-
-/// Collapse model-generated text onto ONE line for single-line surfaces (tool
-/// chips, titles, previews): newlines, tabs and runs of whitespace become
-/// single spaces, trimmed.
-///
-/// Both viewports need this for the same reason from opposite directions — gpui
-/// breaks on a literal `\n` before its ellipsis logic, and a terminal cell grid
-/// would take an embedded newline as a cursor move.
 pub fn single_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -19,7 +10,6 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     }
 }
 
-/// Per-kind chip label + one-line detail.
 pub fn tool_chip_content(call: &crate::ToolCall) -> (&'static str, String) {
     let (label, detail) = tool_chip_content_raw(call);
     (label, single_line(&detail))
@@ -50,10 +40,6 @@ fn tool_chip_content_raw(call: &crate::ToolCall) -> (&'static str, String) {
             ("Todo", format!("{done}/{} done", items.len()))
         }
         ToolCall::Mcp { server, tool, .. } => ("MCP", format!("{server} · {tool}")),
-        // Subagent spawns decode as Unknown named "Agent[: <description>]"
-        // (every native driver's convention): label them "Agent" with the
-        // description as the detail — "Tool · Agent: scan repo" read as two
-        // labels fighting.
         ToolCall::Unknown { name, .. } => match name.strip_prefix("Agent: ") {
             Some(description) => ("Agent", description.to_owned()),
             None if name == "Agent" => ("Agent", String::new()),
@@ -62,10 +48,6 @@ fn tool_chip_content_raw(call: &crate::ToolCall) -> (&'static str, String) {
     }
 }
 
-/// The ToolGroup summary line — "Ran 3 commands · edited 2 files".
-///
-/// Takes `(call, is_error)` pairs so each viewport can keep its own row model;
-/// the summary itself is one implementation for both.
 pub fn tool_group_summary(tools: &[(crate::ToolCall, bool)]) -> String {
     use crate::ToolCall;
     let mut commands = 0usize;
@@ -131,7 +113,6 @@ pub fn tool_group_summary(tools: &[(crate::ToolCall, bool)]) -> String {
         segments.push(format!("{failed} failed"));
     }
     let mut summary = segments.join(" · ");
-    // Capitalize the first segment only.
     if let Some(first) = summary.get(0..1) {
         let upper = first.to_uppercase();
         summary.replace_range(0..1, &upper);
@@ -139,9 +120,6 @@ pub fn tool_group_summary(tools: &[(crate::ToolCall, bool)]) -> String {
     summary
 }
 
-/// The complete tool invocation a chip's header truncates to one line: the
-/// whole command, pattern, or URL, todo items one per line, MCP/unknown input
-/// as pretty-printed JSON.
 pub fn tool_call_text(call: &crate::ToolCall) -> String {
     use crate::ToolCall;
     match call {
@@ -196,8 +174,6 @@ pub fn tool_call_text(call: &crate::ToolCall) -> String {
     }
 }
 
-/// The harness's default model: the first catalog row (both curated catalogs
-/// lead with the flagship).
 pub fn default_model(models: &[crate::Model]) -> Option<&crate::Model> {
     models.first()
 }
@@ -213,11 +189,7 @@ pub fn selected_catalog_model<'a>(
     }
 }
 
-/// A model's default reasoning: High, else Medium, else the ladder's first entry.
-/// `None` only for ladder-less models (e.g. Haiku's thinking toggle instead).
 pub fn default_reasoning(ladder: &[crate::ReasoningLevel]) -> Option<crate::ReasoningLevel> {
-    // The recommended default is High (user-corrected — not X-High globally);
-    // fall to Medium then the ladder's first entry for shorter ladders.
     if ladder.contains(&crate::ReasoningLevel::High) {
         return Some(crate::ReasoningLevel::High);
     }
@@ -227,9 +199,6 @@ pub fn default_reasoning(ladder: &[crate::ReasoningLevel]) -> Option<crate::Reas
     ladder.first().copied()
 }
 
-/// Clamp a picked/remembered level to what the model actually offers: keep it
-/// when the ladder lists it, else fall to the model's default (never a stale
-/// or foreign level).
 pub fn clamp_reasoning(
     level: Option<crate::ReasoningLevel>,
     ladder: &[crate::ReasoningLevel],
@@ -254,9 +223,7 @@ pub fn reasoning_label(level: crate::ReasoningLevel) -> &'static str {
     }
 }
 
-/// Keep only the picks `model` still offers. Remembered picks outlive the
-/// model they were made on, and harnesses apply some options blindly (Claude
-/// appends `[1m]` to any model id when `contextWindow` is "1m").
+/// Harnesses apply some options blindly, so picks a model no longer offers must be dropped.
 pub fn offered_options(
     model: &crate::Model,
     mut selections: serde_json::Map<String, serde_json::Value>,
@@ -272,8 +239,6 @@ pub fn offered_options(
     selections
 }
 
-/// The on and off choices of a model option that toggles fast mode, whichever
-/// form the harness spells it in.
 pub fn fast_mode_values(option: &crate::ModelOption) -> Option<(&str, &str)> {
     let has = |id: &str| option.choices.iter().any(|choice| choice.id == id);
     let on = if matches!(option.id.as_str(), "fastMode" | "fast_mode") && has("on") {

@@ -172,9 +172,8 @@ fn configured_icon_theme(cx: &mut App) -> Arc<theme::IconTheme> {
     let themes = ThemeRegistry::default_global(cx);
     let theme_settings = ThemeSettings::get_global(cx);
 
-    let icon_theme_name = theme_settings
-        .icon_theme
-        .name(GlobalTheme::theme(cx).appearance);
+    let appearance = GlobalTheme::theme(cx).appearance;
+    let icon_theme_name = theme_settings.icon_theme.name(appearance);
 
     match themes.get_icon_theme(&icon_theme_name.0) {
         Ok(theme) => theme,
@@ -182,8 +181,13 @@ fn configured_icon_theme(cx: &mut App) -> Arc<theme::IconTheme> {
             if themes.extensions_loaded() {
                 log::error!("{err}");
             }
+            let symbols = match appearance {
+                Appearance::Light => theme::SYMBOLS_ICON_THEME_LIGHT_NAME,
+                Appearance::Dark => theme::SYMBOLS_ICON_THEME_NAME,
+            };
             themes
-                .get_icon_theme(DEFAULT_ICON_THEME_NAME)
+                .get_icon_theme(symbols)
+                .or_else(|_| themes.get_icon_theme(DEFAULT_ICON_THEME_NAME))
                 .unwrap_or_else(|_| default_icon_theme())
         }
     }

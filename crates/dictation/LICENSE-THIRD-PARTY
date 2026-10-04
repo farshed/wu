@@ -1,0 +1,59 @@
+Parts of this crate are adapted from code under the following license.
+
+MIT License
+
+Copyright (c) 2026 Wing
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+
+Speech model (downloaded at runtime, never bundled)
+
+NVIDIA Parakeet TDT 0.6B v3, (c) NVIDIA, licensed under the Creative Commons
+Attribution 4.0 International License (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+Original model: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+
+The files downloaded are the INT8 ONNX conversion by Ivan Stupakov, pinned to
+revision 8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce with a SHA-256 check per file:
+https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx
+Change from the original: INT8 ONNX conversion. No fine-tuning.
+
+-------------------------------------------------------------------------------
+
+ONNX Runtime (downloaded at runtime, never bundled or linked at build time)
+
+ONNX Runtime 1.28.3, MIT, Copyright (c) Microsoft Corporation.
+https://github.com/microsoft/onnxruntime/blob/main/LICENSE
+The shared library is taken from the official release archive for the current
+platform, https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3, with
+SHA-256 checks on both the archive and the extracted library.
+
+-------------------------------------------------------------------------------
+
+Libraries (Cargo dependencies, not copied into this crate)
+
+- parakeet-rs 0.3.8, MIT OR Apache-2.0, Copyright (c) 2025 Enes Altun
+- ort / ort-sys 2.0.0-rc.13, MIT OR Apache-2.0
+- libloading, ISC, used by ort to load ONNX Runtime at run time
+- tokenizers 0.23.2, Apache-2.0, with onig_sys 69.9.3 (MIT), which compiles
+  the Oniguruma C library (BSD-2-Clause) from source
+- cpal 0.17.3, Apache-2.0
+- rubato 0.16.2, MIT

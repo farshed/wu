@@ -1,10 +1,3 @@
-//! Codex app-server notification/item → [`AgentEvent`] mapping, ported from
-//! codex.ts's `mapItem`/notification switch.
-//!
-//! Tolerant by construction: both field spellings the app server has shipped
-//! (`delta`/`textDelta`, `exitCode`/`exit_code`, camelCase/snake_case item
-//! types) are accepted, and unknown item types map to nothing.
-
 use crate::{AgentEvent, DoneStatus, TodoItem, TodoStatus, ToolCall};
 use serde_json::Value;
 
@@ -25,8 +18,6 @@ fn str_field(v: &Value, keys: &[&str]) -> String {
         .to_owned()
 }
 
-/// Delta text under either spelling the app server has used
-/// (`delta` on agentMessage, `textDelta` on some reasoning builds).
 pub(crate) fn delta_text(params: &Value) -> Option<String> {
     field(params, &["delta", "textDelta"])
         .and_then(Value::as_str)
@@ -34,11 +25,7 @@ pub(crate) fn delta_text(params: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Codex streams independent reasoning items and indexed parts without text
-/// separators. Preserve those boundaries before the document folds deltas
-/// together; otherwise adjacent Markdown headings become `**one****two**`.
-/// One instance belongs to one thread, so child activity cannot split a
-/// parent's in-flight paragraph.
+/// Codex streams reasoning parts without separators, so adjacent headings would merge.
 #[derive(Default)]
 pub(crate) struct ReasoningStream {
     last_part: Option<(String, bool, u64)>,
@@ -101,7 +88,6 @@ pub(crate) fn item_id(params: &Value) -> String {
     str_field(params, &["itemId", "item_id"])
 }
 
-/// `params.turn.id` on the turn/* lifecycle notifications.
 pub(crate) fn turn_id(params: &Value) -> String {
     params
         .get("turn")
@@ -109,8 +95,6 @@ pub(crate) fn turn_id(params: &Value) -> String {
         .unwrap_or_default()
 }
 
-/// `params.turn.error.message` (turn/completed carries an optional error;
-/// turn/failed always should).
 pub(crate) fn turn_error_message(params: &Value) -> Option<String> {
     params
         .get("turn")
@@ -122,8 +106,6 @@ pub(crate) fn turn_error_message(params: &Value) -> Option<String> {
         })
 }
 
-/// `thread/tokenUsage/updated` → a [`AgentEvent::Usage`] snapshot of the LAST
-/// turn's tokens (held by the session loop, emitted before `Done`).
 pub(crate) fn usage_event(params: &Value) -> Option<AgentEvent> {
     let last = field(params, &["tokenUsage", "token_usage"])?.get("last")?;
     let count = |keys: &[&str]| {
@@ -159,9 +141,6 @@ pub(crate) fn context_usage_event(params: &Value) -> Option<AgentEvent> {
     (tokens.is_some() || window.is_some()).then_some(AgentEvent::ContextUsage { tokens, window })
 }
 
-/// Tool-shaped Codex items must always close the lifecycle they open: started
-/// opens the ToolCall, completed refreshes its metadata and resolves the same
-/// stable id (port of codex.ts `toolLifecycle`).
 fn tool_lifecycle(phase: Phase, id: String, call: ToolCall, is_error: bool) -> Vec<AgentEvent> {
     match phase {
         Phase::Started => vec![AgentEvent::ToolCall { id, call }],
@@ -180,9 +159,6 @@ fn tool_lifecycle(phase: Phase, id: String, call: ToolCall, is_error: bool) -> V
     }
 }
 
-/// A `fileChange` item's `changes` array reduced to the typed [`ToolCall`] the
-/// UI renders: a lone `add` is a file write, a lone `update` an edit, anything
-/// else (deletes, multi-file changes) a patch.
 fn file_change_call(changes: &[(String, String)]) -> ToolCall {
     match changes {
         [(path, kind)] if kind == "add" => ToolCall::WriteFile {
@@ -201,9 +177,6 @@ fn file_change_call(changes: &[(String, String)]) -> ToolCall {
     }
 }
 
-/// `turn/plan/updated` → the live checklist chip. Steps carry
-/// `pending | inProgress | completed`; like ACP plans the update has no item
-/// id, so it refreshes the singleton [`crate::LIVE_PLAN_TOOL_ID`] in place.
 pub(crate) fn plan_update_events(params: &Value) -> Vec<AgentEvent> {
     let Some(plan) = params.get("plan").and_then(Value::as_array) else {
         return Vec::new();
@@ -239,8 +212,6 @@ pub(super) fn is_collab_spawn(item: &Value) -> bool {
     )
 }
 
-/// A v1 spawn names its child in the completed result. Other collaboration
-/// tools can address several receivers, but only a spawn owns a transcript.
 pub(super) fn collab_spawn_child(item: &Value) -> Option<&str> {
     if !is_collab_spawn(item)
         || matches!(
@@ -257,9 +228,6 @@ pub(super) fn collab_spawn_child(item: &Value) -> Option<&str> {
     }
 }
 
-/// Map one `item/started` or `item/completed` payload's item to events.
-/// `agentMessage` and `reasoning` flow through their delta channels and are
-/// handled by the session loop, not here.
 pub(crate) fn map_item(phase: Phase, item: &Value) -> Vec<AgentEvent> {
     let id = str_field(item, &["id"]);
     let status = str_field(item, &["status"]);
@@ -272,8 +240,7 @@ pub(crate) fn map_item(phase: Phase, item: &Value) -> Vec<AgentEvent> {
             if phase == Phase::Started {
                 return vec![AgentEvent::ToolCall { id, call }];
             }
-            // `result` can be megabytes of inline media. Never inspect, clone,
-            // log, or forward it: savedPath is the sole supported source.
+            // `result` can be megabytes of inline media; never read or forward it.
             let path = str_field(item, &["savedPath", "saved_path"]);
             let failure = item.get("failure").filter(|v| !v.is_null());
             let error = if let Some(failure) = failure {
@@ -352,7 +319,6 @@ pub(crate) fn map_item(phase: Phase, item: &Value) -> Vec<AgentEvent> {
                 .unwrap_or_default()
                 .iter()
                 .map(|c| {
-                    // Unknown kinds degrade to "update", like codex.ts.
                     let kind = c
                         .get("kind")
                         .and_then(Value::as_str)
@@ -443,13 +409,8 @@ pub(crate) fn map_item(phase: Phase, item: &Value) -> Vec<AgentEvent> {
                 matches!(status.as_str(), "failed" | "errored"),
             )
         }
-        // A subagent spawn/lifecycle marker on the PARENT thread (multi-agent
-        // v2, codex 0.146.x): the parent-feed chip for the child thread. The
-        // child's own traffic routes separately (see `route_child_notification`
-        // in mod.rs); this is only the spawn tool call the chip folds from.
         "subAgentActivity" | "sub_agent_activity" => {
-            // A lifecycle marker has its own item id. It is not another
-            // spawn; the child's turn notifications carry its terminal state.
+            // Later lifecycle markers carry their own item ids and are not spawns.
             if !matches!(
                 item.get("kind").and_then(Value::as_str),
                 Some("started" | "spawned")
@@ -471,17 +432,11 @@ pub(crate) fn map_item(phase: Phase, item: &Value) -> Vec<AgentEvent> {
                 matches!(str_field(item, &["kind"]).as_str(), "failed" | "errored"),
             )
         }
-        // reasoning / agentMessage flow through delta channels; the PARENT
-        // feed's userMessage items are echoes of prompts we sent (already in
-        // the doc). A CHILD thread's userMessage is different — the parent
-        // steering its subagent — and is mapped where child items route
-        // (mod.rs child branch), not here.
+        // Parent userMessage items only echo prompts we sent.
         _ => Vec::new(),
     }
 }
 
-/// The text of a `userMessage` thread item. Codex builds have carried both
-/// shapes: a plain `text` field and a `content` array of text blocks.
 pub(crate) fn user_message_text(item: &Value) -> Option<String> {
     let text = str_field(item, &["text"]);
     if !text.trim().is_empty() {
@@ -499,9 +454,6 @@ pub(crate) fn user_message_text(item: &Value) -> Option<String> {
     (!joined.trim().is_empty()).then_some(joined)
 }
 
-/// Per-child stream state, retained across parent turns and follow-up tasks.
-/// Completion-only messages need the same text fallback as the root. Replayed
-/// user items must not reopen a finished document or duplicate a steering entry.
 #[derive(Default)]
 pub(super) struct ChildStream {
     reasoning: ReasoningStream,
@@ -534,9 +486,7 @@ impl ChildStream {
             }
             if self.settled {
                 self.settled = false;
-                // v2 followup_task starts a new child turn without echoing a
-                // userMessage. Reopen the existing document without inventing
-                // a user prompt or attributing an activity id as a new spawn.
+                // A follow-up task starts a child turn without echoing a userMessage.
                 return vec![AgentEvent::Steered {
                     assistant_message_id: None,
                     next_assistant_message_id: None,
@@ -649,9 +599,6 @@ impl ChildStream {
     }
 }
 
-/// The thread a notification is addressed to: `thread/started` carries it at
-/// `params.thread.id`, everything else at `params.threadId`. `None` for
-/// thread-less methods (old builds, account noise).
 pub(crate) fn notification_thread_id(method: &str, params: &Value) -> Option<String> {
     if method == "thread/started" {
         return params
@@ -665,22 +612,7 @@ pub(crate) fn notification_thread_id(method: &str, params: &Value) -> Option<Str
         .map(str::to_owned)
 }
 
-/// How a notification addressed to a REGISTERED child thread is handled.
-///
-/// Exported and pure so the table can be asserted directly. The shape (and
-/// the fail-open default) is load-bearing: two shipped bugs in t3code's codex
-/// runtime came from a catch-all that swallowed everything a child emitted —
-/// a child's `error` vanished (the agent card stayed running forever) and a
-/// swallowed `serverRequest/resolved` left the parent's approvals stuck.
-///
-/// - `Subagent`: content/lifecycle attributed to the child (item lifecycles,
-///   errors, closure) — mapped to tagged [`AgentEvent::Subagent`] events.
-/// - `Consumed`: child bookkeeping with no parent or subagent-doc meaning,
-///   plus child thread-lifecycle methods that would rewrite PARENT state if
-///   let through (`thread/started` repeats, status/name/usage updates).
-/// - `Parent`: pass through to the parent path — unknown methods land here BY
-///   DESIGN, so a codex update that adds a notification degrades to "the
-///   parent sees it", never to silent loss.
+/// Unknown methods must fall through to `Parent`; swallowing them hides child errors and stalls approvals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChildRoute {
     Subagent,
@@ -690,13 +622,7 @@ pub(crate) enum ChildRoute {
 
 pub(crate) fn route_child_notification(method: &str) -> ChildRoute {
     match method {
-        // Child message/reasoning deltas DO stream on this wire tagged with
-        // the child's threadId (live-verified against codex-cli 0.146.1
-        // multi-agent capture) — the subagent transcript is token-level live
-        // without touching the rollout file. Child TURN ends are the
-        // subagent's terminal signal: `thread/closed` fires only via the
-        // collab close_agent tool, which real fan-outs never call
-        // (live-verified — chips stayed "running" forever without this).
+        // Child turn ends are the terminal signal; thread/closed only fires on close_agent.
         "item/started"
         | "item/completed"
         | "item/agentMessage/delta"
@@ -709,12 +635,8 @@ pub(crate) fn route_child_notification(method: &str) -> ChildRoute {
         | "turn/aborted"
         | "error"
         | "thread/closed" => ChildRoute::Subagent,
-        // Child status bookkeeping with no subagent meaning: consumed
-        // so it can never settle the PARENT turn (the exact bug class the
-        // explicit table exists for).
         "thread/status/changed"
         | "thread/tokenUsage/updated"
-        // Child chatter with no consumer on this wire.
         | "item/commandExecution/outputDelta"
         | "item/fileChange/outputDelta"
         | "item/fileChange/patchUpdated"
@@ -724,13 +646,10 @@ pub(crate) fn route_child_notification(method: &str) -> ChildRoute {
         | "thread/name/updated"
         | "thread/settings/updated"
         | "rawResponseItem/completed"
-        // Child-owned thread lifecycle that maps onto PARENT state in a
-        // naive passthrough (archived/compacted), plus repeat thread/started.
         | "thread/archived"
         | "thread/unarchived"
         | "thread/compacted"
         | "thread/started" => ChildRoute::Consumed,
-        // Unknown or parent-owned (approvals bookkeeping, account noise).
         _ => ChildRoute::Parent,
     }
 }
@@ -1016,8 +935,6 @@ mod tests {
 
     #[test]
     fn child_routing_table_fails_open_to_parent() {
-        // Child content/lifecycle → the subagent path, deltas included
-        // (live-verified: child threads stream them on this wire).
         for m in [
             "item/started",
             "item/completed",
@@ -1028,22 +945,16 @@ mod tests {
         ] {
             assert_eq!(route_child_notification(m), ChildRoute::Subagent, "{m}");
         }
-        // Child TURN ENDS are the subagent's terminal signal…
         for m in ["turn/completed", "turn/aborted", "turn/failed"] {
             assert_eq!(route_child_notification(m), ChildRoute::Subagent, "{m}");
         }
-        // A child turn start can reopen a completed assignment. It must never
-        // reach the parent turn router.
         assert_eq!(
             route_child_notification("turn/started"),
             ChildRoute::Subagent
         );
-        // Child-owned thread lifecycle would rewrite parent state — consumed.
         for m in ["thread/archived", "thread/compacted", "thread/started"] {
             assert_eq!(route_child_notification(m), ChildRoute::Consumed, "{m}");
         }
-        // Unknown methods degrade to "parent sees it", never silent loss
-        // (the two-shipped-bugs rule).
         for m in [
             "serverRequest/resolved",
             "thread/somethingBrandNew",

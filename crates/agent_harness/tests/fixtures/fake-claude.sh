@@ -2,7 +2,7 @@
 # Fake Claude Code CLI for agent_harness tests.
 #
 # Reads the first stream-json user line from stdin, picks a scenario from the
-# prompt text, and plays a scripted stream-json transcript on stdout —
+# prompt text, and plays a scripted stream-json transcript on stdout,
 # including control-channel round-trips read back from stdin. Frame shapes
 # mirror live captures from CLI 2.1.228. Driven by
 # crates/harness/tests/claude.rs.
@@ -127,6 +127,22 @@ case "$first" in
   emit '{"type":"result","subtype":"success","result":"steered","errors":[],"usage":{"input_tokens":1,"output_tokens":1},"session_id":"sess-steer"}'
   ;;
 
+*scenario:images*)
+  emit '{"type":"system","subtype":"init","model":"claude-fable-5","tools":[],"cwd":"/tmp","session_id":"sess-img"}'
+  [ "$(printf '%s' "$first" | grep -o '"type":"image"' | wc -l)" -eq 1 ] || exit 9
+  for want in '"type":"base64"' '"media_type":"image/png"' '"data":"aGVsbG8="' '"type":"text"'; do
+    case "$first" in *"$want"*) ;; *) exit 9 ;; esac
+  done
+  emit '{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"first-image-ok"}}}'
+  read -r steer || exit 1
+  for want in '"type":"image"' '"media_type":"image/jpeg"' '"data":"d29ybGQ="' '"type":"text"'; do
+    case "$steer" in *"$want"*) ;; *) exit 9 ;; esac
+  done
+  emit "$steer"
+  emit '{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"steer-image-ok"}}}'
+  emit '{"type":"result","subtype":"success","result":"images","errors":[],"usage":{"input_tokens":1,"output_tokens":1},"session_id":"sess-img"}'
+  ;;
+
 *scenario:superseded-steers*)
   # CLI 2.1.280 with rapid `now` steers: the second interrupts the turn the
   # first started before it is replayed; only the last steer is replayed.
@@ -154,7 +170,7 @@ case "$first" in
 
 *scenario:interrupt*)
   emit '{"type":"system","subtype":"init","model":"claude-fable-5","tools":[],"cwd":"/tmp","session_id":"sess-int"}'
-  # Wedge without reading stdin — forces the SIGTERM escalation path.
+  # Wedge without reading stdin to force the SIGTERM escalation path.
   exec sleep 30
   ;;
 

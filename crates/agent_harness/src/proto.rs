@@ -1,5 +1,3 @@
-//! Agent-side wire types: harness identity, run requests, streaming events, tool calls.
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -19,9 +17,9 @@ pub enum ReasoningLevel {
     XHigh,
     Max,
     Ultra,
-    /// xhigh + harness-specific setting.
+    /// xhigh plus a harness-specific setting.
     Ultracode,
-    /// Prompt-prefix driven (Claude).
+    /// Driven by a prompt prefix.
     Ultrathink,
 }
 
@@ -36,9 +34,7 @@ pub enum SandboxLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SteeringMode {
-    /// Steer delivered at the next step boundary within the live turn.
     StepBoundary,
-    /// Steer delivered only between turns.
     TurnBoundary,
 }
 
@@ -47,8 +43,6 @@ pub enum SteeringMode {
 pub struct Model {
     pub id: String,
     pub label: String,
-    /// Short tagline rendered under the name in the model picker (11px muted),
-    /// mirroring the Electron app's `ModelInfo.description`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default)]
@@ -79,26 +73,41 @@ pub struct RunRequest {
     pub prompt: String,
     pub model: Option<String>,
     pub reasoning: Option<ReasoningLevel>,
-    /// Harness-specific option selections (option id -> choice id), JSON round-tripped.
+    /// Option id to choice id.
     #[serde(default)]
     pub model_options: serde_json::Map<String, serde_json::Value>,
     pub cwd: String,
     pub sandbox: SandboxLevel,
     #[serde(default)]
     pub auto_approve: bool,
-    /// Harness-native session id to resume, if any.
+    /// Harness-native session id.
     pub resume: Option<String>,
+    /// Absolute image file paths.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<SkillRef>,
 }
 
-/// The session-scoped singleton id for the live plan/todo chip. ACP plan
-/// updates carry no wire id; adapters emit every update under this one id so
-/// the fold refreshes the same chip in place. Consumers that de-duplicate
-/// tool ids across segment boundaries (the engine's stale-echo filter) must
-/// EXEMPT this id — it legitimately reappears in every segment for the whole
-/// life of a run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Skill {
+    pub name: String,
+    pub description: String,
+    pub path: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRef {
+    pub name: String,
+    pub path: String,
+}
+
+/// Reappears in every segment of a run, so tool-id de-duplication must exempt it.
 pub const LIVE_PLAN_TOOL_ID: &str = "acp-plan";
 
-/// A decoded tool invocation, reduced to the fields each kind renders.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ToolCall {
@@ -110,7 +119,6 @@ pub enum ToolCall {
     },
     WriteFile {
         path: String,
-        /// Full content; STRIPPED by the render-parts policy before entering the doc.
         #[serde(skip_serializing_if = "Option::is_none")]
         content: Option<String>,
     },
@@ -159,14 +167,6 @@ pub enum ToolCall {
 }
 
 impl ToolCall {
-    /// A subagent SPAWN call — the `Agent[: <description>]` naming convention
-    /// every driver decodes its spawn tool into (claude/codex `Task`, cursor
-    /// `task`, grok `spawn_subagent`, opencode `task`). This is the single
-    /// genus gate for subagent binding: tagged subagent traffic may only ever
-    /// stamp a ref/status onto a spawn call, so a driver keying bug can never
-    /// turn an ordinary Run/Read chip into a spawn chip (2026-08-20: claude's
-    /// background-shell `task_notification` did exactly that — the chip
-    /// linked to a never-created doc and opened an empty panel).
     pub fn is_subagent_spawn(&self) -> bool {
         let name = match self {
             ToolCall::Unknown { name, .. } => name,
@@ -176,17 +176,6 @@ impl ToolCall {
         name == "Agent" || name.starts_with("Agent: ")
     }
 
-    /// The model a subagent SPAWN was given, when the spawn named one.
-    ///
-    /// Read off the spawn's own input rather than the session's picked model:
-    /// a spawn may override it per child (claude's `Agent` takes `model`, grok
-    /// `spawn_subagent` a `model_id`), and two chips spawned in one turn can
-    /// legitimately name different models. `None` means the spawn didn't say —
-    /// the child inherits the parent's model, which the chip already implies,
-    /// so nothing is rendered rather than guessing a name.
-    ///
-    /// Only ever answers for [`is_subagent_spawn`](Self::is_subagent_spawn)
-    /// calls: an ordinary tool with a stray `model` argument is not a spawn.
     pub fn subagent_model(&self) -> Option<&str> {
         if !self.is_subagent_spawn() {
             return None;
@@ -203,14 +192,9 @@ impl ToolCall {
     }
 }
 
-/// Spawn-input keys that carry a child model, in precedence order. Drivers
-/// disagree on the spelling, so the lookup is by key set, not by harness —
-/// a new adapter naming it any of these needs no code change here.
+/// In precedence order.
 pub const SUBAGENT_MODEL_KEYS: [&str; 4] = ["model", "modelId", "model_id", "subagent_model"];
 
-/// The spawn-input keys [`sanitize_tool_call`](crate::) must preserve so the
-/// chip can name the child's model. Deliberately tiny: everything else on a
-/// spawn's input (the whole prompt, most of all) stays host-local.
 pub const SUBAGENT_INPUT_KEEP: [&str; 5] = [
     "model",
     "modelId",
@@ -219,9 +203,6 @@ pub const SUBAGENT_INPUT_KEEP: [&str; 5] = [
     "subagent_type",
 ];
 
-/// Where one checklist item stands. Claude's TodoWrite, OpenCode and ACP plans
-/// distinguish the item being worked on from those still waiting; Codex and
-/// Cursor only report done / not done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TodoStatus {
@@ -232,8 +213,6 @@ pub enum TodoStatus {
 }
 
 impl TodoStatus {
-    /// Decode a harness status string. Anything unrecognised (including
-    /// `cancelled`) is `Pending`: not finished, not being worked on.
     pub fn parse(raw: &str) -> Self {
         match raw {
             "completed" | "complete" | "done" => Self::Completed,
@@ -243,13 +222,7 @@ impl TodoStatus {
     }
 }
 
-/// One checklist entry.
-///
-/// `done` is the original wire field and stays authoritative for completion,
-/// so docs written before `status` existed (and readers that ignore it) keep
-/// working. `status` is additive and written only when it adds information —
-/// i.e. for an in-progress item; a missing or unreadable value derives from
-/// `done`. Build items with [`TodoItem::new`] to keep the two consistent.
+/// `done` stays authoritative for completion; build with [`TodoItem::new`] to keep both consistent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TodoItem {
@@ -272,7 +245,6 @@ impl TodoItem {
         }
     }
 
-    /// Effective status: `done` wins, then the explicit status, else pending.
     pub fn status(&self) -> TodoStatus {
         if self.done {
             TodoStatus::Completed
@@ -282,9 +254,7 @@ impl TodoItem {
     }
 }
 
-/// A status this build does not know (a future `blocked`, say) must not fail
-/// the whole tool call — the part would vanish from the transcript. Treat it
-/// as absent so the item falls back to `done`.
+// An unknown status must not fail the whole tool call.
 fn lenient_todo_status<'de, D>(deserializer: D) -> Result<Option<TodoStatus>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -293,21 +263,17 @@ where
     Ok(value.and_then(|v| serde_json::from_value(v).ok()))
 }
 
-/// A slash command advertised by the agent (ACP `availableCommands`): typed as
-/// `/name` at the start of the composer, sent to the agent as prompt text.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SlashCommand {
     pub name: String,
     #[serde(default)]
     pub description: String,
-    /// Placeholder hint for the command's argument, when it takes one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_hint: Option<String>,
 }
 
-/// A file modification carried inline on a tool result (ACP
-/// `ToolCallContent::Diff`). `old_text: None` means a new file.
+/// `old_text: None` means a new file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolDiff {
@@ -347,7 +313,6 @@ pub enum DoneStatus {
     Errored,
 }
 
-/// The normalized streaming event every harness emits.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AgentEvent {
@@ -358,14 +323,12 @@ pub enum AgentEvent {
         #[serde(default)]
         tools: Vec<String>,
         cwd: String,
-        /// Harness-native session id (used for resume).
         session_id: String,
         assistant_message_id: String,
     },
     TextDelta {
         text: String,
     },
-    /// A generated raster asset. The engine materializes this path before publication.
     #[serde(rename_all = "camelCase")]
     GeneratedImage {
         id: String,
@@ -376,7 +339,6 @@ pub enum AgentEvent {
     ReasoningDelta {
         text: String,
     },
-    /// Backend-internal steering boundary marker.
     #[serde(rename_all = "camelCase")]
     AssistantMessageCompleted {
         assistant_message_id: String,
@@ -389,31 +351,22 @@ pub enum AgentEvent {
     ToolResult {
         id: String,
         is_error: bool,
-        /// Tool output text, capped by the emitting harness (ACP tool-call
-        /// content; claude/codex adapters never populate it). The doc-side
-        /// fold applies its own byte cap before anything persists.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
-        /// Inline file diff for edit-shaped tools (ACP `Diff` content).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diff: Option<ToolDiff>,
     },
-    /// Latest context occupancy, independent of cumulative billing usage.
-    /// Missing fields preserve the previous measurement; zero tokens is valid.
+    /// Missing fields keep the previous measurement; zero tokens is valid.
     #[serde(rename_all = "camelCase")]
     ContextUsage {
         tokens: Option<u64>,
         window: Option<u64>,
     },
-    /// Kept as a harness passthrough (rate-limit probes); never persisted to docs.
     #[serde(rename_all = "camelCase")]
     Usage {
         input_tokens: u64,
         output_tokens: u64,
     },
-    /// The agent advertised (or changed) its slash-command set — ACP
-    /// `available_commands_update`. The engine caches the latest list per
-    /// harness for the composer's `/` popup; never persisted to docs.
     #[serde(rename_all = "camelCase")]
     AvailableCommands {
         commands: Vec<SlashCommand>,
@@ -430,8 +383,6 @@ pub enum AgentEvent {
     InputResolved {
         request_id: String,
     },
-    /// A confirmed new assignment. When tagged as Subagent, this reopens the
-    /// same child transcript even if the provider does not echo the user text.
     #[serde(rename_all = "camelCase")]
     Steered {
         assistant_message_id: Option<String>,
@@ -444,24 +395,10 @@ pub enum AgentEvent {
         error: Option<String>,
         session_id: Option<String>,
     },
-    /// A USER-role message injected into a running session — today only seen
-    /// wrapped in [`AgentEvent::Subagent`]: the PARENT agent steering its
-    /// subagent mid-run (claude: a tagged user frame's text blocks). The
-    /// engine writes it to the subagent doc as its own user entry, closing
-    /// the streaming assistant segment above it — the subagent transcript
-    /// then reads like any steered chat. Never emitted untagged (the parent
-    /// chat's user messages come from doc commands, not the wire).
     #[serde(rename_all = "camelCase")]
     UserMessage {
         text: String,
     },
-    /// An event belonging to a SUBAGENT's nested transcript, attributed to
-    /// the spawning tool call (`parent_tool_use_id` = the parent-feed
-    /// `ToolCall::id` that launched it). Never folded into the parent chat
-    /// doc — the engine routes these to the subagent's own doc; the parent
-    /// keeps only the spawn chip. Additive: old consumers that don't match
-    /// this variant drop the nested traffic, which is the pre-subagent-viz
-    /// behavior.
     #[serde(rename_all = "camelCase")]
     Subagent {
         parent_tool_use_id: String,
@@ -485,8 +422,6 @@ mod tests {
         assert_eq!(serde_json::from_str::<AgentEvent>(&json).unwrap(), ev);
     }
 
-    /// Drivers spell the key differently; the chip must not care which one
-    /// spawned the child. Non-spawns never answer, whatever they carry.
     #[test]
     fn subagent_model_reads_every_spelling_and_only_off_a_spawn() {
         let spawn = |input: serde_json::Value| ToolCall::Unknown {
@@ -497,7 +432,6 @@ mod tests {
             let call = spawn(serde_json::json!({ key: "haiku" }));
             assert_eq!(call.subagent_model(), Some("haiku"), "key {key}");
         }
-        // An MCP-shaped spawn (cursor routes its `task` through MCP) too.
         assert_eq!(
             ToolCall::Mcp {
                 server: "s".into(),
@@ -507,7 +441,6 @@ mod tests {
             .subagent_model(),
             Some("sonnet")
         );
-        // Not a spawn: the name gate wins over the key.
         assert_eq!(
             ToolCall::Unknown {
                 name: "Bash".into(),
@@ -516,7 +449,6 @@ mod tests {
             .subagent_model(),
             None
         );
-        // A spawn that named nothing usable inherits — nothing to render.
         assert_eq!(
             spawn(serde_json::json!({ "model": " " })).subagent_model(),
             None
@@ -533,7 +465,6 @@ mod tests {
             .subagent_model(),
             None
         );
-        // Non-string values are not names.
         assert_eq!(
             spawn(serde_json::json!({ "model": 5 })).subagent_model(),
             None
