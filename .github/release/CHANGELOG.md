@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+## 1.1.1 - 2026-10-05
+
 - `/compact` and other slash commands now work mid-conversation in Claude chats.
 - The chat shows "Compacting conversation…" while the agent compacts and the context ring updates right after.
 - Long agent chats scroll smoothly and typing in the chat box feels instant, since only the messages on screen are drawn.
