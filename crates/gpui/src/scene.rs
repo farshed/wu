@@ -50,6 +50,7 @@ pub struct Scene {
     pub subpixel_sprites: Vec<SubpixelSprite>,
     pub polychrome_sprites: Vec<PolychromeSprite>,
     pub surfaces: Vec<PaintSurface>,
+    pub backdrop_blurs: Vec<BackdropBlur>,
 }
 
 #[expect(missing_docs)]
@@ -66,6 +67,7 @@ impl Scene {
         self.subpixel_sprites.clear();
         self.polychrome_sprites.clear();
         self.surfaces.clear();
+        self.backdrop_blurs.clear();
     }
 
     pub fn len(&self) -> usize {
@@ -82,6 +84,21 @@ impl Scene {
     pub fn pop_layer(&mut self) {
         self.layer_stack.pop();
         self.paint_operations.push(PaintOperation::EndLayer);
+    }
+
+    pub fn insert_backdrop_blur(&mut self, mut blur: BackdropBlur) {
+        let clipped_bounds = blur.bounds.intersect(&blur.content_mask.bounds);
+        if clipped_bounds.is_empty() {
+            return;
+        }
+        blur.order = self
+            .layer_stack
+            .last()
+            .copied()
+            .unwrap_or_else(|| self.primitive_bounds.insert(clipped_bounds));
+        self.backdrop_blurs.push(blur);
+        self.paint_operations
+            .push(PaintOperation::BackdropBlur(blur));
     }
 
     pub fn insert_primitive(&mut self, primitive: impl Into<Primitive>) {
@@ -142,6 +159,7 @@ impl Scene {
         for operation in &prev_scene.paint_operations[range] {
             match operation {
                 PaintOperation::Primitive(primitive) => self.insert_primitive(primitive.clone()),
+                PaintOperation::BackdropBlur(blur) => self.insert_backdrop_blur(*blur),
                 PaintOperation::StartLayer(bounds) => self.push_layer(*bounds),
                 PaintOperation::EndLayer => self.pop_layer(),
             }
@@ -160,6 +178,7 @@ impl Scene {
         self.polychrome_sprites
             .sort_by_key(|sprite| (sprite.order, sprite.tile.tile_id));
         self.surfaces.sort_by_key(|surface| surface.order);
+        self.backdrop_blurs.sort_by_key(|blur| blur.order);
     }
 
     #[cfg_attr(
@@ -187,6 +206,7 @@ impl Scene {
             polychrome_sprites_iter: self.polychrome_sprites.iter().peekable(),
             surfaces_start: 0,
             surfaces_iter: self.surfaces.iter().peekable(),
+            backdrop_blurs_iter: self.backdrop_blurs.iter().peekable(),
         }
     }
 }
@@ -213,6 +233,7 @@ pub(crate) enum PrimitiveKind {
 
 pub(crate) enum PaintOperation {
     Primitive(Primitive),
+    BackdropBlur(BackdropBlur),
     StartLayer(Bounds<ScaledPixels>),
     EndLayer,
 }
@@ -283,6 +304,7 @@ struct BatchIterator<'a> {
     polychrome_sprites_iter: Peekable<slice::Iter<'a, PolychromeSprite>>,
     surfaces_start: usize,
     surfaces_iter: Peekable<slice::Iter<'a, PaintSurface>>,
+    backdrop_blurs_iter: Peekable<slice::Iter<'a, BackdropBlur>>,
 }
 
 impl<'a> Iterator for BatchIterator<'a> {
@@ -321,11 +343,21 @@ impl<'a> Iterator for BatchIterator<'a> {
 
         let first = orders_and_kinds[0];
         let second = orders_and_kinds[1];
-        let (batch_kind, max_order_and_kind) = if first.0.is_some() {
+        let (batch_kind, mut max_order_and_kind) = if first.0.is_some() {
             (first.1, (second.0.unwrap_or(u32::MAX), second.1))
         } else {
             return None;
         };
+
+        // No batch may span a blur: the renderer snapshots the framebuffer at each blur's order.
+        while self
+            .backdrop_blurs_iter
+            .next_if(|blur| blur.order <= first.0.unwrap())
+            .is_some()
+        {}
+        if let Some(blur) = self.backdrop_blurs_iter.peek() {
+            max_order_and_kind = max_order_and_kind.min((blur.order, PrimitiveKind::Shadow));
+        }
 
         match batch_kind {
             PrimitiveKind::Shadow => {
@@ -496,6 +528,20 @@ pub enum PrimitiveBatch {
 }
 
 impl PrimitiveBatch {
+    /// The draw order of this batch's first primitive in `scene`.
+    pub fn first_order(&self, scene: &Scene) -> DrawOrder {
+        match self {
+            Self::Shadows(range) => scene.shadows[range.start].order,
+            Self::Quads(range) => scene.quads[range.start].order,
+            Self::Paths(range) => scene.paths[range.start].order,
+            Self::Underlines(range) => scene.underlines[range.start].order,
+            Self::MonochromeSprites { range, .. } => scene.monochrome_sprites[range.start].order,
+            Self::SubpixelSprites { range, .. } => scene.subpixel_sprites[range.start].order,
+            Self::PolychromeSprites { range, .. } => scene.polychrome_sprites[range.start].order,
+            Self::Surfaces(range) => scene.surfaces[range.start].order,
+        }
+    }
+
     #[expect(missing_docs)]
     pub fn label(&self) -> String {
         match self {
@@ -529,6 +575,21 @@ impl PrimitiveBatch {
     }
 }
 
+/// Device-pixel form of an [`crate::EdgeFade`]. A zero band disables that edge.
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
+#[repr(C)]
+#[expect(missing_docs)]
+pub struct EdgeFadeParams {
+    pub top_y: f32,
+    pub bottom_y: f32,
+    pub band_top: f32,
+    pub band_bottom: f32,
+    pub left_x: f32,
+    pub right_x: f32,
+    pub band_left: f32,
+    pub band_right: f32,
+}
+
 #[derive(Default, Debug, Copy, Clone)]
 #[repr(C)]
 #[expect(missing_docs)]
@@ -541,6 +602,7 @@ pub struct Quad {
     pub border_color: Hsla,
     pub corner_radii: Corners<ScaledPixels>,
     pub border_widths: Edges<ScaledPixels>,
+    pub fade: EdgeFadeParams,
 }
 
 impl From<Quad> for Primitive {
@@ -566,6 +628,18 @@ impl From<Underline> for Primitive {
     fn from(underline: Underline) -> Self {
         Primitive::Underline(underline)
     }
+}
+
+/// A region whose already painted content is blurred, see [`crate::Window::paint_backdrop_blur`].
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+#[expect(missing_docs)]
+pub struct BackdropBlur {
+    pub order: DrawOrder,
+    pub blur_radius: ScaledPixels,
+    pub bounds: Bounds<ScaledPixels>,
+    pub content_mask: ContentMask<ScaledPixels>,
+    pub corner_radii: Corners<ScaledPixels>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -716,6 +790,7 @@ pub struct MonochromeSprite {
     pub color: Hsla,
     pub tile: AtlasTile,
     pub transformation: TransformationMatrix,
+    pub fade: EdgeFadeParams,
 }
 
 impl From<MonochromeSprite> for Primitive {
@@ -735,6 +810,7 @@ pub struct SubpixelSprite {
     pub color: Hsla,
     pub tile: AtlasTile,
     pub transformation: TransformationMatrix,
+    pub fade: EdgeFadeParams,
 }
 
 impl From<SubpixelSprite> for Primitive {
@@ -754,7 +830,84 @@ pub struct PolychromeSprite {
     pub bounds: Bounds<ScaledPixels>,
     pub content_mask: ContentMask<ScaledPixels>,
     pub corner_radii: Corners<ScaledPixels>,
+    pub fade: EdgeFadeParams,
+    pub alpha_mask: ImageAlphaMaskParams,
     pub tile: AtlasTile,
+}
+
+/// A soft-edged rounded rectangle cut out of an image, in window coordinates.
+#[derive(Clone, Copy, Debug)]
+pub struct ImageAlphaMask {
+    /// The rounded rectangle to exclude.
+    pub bounds: Bounds<crate::Pixels>,
+    /// Corner radius of the cutout.
+    pub radius: crate::Pixels,
+    /// Width of the soft edge outside the cutout. Must be positive.
+    pub feather: crate::Pixels,
+    /// Fully transparent margin around the cutout.
+    pub clearance: crate::Pixels,
+    /// Optional bottom edge and its fade height.
+    pub bottom_fade: Option<(crate::Pixels, crate::Pixels)>,
+}
+
+/// [`ImageAlphaMask`] in device pixels. A zero feather disables the mask.
+#[derive(Default, Copy, Clone, Debug)]
+#[repr(C)]
+#[expect(missing_docs)]
+pub struct ImageAlphaMaskParams {
+    pub bounds: Bounds<ScaledPixels>,
+    pub radius: f32,
+    pub feather: f32,
+    pub clearance: f32,
+    pub bottom_y: f32,
+    pub bottom_feather: f32,
+    pub pad: f32,
+}
+
+impl ImageAlphaMask {
+    pub(crate) fn scale(self, factor: f32) -> ImageAlphaMaskParams {
+        let (bottom_y, bottom_feather) = self.bottom_fade.unwrap_or_default();
+        ImageAlphaMaskParams {
+            bounds: self.bounds.scale(factor),
+            radius: f32::from(self.radius)
+                .max(0.0)
+                .min(f32::from(self.bounds.size.width).max(0.0) * 0.5)
+                .min(f32::from(self.bounds.size.height).max(0.0) * 0.5)
+                * factor,
+            feather: f32::from(self.feather).max(0.0) * factor,
+            clearance: f32::from(self.clearance).max(0.0) * factor,
+            bottom_y: f32::from(bottom_y) * factor,
+            bottom_feather: f32::from(bottom_feather).max(0.0) * factor,
+            pad: 0.0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod image_alpha_mask_tests {
+    use super::*;
+    use crate::{px, size};
+
+    #[test]
+    fn mask_scales_all_geometry_together_and_clamps_radius() {
+        let mask = ImageAlphaMask {
+            bounds: Bounds::new(point(px(40.25), px(300.5)), size(px(500.0), px(100.0))),
+            radius: px(80.0),
+            feather: px(220.0),
+            clearance: px(8.0),
+            bottom_fade: Some((px(480.0), px(96.8))),
+        };
+        for factor in [1.0, 1.25, 2.0] {
+            let scaled = mask.scale(factor);
+            assert_eq!(scaled.bounds, mask.bounds.scale(factor));
+            assert_eq!(scaled.radius, 50.0 * factor);
+            assert_eq!(scaled.feather, 220.0 * factor);
+            assert_eq!(scaled.clearance, 8.0 * factor);
+            assert_eq!(scaled.bottom_y, 480.0 * factor);
+            assert_eq!(scaled.bottom_feather, 96.8 * factor);
+        }
+        assert_eq!(ImageAlphaMaskParams::default().feather, 0.0);
+    }
 }
 
 impl From<PolychromeSprite> for Primitive {
@@ -945,5 +1098,157 @@ impl PathVertex<Pixels> {
             st_position: self.st_position,
             content_mask: self.content_mask.scale(factor),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bounds() -> Bounds<ScaledPixels> {
+        Bounds::new(
+            point(ScaledPixels(0.), ScaledPixels(0.)),
+            crate::size(ScaledPixels(100.), ScaledPixels(100.)),
+        )
+    }
+
+    fn shadow(color: Hsla) -> Shadow {
+        Shadow {
+            order: 0,
+            blur_radius: ScaledPixels(0.),
+            bounds: bounds(),
+            corner_radii: Corners::default(),
+            content_mask: ContentMask { bounds: bounds() },
+            color,
+            element_bounds: bounds(),
+            element_corner_radii: Corners::default(),
+            inset: 0,
+            pad: 0,
+        }
+    }
+
+    // Matches Window::paint_backdrop_blur, including its invisible splitter.
+    fn paint_blur(scene: &mut Scene) {
+        scene.insert_primitive(shadow(crate::transparent_black()));
+        scene.insert_backdrop_blur(BackdropBlur {
+            order: 0,
+            blur_radius: ScaledPixels(10.),
+            bounds: bounds(),
+            content_mask: ContentMask { bounds: bounds() },
+            corner_radii: Corners::default(),
+        });
+    }
+
+    #[test]
+    fn batches_split_shadows_at_nested_backdrop_blurs() {
+        let mut scene = Scene::default();
+        scene.insert_primitive(shadow(crate::black()));
+        scene.push_layer(bounds());
+        paint_blur(&mut scene);
+        scene.insert_primitive(shadow(crate::black()));
+        scene.push_layer(bounds());
+        paint_blur(&mut scene);
+        scene.insert_primitive(shadow(crate::black()));
+        scene.pop_layer();
+        scene.pop_layer();
+        scene.finish();
+
+        let orders: Vec<_> = scene.shadows.iter().map(|shadow| shadow.order).collect();
+        assert!(orders[0] < scene.backdrop_blurs[0].order);
+        assert_eq!(orders[1], scene.backdrop_blurs[0].order);
+        assert_eq!(orders[2], orders[1]);
+        assert!(orders[2] < scene.backdrop_blurs[1].order);
+        assert_eq!(orders[3], scene.backdrop_blurs[1].order);
+        assert_eq!(
+            scene
+                .batches()
+                .map(|batch| batch.first_order(&scene))
+                .collect::<Vec<_>>(),
+            [orders[0], orders[1], orders[3]],
+        );
+        let ranges: Vec<_> = scene
+            .batches()
+            .map(|batch| match batch {
+                PrimitiveBatch::Shadows(range) => range,
+                other => panic!("unexpected batch: {other:?}"),
+            })
+            .collect();
+        assert_eq!(ranges, [0..1, 1..3, 3..5]);
+    }
+
+    #[test]
+    fn batches_coalesce_shadows_without_backdrop_blurs() {
+        let mut scene = Scene::default();
+        for _ in 0..3 {
+            scene.insert_primitive(shadow(crate::black()));
+        }
+        scene.finish();
+        let batches: Vec<_> = scene.batches().collect();
+        assert!(matches!(&batches[..], [PrimitiveBatch::Shadows(range)] if *range == (0..3)));
+    }
+
+    #[test]
+    fn batches_split_quads_at_direct_scene_blur() {
+        let mut scene = Scene::default();
+        let quad = Quad {
+            bounds: bounds(),
+            content_mask: ContentMask { bounds: bounds() },
+            ..Quad::default()
+        };
+        scene.insert_primitive(quad);
+        scene.insert_backdrop_blur(BackdropBlur {
+            order: 0,
+            blur_radius: ScaledPixels(10.),
+            bounds: bounds(),
+            content_mask: ContentMask { bounds: bounds() },
+            corner_radii: Corners::default(),
+        });
+        scene.insert_primitive(quad);
+        scene.finish();
+
+        assert!(scene.quads[0].order < scene.backdrop_blurs[0].order);
+        assert!(scene.quads[1].order > scene.backdrop_blurs[0].order);
+        let batches: Vec<_> = scene.batches().collect();
+        assert!(
+            matches!(&batches[..], [PrimitiveBatch::Quads(before), PrimitiveBatch::Quads(after)]
+            if *before == (0..1) && *after == (1..2))
+        );
+        assert_eq!(batches[1].first_order(&scene), scene.quads[1].order);
+    }
+
+    #[test]
+    fn batches_preserve_sprite_texture_boundaries_without_blurs() {
+        let mut scene = Scene::default();
+        for index in [0, 0, 1, 1, 0] {
+            scene.insert_primitive(MonochromeSprite {
+                order: 0,
+                pad: 0,
+                bounds: bounds(),
+                content_mask: ContentMask { bounds: bounds() },
+                color: crate::black(),
+                fade: EdgeFadeParams::default(),
+                tile: AtlasTile {
+                    texture_id: AtlasTextureId {
+                        index,
+                        kind: crate::AtlasTextureKind::Monochrome,
+                    },
+                    tile_id: crate::TileId(0),
+                    padding: 0,
+                    bounds: Bounds::default(),
+                },
+                transformation: TransformationMatrix::default(),
+            });
+        }
+        scene.finish();
+        let ranges: Vec<_> = scene
+            .batches()
+            .map(|batch| match batch {
+                PrimitiveBatch::MonochromeSprites { texture_id, range } => {
+                    (texture_id.index, range)
+                }
+                other => panic!("unexpected batch: {other:?}"),
+            })
+            .collect();
+        assert_eq!(ranges, [(0, 0..2), (1, 2..4), (0, 4..5)]);
     }
 }

@@ -39,6 +39,7 @@ pub(crate) struct TestWindowState {
     appearance_change_callback: Option<Box<dyn FnMut()>>,
     request_frame_callback: Option<Box<dyn FnMut(RequestFrameOptions)>>,
     frame_wake_count: Rc<Cell<usize>>,
+    frame_requested: Rc<Cell<bool>>,
     frame_scheduled: bool,
     frame_callback_pending: bool,
     input_handler: Option<PlatformInputHandler>,
@@ -102,6 +103,7 @@ impl TestWindow {
             appearance_change_callback: None,
             request_frame_callback: None,
             frame_wake_count: Rc::new(Cell::new(0)),
+            frame_requested: Rc::new(Cell::new(true)),
             frame_scheduled: false,
             frame_callback_pending: false,
             input_handler: None,
@@ -138,6 +140,21 @@ impl TestWindow {
     /// Every [`TextInputConfiguration`] forwarded to this window, in order.
     pub fn text_input_configurations(&self) -> Vec<TextInputConfiguration> {
         self.0.lock().text_input_configurations.clone()
+    }
+
+    /// Deliver one display tick if the window has requested frames.
+    pub fn simulate_display_tick(&self) -> bool {
+        let mut state = self.0.lock();
+        if !state.frame_requested.get() {
+            return false;
+        }
+        let Some(mut callback) = state.request_frame_callback.take() else {
+            return false;
+        };
+        drop(state);
+        callback(RequestFrameOptions::default());
+        self.0.lock().request_frame_callback = Some(callback);
+        true
     }
 
     pub fn simulate_resize(&mut self, size: Size<Pixels>) {
@@ -349,13 +366,17 @@ impl PlatformWindow for TestWindow {
     }
 
     fn frame_waker(&self) -> Option<Rc<dyn Fn()>> {
-        // Recording invocations (rather than delivering a frame) lets tests
-        // assert the wake protocol without coupling to frame timing; tests
-        // deliver frames explicitly via `simulate_frame_request`.
-        let frame_wake_count = self.0.lock().frame_wake_count.clone();
+        let state = self.0.lock();
+        let frame_wake_count = state.frame_wake_count.clone();
+        let requested = state.frame_requested.clone();
         Some(Rc::new(move || {
             frame_wake_count.set(frame_wake_count.get() + 1);
+            requested.set(true);
         }))
+    }
+
+    fn pause_frame_requests(&self) {
+        self.0.lock().frame_requested.set(false);
     }
 
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>) {

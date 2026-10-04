@@ -46,6 +46,9 @@ wgpu = { workspace = true, features = ["webgl"] }
 criterion.workspace = true
 naga = { version = "29.0.4", features = ["wgsl-in"] }
 
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+pollster.workspace = true
+
 [[bench]]
 name = "layout_line"
 harness = false

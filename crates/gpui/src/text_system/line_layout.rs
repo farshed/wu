@@ -1056,6 +1056,24 @@ mod tests {
     }
 
     #[test]
+    fn test_wrap_boundaries_keep_closing_punctuation_attached() {
+        let text = "aaa aaaa.\"";
+        let glyphs = (0..text.len())
+            .map(|i| glyph_at(i as f32 * 8., i))
+            .collect::<Vec<_>>();
+        let mut layout = make_layout(glyphs);
+        layout.width = px(80.);
+        let boundaries = layout.compute_wrap_boundaries(text, px(72.), None);
+        assert_eq!(
+            boundaries.as_slice(),
+            &[WrapBoundary {
+                run_ix: 0,
+                glyph_ix: 4
+            }]
+        );
+    }
+
+    #[test]
     fn test_force_width_latin_unchanged() {
         let cell_width = px(8.);
         let mut layout = make_layout(vec![glyph_at(0., 0), glyph_at(8., 1), glyph_at(16., 2)]);

@@ -516,6 +516,34 @@ fn gradient_color(background: Background, position: vec2<f32>, bounds: Bounds,
 
 // --- quads --- //
 
+struct EdgeFadeParams {
+    top_y: f32,
+    bottom_y: f32,
+    band_top: f32,
+    band_bottom: f32,
+    left_x: f32,
+    right_x: f32,
+    band_left: f32,
+    band_right: f32,
+}
+
+fn edge_fade_alpha(position: vec2<f32>, fade: EdgeFadeParams) -> f32 {
+    var ramp = 1.0;
+    if (fade.band_top > 0.0) {
+        ramp = min(ramp, clamp((position.y - fade.top_y) / fade.band_top, 0.0, 1.0));
+    }
+    if (fade.band_bottom > 0.0) {
+        ramp = min(ramp, clamp((fade.bottom_y - position.y) / fade.band_bottom, 0.0, 1.0));
+    }
+    if (fade.band_left > 0.0) {
+        ramp = min(ramp, clamp((position.x - fade.left_x) / fade.band_left, 0.0, 1.0));
+    }
+    if (fade.band_right > 0.0) {
+        ramp = min(ramp, clamp((fade.right_x - position.x) / fade.band_right, 0.0, 1.0));
+    }
+    return ramp * ramp;
+}
+
 struct Quad {
     order: u32,
     border_style: u32,
@@ -525,6 +553,7 @@ struct Quad {
     border_color: Hsla,
     corner_radii: Corners,
     border_widths: Edges,
+    fade: EdgeFadeParams,
 }
 
 struct QuadVarying {
@@ -562,6 +591,20 @@ fn vs_quad(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) insta
 }
 
 @fragment
+fn fs_solid_quad(input: QuadVarying) -> @location(0) vec4<f32> {
+    if (any(input.clip_distances < vec4<f32>(0.0))) {
+        return vec4<f32>(0.0);
+    }
+    return blend_color(input.background_solid, 1.0);
+}
+
+// Only selected for opaque fills that lie entirely inside their content mask.
+@fragment
+fn fs_opaque_solid_quad(input: QuadVarying) -> @location(0) vec4<f32> {
+    return input.background_solid;
+}
+
+@fragment
 fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
     // Alpha clip first, since we don't have `clip_distance`.
     if (any(input.clip_distances < vec4<f32>(0.0))) {
@@ -570,8 +613,10 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
 
     let quad = load_quad(input.quad_id);
 
-    let background_color = gradient_color(quad.background, input.position.xy, quad.bounds,
+    var background_color = gradient_color(quad.background, input.position.xy, quad.bounds,
         input.background_solid, input.background_color0, input.background_color1);
+    let edge_fade = edge_fade_alpha(input.position.xy, quad.fade);
+    background_color.a *= edge_fade;
 
     let unrounded = quad.corner_radii.top_left == 0.0 &&
         quad.corner_radii.bottom_left == 0.0 &&
@@ -687,6 +732,7 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
     var color = background_color;
     if (border_sdf < antialias_threshold) {
         var border_color = input.border_color;
+        border_color.a *= edge_fade;
 
         // Dashed border logic when border_style == 1
         if (quad.border_style == 1) {
@@ -1220,6 +1266,7 @@ struct MonochromeSprite {
     color: Hsla,
     tile: AtlasTile,
     transformation: TransformationMatrix,
+    fade: EdgeFadeParams,
 }
 
 
@@ -1228,6 +1275,8 @@ struct MonoSpriteVarying {
     @location(0) tile_position: vec2<f32>,
     @location(1) @interpolate(flat) color: vec4<f32>,
     @location(3) clip_distances: vec4<f32>,
+    @location(4) @interpolate(flat) fade_vertical: vec4<f32>,
+    @location(5) @interpolate(flat) fade_horizontal: vec4<f32>,
 }
 
 @vertex
@@ -1240,6 +1289,8 @@ fn vs_mono_sprite(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index
 
     out.tile_position = to_tile_position(unit_vertex, sprite.tile);
     out.color = hsla_to_rgba(sprite.color);
+    out.fade_vertical = vec4<f32>(sprite.fade.top_y, sprite.fade.bottom_y, sprite.fade.band_top, sprite.fade.band_bottom);
+    out.fade_horizontal = vec4<f32>(sprite.fade.left_x, sprite.fade.right_x, sprite.fade.band_left, sprite.fade.band_right);
     out.clip_distances = distance_from_clip_rect_transformed(unit_vertex, sprite.bounds, sprite.content_mask, sprite.transformation);
     return out;
 }
@@ -1254,10 +1305,37 @@ fn fs_mono_sprite(input: MonoSpriteVarying) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0);
     }
 
-    return blend_color(input.color, alpha_corrected);
+    let fade = EdgeFadeParams(
+        input.fade_vertical.x, input.fade_vertical.y, input.fade_vertical.z, input.fade_vertical.w,
+        input.fade_horizontal.x, input.fade_horizontal.y, input.fade_horizontal.z, input.fade_horizontal.w,
+    );
+    return blend_color(input.color, alpha_corrected * edge_fade_alpha(input.position.xy, fade));
 }
 
 // --- polychrome sprites --- //
+
+struct ImageAlphaMaskParams {
+    bounds: Bounds,
+    radius: f32,
+    feather: f32,
+    clearance: f32,
+    bottom_y: f32,
+    bottom_feather: f32,
+    pad: f32,
+}
+
+fn image_mask_alpha(position: vec2<f32>, mask: ImageAlphaMaskParams) -> f32 {
+    if (mask.feather <= 0.0) { return 1.0; }
+    let half_size = mask.bounds.size * 0.5;
+    let center = mask.bounds.origin + half_size;
+    let q = abs(position - center) - half_size + mask.radius;
+    let distance = length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - mask.radius;
+    var alpha = smoothstep(0.0, mask.feather, distance - mask.clearance);
+    if (mask.bottom_feather > 0.0) {
+        alpha = min(alpha, smoothstep(0.0, mask.bottom_feather, mask.bottom_y - position.y));
+    }
+    return alpha;
+}
 
 struct PolychromeSprite {
     order: u32,
@@ -1267,6 +1345,8 @@ struct PolychromeSprite {
     bounds: Bounds,
     content_mask: Bounds,
     corner_radii: Corners,
+    fade: EdgeFadeParams,
+    alpha_mask: ImageAlphaMaskParams,
     tile: AtlasTile,
 }
 
@@ -1307,7 +1387,7 @@ fn fs_poly_sprite(input: PolySpriteVarying) -> @location(0) vec4<f32> {
         let grayscale = dot(color.rgb, GRAYSCALE_FACTORS);
         color = vec4<f32>(vec3<f32>(grayscale), sample.a);
     }
-    return blend_color(color, sprite.opacity * saturate(0.5 - distance));
+    return blend_color(color, sprite.opacity * saturate(0.5 - distance) * edge_fade_alpha(input.position.xy, sprite.fade) * image_mask_alpha(input.position.xy, sprite.alpha_mask));
 }
 
 // --- surfaces --- //
@@ -1359,4 +1439,116 @@ fn fs_surface(input: SurfaceVarying) -> @location(0) vec4<f32> {
         1.0);
 
     return ycbcr_to_RGB * y_cb_cr;
+}
+
+struct BlurPassParams {
+    direction: vec2<f32>,
+    sigma: f32,
+    stride: f32,
+    source_texel_size: vec2<f32>,
+    padding: vec2<f32>,
+    weights: array<vec4<f32>, 33>,
+};
+
+@group(1) @binding(0) var<uniform> b_blur_pass: BlurPassParams;
+@group(1) @binding(1) var t_blur_source: texture_2d<f32>;
+@group(1) @binding(2) var s_blur_source: sampler;
+
+struct BlurPassVarying {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_blur_pass(@builtin(vertex_index) vertex_id: u32) -> BlurPassVarying {
+    let unit_vertex = vec2<f32>(f32(vertex_id & 1u), 0.5 * f32(vertex_id & 2u));
+    var out = BlurPassVarying();
+    out.position = vec4<f32>(unit_vertex * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), 0.0, 1.0);
+    out.uv = unit_vertex;
+    return out;
+}
+
+@fragment
+fn fs_blur_pass(input: BlurPassVarying) -> @location(0) vec4<f32> {
+    let params = b_blur_pass;
+    let sigma = max(params.sigma, 0.5);
+    let radius = i32(ceil(sigma * 3.0));
+    let step = params.direction * params.stride * params.source_texel_size;
+
+    var sum = vec4<f32>(0.0);
+    var total_weight = 0.0;
+    let base = input.uv;
+    if (radius <= 128) {
+        if (params.stride == 1.0) {
+            // At unit stride, each pair of adjacent taps shares one linear-filtered sample.
+            sum = textureSampleLevel(t_blur_source, s_blur_source, base, 0.0) * b_blur_pass.weights[0].x;
+            for (var k = 1; k <= radius; k += 2) {
+                let first = u32(k);
+                let second = first + 1u;
+                let a = b_blur_pass.weights[first / 4u][first % 4u];
+                let b = b_blur_pass.weights[second / 4u][second % 4u];
+                let weight = a + b;
+                let offset = (f32(k) + b / weight) * step;
+                sum += textureSampleLevel(t_blur_source, s_blur_source, base + offset, 0.0) * weight;
+                sum += textureSampleLevel(t_blur_source, s_blur_source, base - offset, 0.0) * weight;
+            }
+            return sum;
+        }
+        for (var k = -radius; k <= radius; k++) {
+            let ix = u32(abs(k));
+            let weight = b_blur_pass.weights[ix / 4u][ix % 4u];
+            sum += textureSampleLevel(t_blur_source, s_blur_source, base + f32(k) * step, 0.0) * weight;
+        }
+        return sum;
+    }
+    for (var k = -radius; k <= radius; k++) {
+        let weight = exp(-f32(k) * f32(k) / (2.0 * sigma * sigma));
+        sum += textureSampleLevel(t_blur_source, s_blur_source, base + f32(k) * step, 0.0) * weight;
+        total_weight += weight;
+    }
+    return sum / total_weight;
+}
+
+struct BackdropBlurParams {
+    bounds: Bounds,
+    corner_radii: Corners,
+    clip_bounds: Bounds,
+    source_rect: vec4<f32>,
+};
+
+@group(1) @binding(0) var<uniform> b_backdrop_blur: BackdropBlurParams;
+@group(1) @binding(1) var t_backdrop_blurred: texture_2d<f32>;
+@group(1) @binding(2) var s_backdrop_blurred: sampler;
+
+struct BackdropBlurVarying {
+    @builtin(position) position: vec4<f32>,
+    @location(0) device_position: vec2<f32>,
+    @location(1) clip_distances: vec4<f32>,
+};
+
+@vertex
+fn vs_backdrop_blur(@builtin(vertex_index) vertex_id: u32) -> BackdropBlurVarying {
+    let unit_vertex = vec2<f32>(f32(vertex_id & 1u), 0.5 * f32(vertex_id & 2u));
+    let params = b_backdrop_blur;
+
+    var out = BackdropBlurVarying();
+    out.position = to_device_position(unit_vertex, params.bounds);
+    out.device_position = unit_vertex * vec2<f32>(params.bounds.size) + params.bounds.origin;
+    out.clip_distances = distance_from_clip_rect(unit_vertex, params.bounds, params.clip_bounds);
+    return out;
+}
+
+@fragment
+fn fs_backdrop_blur(input: BackdropBlurVarying) -> @location(0) vec4<f32> {
+    // Blending is off for this pipeline, so pixels outside the blur must discard.
+    if (any(input.clip_distances < vec4<f32>(0.0))) {
+        discard;
+    }
+    let params = b_backdrop_blur;
+    if (quad_sdf(input.device_position, params.bounds, params.corner_radii) > 0.0) {
+        discard;
+    }
+
+    let uv = (input.device_position - params.source_rect.xy) / params.source_rect.zw;
+    return textureSampleLevel(t_backdrop_blurred, s_backdrop_blurred, uv, 0.0);
 }

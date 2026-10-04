@@ -1,6 +1,7 @@
 mod attachments;
 mod checkout;
 mod completion;
+mod composer;
 mod dictation;
 mod diff_view;
 mod image_viewer;
@@ -11,8 +12,7 @@ mod queue_panel;
 mod todo_panel;
 
 use crate::{
-    AcceptCommand, AgentChatSettings, AgentKind, DismissCommands, SelectNextCommand,
-    SelectPreviousCommand, Send, Stop,
+    AgentChatSettings, Send, Stop,
     chat_style::{
         Chip, accent, flavour_seed, flavour_word, format_elapsed, gradient_spinner, hairline, ink,
         mix, page, text_faint, ui, wash,
@@ -27,11 +27,12 @@ use settings::{AgentChatSendKey, Settings as _};
 use collections::{HashMap, HashSet};
 use editor::{Editor, EditorEvent};
 use gpui::{
-    Anchor, Animation, AnimationExt as _, AnyElement, App, ClipboardItem, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, FontWeight, Hsla, IntoElement, ParentElement,
-    KeyContext, PathBuilder, Render, ScrollHandle, SharedString, StyleRefinement, Styled,
-    ObjectFit, Subscription, ease_out_quint, Task, TextStyleRefinement, UnderlineStyle, WeakEntity, Window,
-    canvas, div, img, point, px,
+    Anchor, Animation, AnimationExt as _, AnyElement, App, Bounds, ClipboardItem, ContentMask,
+    Context, Entity, EventEmitter, FillOptions, FillRule, FocusHandle, Focusable, FontWeight,
+    Hsla, IntoElement, ParentElement, KeyContext, PathBuilder, PathStyle, Pixels, Point, Render,
+    ScrollHandle, SharedString, StyleRefinement, Styled, ObjectFit, Subscription, Svg,
+    ease_out_quint, Task, TextAlign, TextRun, TextStyleRefinement, Transformation,
+    UnderlineStyle, WeakEntity, Window, canvas, div, img, point, px, radians, size, svg,
 };
 use markdown::{
     CodeBlockRenderer, HeadingLevelStyles, MarkdownElement, MarkdownFont, MarkdownStyle,
@@ -64,14 +65,45 @@ const SEND_BUTTON_SIZE: f32 = 28.;
 const USER_COLLAPSED_LINES: usize = 5;
 const USER_COLLAPSE_CHARS: usize = 400;
 const USER_LINE_HEIGHT: f32 = 22.;
+const USER_TOGGLE_GAP: f32 = 8.;
+const ATTACHMENT_THUMB_WIDTH: f32 = 112.;
+const ATTACHMENT_THUMB_HEIGHT: f32 = 80.;
+const GENERATED_IMAGE_MAX_WIDTH: f32 = 512.;
+const GENERATED_IMAGE_MAX_HEIGHT: f32 = 420.;
+const SPACE_SM: f32 = 8.;
+const SPACE_MD: f32 = 12.;
+const SPACE_LG: f32 = 16.;
+const FIRST_ROW_BREATHING_ROOM: f32 = 10.;
+const TRANSCRIPT_BOTTOM_PAD: f32 = 32.;
+const MD_BLOCK_GAP: f32 = 12.;
 const TREE_ROW_HEIGHT: f32 = 32.;
 const TREE_GUTTER: f32 = 48.;
 const TREE_TRUNK_X: f32 = 12.5;
 const TREE_BEND_RADIUS: f32 = 6.;
 const TREE_BRANCH_END_X: f32 = 28.;
 const TREE_ICON_LEFT: f32 = 32.;
+const TREE_ICON_SIZE: f32 = 16.;
 const TREE_TEXT_GAP: f32 = 8.;
+const CHIP_HEIGHT: f32 = 38.;
+const CHIP_CARD_HEIGHT: f32 = 30.;
+const CHIP_HEADER_HEIGHT: f32 = CHIP_CARD_HEIGHT - 2.;
+const CHIPS_TOP_PAD: f32 = 2.;
+const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.;
+const TOOL_TEXT_SIZE: f32 = 12.;
+const TOOL_LINE_HEIGHT: f32 = 18.;
+const TOOL_SHIMMER_HALF_WIDTH: f32 = 0.36;
+const TOOL_SHIMMER_STRIP_WIDTH: f32 = 2.;
+const DETAIL_SEPARATOR: f32 = 1.;
+const BLOB_AFFORDANCE_HEIGHT: f32 = 24.;
+const CALL_WRAP_COLUMNS: usize = 80;
 const OUTPUT_MAX_LINES: usize = 24;
+const OUTPUT_LINE_HEIGHT: f32 = 18.;
+const CODE_HEADER_HEIGHT: f32 = 28.;
+const CODE_ACTION_SIZE: f32 = 22.;
+const DIAGRAM_MAX_HEIGHT: f32 = 480.;
+const SUBAGENT_SPINNER_CELL: f32 = 2.;
+const SUBAGENT_SPINNER_DIM: f32 = 0.1;
+const SUBAGENT_SPINNER_PERIOD: Duration = Duration::from_millis(750);
 const COPIED_FEEDBACK: Duration = Duration::from_millis(1200);
 const AUTO_ADVANCE: Duration = Duration::from_millis(220);
 const USAGE_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
@@ -129,7 +161,8 @@ pub struct ChatView {
     diagrams: std::cell::RefCell<HashMap<(String, bool), mermaid::Diagram>>,
     diagram_tasks: HashMap<(String, bool), Task<()>>,
     diagram_sources_shown: HashSet<String>,
-    editing_queued: Option<(usize, Prompt)>,
+    editing_queued: Option<queue_panel::QueuedEdit>,
+    composer_layout: composer::ComposerLayout,
     lightbox_focus: FocusHandle,
     attachment_error: Option<SharedString>,
     staging_count: usize,
@@ -168,7 +201,7 @@ impl ChatView {
         let kind = session.read(cx).kind();
         let flavour = flavour_seed(&session.read(cx).metadata().id);
         let composer = cx.new(|cx| {
-            let mut editor = Editor::auto_height(1, 12, window, cx);
+            let mut editor = Editor::auto_height(1, 10, window, cx);
             editor.set_placeholder_text("Do anything…", window, cx);
             editor.set_text_style_refinement(TextStyleRefinement {
                 font_size: Some(ui(14.).into()),
@@ -285,6 +318,7 @@ impl ChatView {
             diagram_tasks: HashMap::default(),
             diagram_sources_shown: HashSet::default(),
             editing_queued: None,
+            composer_layout: Default::default(),
             lightbox_focus: cx.focus_handle(),
             attachment_error: None,
             staging_count: 0,
@@ -324,8 +358,8 @@ impl ChatView {
                 let mut editor = Editor::auto_height(1, 6, window, cx);
                 editor.set_placeholder_text("Type your answer…", window, cx);
                 editor.set_text_style_refinement(TextStyleRefinement {
-                    font_size: Some(ui(13.5).into()),
-                    line_height: Some(ui(20.).into()),
+                    font_size: Some(ui(14.).into()),
+                    line_height: Some(ui(22.75).into()),
                     color: Some(cx.theme().colors().text),
                     ..Default::default()
                 });
@@ -475,9 +509,8 @@ impl ChatView {
             return;
         }
         if text.trim().is_empty() && self.attachments.is_empty() {
-            if self.editing_queued.take().is_some() {
-                self.composer_skills.clear();
-                cx.notify();
+            if self.editing_queued.is_some() {
+                self.cancel_queued_edit(window, cx);
             } else {
                 self.steer_newest_queued(cx);
             }
@@ -486,6 +519,7 @@ impl ChatView {
         self.composer
             .update(cx, |editor, cx| editor.clear(window, cx));
         if self.attachments.is_empty()
+            && self.editing_queued.is_none()
             && let Some(command) = app_command_for_text(&text, &self.command_items(cx))
         {
             self.run_app_command(command, window, cx);
@@ -501,9 +535,8 @@ impl ChatView {
             skills,
         };
         self.attachment_error = None;
-        if let Some((index, _)) = self.editing_queued.take() {
-            self.session
-                .update(cx, |session, cx| session.restore_queued(index, prompt, cx));
+        if self.editing_queued.is_some() {
+            self.save_queued_edit(prompt, window, cx);
             return;
         }
         self.session
@@ -585,11 +618,17 @@ impl ChatView {
         style.base_text_style.font_size = ui(14.).into();
         style.base_text_style.line_height = ui(22.).into();
         style.base_text_style.color = colors.text;
-        style.paragraph_spacing = px(12.);
+        style.paragraph_spacing = px(MD_BLOCK_GAP);
+        style.list_spacing = px(MD_BLOCK_GAP);
+        style.table_cell_padding = point(px(12.), px(12.));
+        style.container_style.margin.bottom = Some(px(-MD_BLOCK_GAP).into());
+        style.heading.margin.top = Some(px(0.).into());
+        style.heading.margin.bottom = Some(px(MD_BLOCK_GAP).into());
+        let is_light = cx.theme().appearance.is_light();
         style.inline_code = TextStyleRefinement {
             font_family: Some(CODE_FONT.into()),
             color: Some(accent),
-            background_color: Some(accent.opacity(0.22)),
+            background_color: Some(accent.opacity(if is_light { 0.10 } else { 0.12 })),
             ..Default::default()
         };
         style.link = TextStyleRefinement {
@@ -636,16 +675,65 @@ impl ChatView {
             color: Some(colors.text_muted),
             ..Default::default()
         };
-        style.selection_background_color = accent.opacity(0.35);
+        style.selection_background_color = accent.opacity(if is_light { 0.24 } else { 0.35 });
         style
     }
 
     fn thought_style(window: &Window, cx: &App) -> MarkdownStyle {
+        let faint = text_faint(cx);
         let mut style = Self::message_style(window, cx);
-        style.base_text_style.font_size = ui(12.).into();
-        style.base_text_style.line_height = ui(18.).into();
-        style.base_text_style.color = text_faint(cx);
-        style.paragraph_spacing = px(6.);
+        style.base_text_style.font_size = px(TOOL_TEXT_SIZE).into();
+        style.base_text_style.line_height = px(OUTPUT_LINE_HEIGHT).into();
+        style.base_text_style.color = faint;
+        style.paragraph_spacing = px(OUTPUT_LINE_HEIGHT);
+        style.list_spacing = px(OUTPUT_LINE_HEIGHT);
+        style.container_style.margin.bottom = Some(px(-OUTPUT_LINE_HEIGHT).into());
+        style.heading.margin.bottom = Some(px(OUTPUT_LINE_HEIGHT).into());
+        style.inline_code = TextStyleRefinement {
+            font_family: Some(CODE_FONT.into()),
+            color: Some(faint),
+            ..Default::default()
+        };
+        style.link = TextStyleRefinement {
+            color: Some(faint),
+            underline: Some(UnderlineStyle {
+                thickness: px(1.),
+                color: Some(faint),
+                wavy: false,
+            }),
+            ..Default::default()
+        };
+        let mut code_block = StyleRefinement::default();
+        code_block.margin.bottom = Some(px(OUTPUT_LINE_HEIGHT).into());
+        code_block.text = TextStyleRefinement {
+            font_family: Some(CODE_FONT.into()),
+            font_size: Some(px(TOOL_TEXT_SIZE).into()),
+            line_height: Some(px(OUTPUT_LINE_HEIGHT).into()),
+            color: Some(faint),
+            ..Default::default()
+        };
+        style.code_block = code_block;
+        let heading = || {
+            Some(TextStyleRefinement {
+                font_size: Some(px(TOOL_TEXT_SIZE).into()),
+                line_height: Some(px(OUTPUT_LINE_HEIGHT).into()),
+                font_weight: Some(FontWeight::SEMIBOLD),
+                color: Some(faint),
+                ..Default::default()
+            })
+        };
+        style.heading_level_styles = Some(HeadingLevelStyles {
+            h1: heading(),
+            h2: heading(),
+            h3: heading(),
+            h4: heading(),
+            h5: heading(),
+            h6: heading(),
+        });
+        style.block_quote = TextStyleRefinement {
+            color: Some(faint),
+            ..Default::default()
+        };
         style
     }
 
@@ -688,8 +776,24 @@ impl ChatView {
                 let toggle_key = key.clone();
                 let toggle_code = code.trim_end().to_string();
                 let diagram_view = view.clone();
+                let muted = colors.text_muted;
+                let ready_diagram = diagram.as_ref().and_then(|(shown_source, diagram)| {
+                    matches!(diagram, Some(mermaid::Diagram::Ready { .. }))
+                        .then_some(*shown_source)
+                });
+                let failure = diagram.as_ref().and_then(|(_, diagram)| match diagram {
+                    Some(mermaid::Diagram::Failed(error)) => {
+                        Some(SharedString::from(format!("Couldn't draw this diagram: {error}")))
+                    }
+                    _ => None,
+                });
+                let warning = cx.theme().status().warning;
                 div()
                     .w_full()
+                    .min_w_0()
+                    .mb(px(MD_BLOCK_GAP))
+                    .flex()
+                    .flex_col()
                     .rounded(px(10.))
                     .border_1()
                     .border_color(colors.border)
@@ -697,7 +801,8 @@ impl ChatView {
                     .overflow_hidden()
                     .child(
                         h_flex()
-                            .h(px(28.))
+                            .h(px(CODE_HEADER_HEIGHT))
+                            .flex_none()
                             .pl(px(12.))
                             .pr(px(5.))
                             .justify_between()
@@ -706,75 +811,118 @@ impl ChatView {
                             .bg(ink(0.02, cx))
                             .child(
                                 div()
+                                    .min_w_0()
                                     .text_size(px(11.))
-                                    .text_color(colors.text_muted)
+                                    .text_color(muted)
                                     .child(language),
                             )
-                            .child(div().flex_1())
-                            .when_some(diagram.clone(), |this, (shown_source, _)| {
-                                let view = diagram_view.clone();
-                                this.child(
-                                    div()
-                                        .id(ElementId::Name(format!("{toggle_key}-toggle").into()))
-                                        .h(px(22.))
-                                        .px(px(6.))
-                                        .flex()
-                                        .items_center()
-                                        .rounded(px(5.))
-                                        .cursor_pointer()
-                                        .text_size(px(10.5))
-                                        .text_color(colors.text_muted)
-                                        .hover(|style| style.bg(ink(0.08, cx)))
-                                        .child(if shown_source {
-                                            "Show diagram"
-                                        } else {
-                                            "Show source"
-                                        })
-                                        .on_click(move |_, _, cx| {
-                                            let code = toggle_code.clone();
-                                            view.update(cx, |this, cx| {
-                                                if !this.diagram_sources_shown.remove(&code) {
-                                                    this.diagram_sources_shown.insert(code);
-                                                }
-                                                cx.notify();
-                                            })
-                                            .ok();
-                                        }),
-                                )
-                            })
                             .child(
                                 h_flex()
-                                    .id(ElementId::Name(key.clone()))
-                                    .h(px(22.))
-                                    .px(px(6.))
-                                    .gap(px(4.))
-                                    .rounded(px(5.))
-                                    .cursor_pointer()
-                                    .text_size(px(10.5))
-                                    .text_color(colors.text_muted)
-                                    .hover(|style| style.bg(ink(0.08, cx)))
+                                    .flex_none()
+                                    .gap(px(2.))
+                                    .when_some(failure, |this, failure| {
+                                        this.child(
+                                            div()
+                                                .id(ElementId::Name(
+                                                    format!("{toggle_key}-failure").into(),
+                                                ))
+                                                .size(px(CODE_ACTION_SIZE))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .tooltip(Tooltip::text(failure))
+                                                .child(
+                                                    icon(IconName::AgentDangerTriangle, 13.)
+                                                        .text_color(warning),
+                                                ),
+                                        )
+                                    })
+                                    .when_some(ready_diagram, |this, shown_source| {
+                                        let view = diagram_view.clone();
+                                        this.child(
+                                            div()
+                                                .id(ElementId::Name(
+                                                    format!("{toggle_key}-toggle").into(),
+                                                ))
+                                                .size(px(CODE_ACTION_SIZE))
+                                                .rounded(px(6.))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .cursor_pointer()
+                                                .hover(|style| style.bg(ink(0.08, cx)))
+                                                .tooltip(Tooltip::text(if shown_source {
+                                                    "Show diagram"
+                                                } else {
+                                                    "Show source"
+                                                }))
+                                                .child(
+                                                    icon(
+                                                        if shown_source {
+                                                            IconName::Eye
+                                                        } else {
+                                                            IconName::FileCode
+                                                        },
+                                                        13.,
+                                                    )
+                                                    .text_color(muted),
+                                                )
+                                                .on_click(move |_, _, cx| {
+                                                    cx.stop_propagation();
+                                                    let code = toggle_code.clone();
+                                                    view.update(cx, |this, cx| {
+                                                        if !this.diagram_sources_shown.remove(&code)
+                                                        {
+                                                            this.diagram_sources_shown.insert(code);
+                                                        }
+                                                        cx.notify();
+                                                    })
+                                                    .ok();
+                                                }),
+                                        )
+                                    })
                                     .child(
-                                        Icon::new(if is_copied {
-                                            IconName::AgentCheck
-                                        } else {
-                                            IconName::AgentCopy
-                                        })
-                                        .size(IconSize::XSmall)
-                                        .color(Color::Muted),
-                                    )
-                                    .child(if is_copied { "Copied" } else { "Copy" })
-                                    .on_click(move |_, _, cx| {
-                                        let key = key.clone();
-                                        let code = code.clone();
-                                        view.update(cx, |this, cx| this.copy(key, code, cx)).ok();
-                                    }),
+                                        h_flex()
+                                            .id(ElementId::Name(key.clone()))
+                                            .h(px(CODE_ACTION_SIZE))
+                                            .px(px(6.))
+                                            .gap(px(4.))
+                                            .rounded(px(5.))
+                                            .cursor_pointer()
+                                            .text_size(px(10.5))
+                                            .text_color(muted)
+                                            .hover(|style| style.bg(ink(0.08, cx)))
+                                            .tooltip(Tooltip::text("Copy code"))
+                                            .child(
+                                                icon(
+                                                    if is_copied {
+                                                        IconName::AgentCheck
+                                                    } else {
+                                                        IconName::AgentCopy
+                                                    },
+                                                    12.,
+                                                )
+                                                .text_color(muted),
+                                            )
+                                            .when(is_copied, |this| this.child("Copied"))
+                                            .on_click(move |_, _, cx| {
+                                                cx.stop_propagation();
+                                                let key = key.clone();
+                                                let code = code.clone();
+                                                view.update(cx, |this, cx| this.copy(key, code, cx))
+                                                    .ok();
+                                            }),
+                                    ),
                             ),
                     )
                     .when_some(
-                        diagram.and_then(|(shown_source, diagram)| {
-                            if shown_source { None } else { diagram }
+                        diagram.and_then(|(shown_source, diagram)| match diagram {
+                            Some(diagram @ mermaid::Diagram::Ready { .. }) if !shown_source => {
+                                Some(diagram)
+                            }
+                            _ => None,
                         }),
-                        |this, diagram| this.child(render_diagram(diagram, diagram_view.clone(), cx)),
+                        |this, diagram| this.child(render_diagram(diagram, diagram_view.clone())),
                     )
             }),
             transform: None,
@@ -819,11 +967,21 @@ impl ChatView {
             .into_iter()
             .enumerate()
             .map(|(turn_index, (user, items))| {
+                let is_first_turn = turn_index == 0;
                 let is_last_turn = turn_index + 1 == turn_count;
+                let leading_gap = if is_first_turn && user.is_none() {
+                    0.
+                } else {
+                    SPACE_LG
+                };
+                let undelivered = user.filter(|index| {
+                    self.subagent.is_none()
+                        && matches!(entries[*index], Entry::User { undelivered: true, .. })
+                });
                 v_flex()
                     .relative()
                     .w_full()
-                    .gap(px(16.))
+                    .when(!is_first_turn, |this| this.mt(px(SPACE_LG)))
                     .when_some(user, |this, index| {
                         this.child(outline::record_bounds(self.turn_bounds.turns.clone(), index))
                             .child(self.render_user_message(index, cx))
@@ -835,12 +993,16 @@ impl ChatView {
                                 turn_index,
                                 &items,
                                 is_last_turn,
+                                leading_gap,
                                 &message_style,
                                 window,
                                 cx,
                             ))
                         },
                     )
+                    .when_some(undelivered, |this, index| {
+                        this.child(self.render_retry(index, cx))
+                    })
                     .into_any_element()
             })
             .collect()
@@ -850,8 +1012,7 @@ impl ChatView {
         &self,
         group: SharedString,
         at: i64,
-        copy_key: SharedString,
-        copy_text: String,
+        copy: Option<(SharedString, CopySource)>,
         align_end: bool,
         cx: &Context<Self>,
     ) -> impl IntoElement {
@@ -862,44 +1023,55 @@ impl ChatView {
                     .format("%b %-d, %-I:%M %p")
                     .to_string()
             });
-        let is_copied = self.copied.as_ref() == Some(&copy_key);
+        let muted = cx.theme().colors().text_muted;
         h_flex()
-            .h(px(32.))
-            .pt(px(8.))
-            .gap(px(8.))
+            .h(px(SPACE_SM + SPACE_MD * 2.))
+            .pt(px(SPACE_SM))
+            .w_full()
             .when(align_end, |this| this.justify_end())
-            .visible_on_hover(group)
-            .when_some(timestamp, |this, timestamp| {
-                this.child(
-                    div()
-                        .text_size(ui(12.))
-                        .text_color(cx.theme().colors().text_muted.opacity(0.55))
-                        .child(timestamp),
-                )
-            })
             .child(
-                div()
-                    .id(ElementId::Name(copy_key.clone()))
-                    .size(px(24.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(6.))
-                    .cursor_pointer()
-                    .hover(|style| style.bg(ink(0.08, cx)))
-                    .tooltip(Tooltip::text("Copy message"))
-                    .child(
-                        Icon::new(if is_copied {
-                            IconName::AgentCheck
-                        } else {
-                            IconName::AgentCopy
-                        })
-                        .size(IconSize::Small)
-                        .color(Color::Muted),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.copy(copy_key.clone(), copy_text.clone(), cx)
-                    })),
+                h_flex()
+                    .gap(px(SPACE_SM))
+                    .visible_on_hover(group)
+                    .when_some(timestamp, |this, timestamp| {
+                        this.child(
+                            div()
+                                .text_size(ui(12.))
+                                .text_color(muted.opacity(0.55))
+                                .child(timestamp),
+                        )
+                    })
+                    .when_some(copy, |this, (copy_key, copy_source)| {
+                        let is_copied = self.copied.as_ref() == Some(&copy_key);
+                        this.child(
+                            div()
+                                .id(ElementId::Name(copy_key.clone()))
+                                .size(px(SPACE_MD * 2.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(6.))
+                                .cursor_pointer()
+                                .hover(|style| style.bg(ink(0.08, cx)))
+                                .tooltip(Tooltip::text("Copy message"))
+                                .child(
+                                    icon(
+                                        if is_copied {
+                                            IconName::AgentCheck
+                                        } else {
+                                            IconName::AgentCopy
+                                        },
+                                        14.,
+                                    )
+                                    .text_color(muted),
+                                )
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    let text = copy_source.text(this, cx);
+                                    this.copy(copy_key.clone(), text, cx)
+                                })),
+                        )
+                    }),
             )
     }
 
@@ -908,21 +1080,32 @@ impl ChatView {
             text,
             at,
             attachments,
-            undelivered,
+            ..
         }) = self.entries(cx).get(index)
         else {
             return div().into_any_element();
         };
         let text = text.clone();
         let attachments = attachments.clone();
-        let undelivered = *undelivered && self.subagent.is_none();
         let line_count = text.lines().count();
         let collapsible =
             line_count > USER_COLLAPSED_LINES || text.chars().count() > USER_COLLAPSE_CHARS;
         let expanded = self.expanded_users.contains(&index);
         let collapsed = collapsible && !expanded;
         let group: SharedString = format!("agent-user-{index}").into();
+        let toggle_group: SharedString = format!("agent-user-toggle-{index}").into();
         let colors = cx.theme().colors();
+        let bubble_background = if cx.theme().appearance.is_light() {
+            wash(0.04, cx)
+        } else {
+            wash(0.08, cx)
+        };
+        let copy = (!text.trim().is_empty()).then(|| {
+            (
+                SharedString::from(format!("copy-user-{index}")),
+                CopySource::Text(text.clone()),
+            )
+        });
         v_flex()
             .group(group.clone())
             .w_full()
@@ -930,22 +1113,37 @@ impl ChatView {
             .when(!attachments.is_empty(), |this| {
                 this.child(
                     h_flex()
+                        .w_full()
+                        .min_w_0()
+                        .flex_none()
                         .flex_wrap()
                         .justify_end()
-                        .gap(px(6.))
+                        .items_start()
+                        .gap(px(8.))
+                        .px(px(4.))
+                        .pt(px(4.))
                         .pb(px(6.))
                         .children(attachments.into_iter().enumerate().map(|(position, path)| {
                             div()
                                 .id(SharedString::from(format!(
                                     "agent-sent-image-{index}-{position}"
                                 )))
-                                .size(px(96.))
-                                .rounded(px(12.))
+                                .flex_none()
+                                .w(px(ATTACHMENT_THUMB_WIDTH))
+                                .h(px(ATTACHMENT_THUMB_HEIGHT))
+                                .rounded(px(8.))
                                 .overflow_hidden()
                                 .border_1()
-                                .border_color(colors.border)
+                                .border_color(hairline(0.11, cx))
+                                .bg(ink(0.035, cx))
                                 .cursor_pointer()
-                                .child(img(path.clone()).size_full().object_fit(ObjectFit::Cover))
+                                .child(
+                                    img(path.clone())
+                                        .w(px(ATTACHMENT_THUMB_WIDTH - 2.))
+                                        .h(px(ATTACHMENT_THUMB_HEIGHT - 2.))
+                                        .rounded(px(7.))
+                                        .object_fit(ObjectFit::Cover),
+                                )
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.open_image(path.clone(), window, cx)
                                 }))
@@ -960,7 +1158,7 @@ impl ChatView {
                     .px(px(16.))
                     .py(px(10.))
                     .rounded(px(16.))
-                    .bg(wash(0.08, cx))
+                    .bg(bubble_background)
                     .text_size(ui(14.))
                     .line_height(ui(USER_LINE_HEIGHT))
                     .text_color(colors.text)
@@ -979,70 +1177,115 @@ impl ChatView {
                     })
                     .when(collapsible, |this| {
                         this.child(
-                            h_flex()
-                                .id(("agent-user-expand", index))
-                                .mt(px(8.))
-                                .gap(px(5.))
-                                .cursor_pointer()
-                                .text_color(colors.text_muted)
-                                .hover(|style| style.text_color(colors.text))
-                                .child(if expanded { "Show less" } else { "Show more" })
-                                .child(
-                                    Icon::new(if expanded {
-                                        IconName::AgentArrowUp
-                                    } else {
-                                        IconName::AgentArrowDown
-                                    })
-                                    .size(IconSize::XSmall)
-                                    .color(Color::Muted),
-                                )
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    if !this.expanded_users.remove(&index) {
-                                        this.expanded_users.insert(index);
-                                    }
-                                    cx.notify();
-                                })),
+                            div().mt(px(USER_TOGGLE_GAP)).flex().items_start().child(
+                                h_flex()
+                                    .id(("agent-user-expand", index))
+                                    .group(toggle_group.clone())
+                                    .gap(px(5.))
+                                    .text_size(ui(14.))
+                                    .line_height(ui(USER_LINE_HEIGHT))
+                                    .text_color(colors.text_muted)
+                                    .cursor_pointer()
+                                    .hover(|style| style.text_color(colors.text))
+                                    .child(if expanded { "Show less" } else { "Show more" })
+                                    .child(
+                                        icon(
+                                            if expanded {
+                                                IconName::AgentArrowUp
+                                            } else {
+                                                IconName::AgentArrowDown
+                                            },
+                                            12.,
+                                        )
+                                        .text_color(colors.text_muted)
+                                        .group_hover(toggle_group, |style| {
+                                            style.text_color(colors.text)
+                                        }),
+                                    )
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        if !this.expanded_users.remove(&index) {
+                                            this.expanded_users.insert(index);
+                                        }
+                                        cx.notify();
+                                    })),
+                            ),
                         )
                     }),
             )
-            .when(undelivered, |this| {
-                this.child(
-                    h_flex()
-                        .id(("agent-retry", index))
-                        .pt(px(6.))
-                        .gap(px(5.))
-                        .cursor_pointer()
-                        .text_size(ui(12.))
-                        .text_color(cx.theme().status().error)
-                        .hover(|style| style.opacity(0.8))
-                        .child(
-                            Icon::new(IconName::AgentRestart)
-                                .size(IconSize::XSmall)
-                                .color(Color::Error),
-                        )
-                        .child("Not delivered. Click to retry.")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.session
-                                .update(cx, |session, cx| session.retry_undelivered(index, cx))
-                        })),
-                )
-            })
-            .child(self.hover_strip(
-                group,
-                *at,
-                format!("copy-user-{index}").into(),
-                text.to_string(),
-                true,
-                cx,
-            ))
+            .child(self.hover_strip(group, *at, copy, true, cx))
             .into_any_element()
     }
 
+    fn render_retry(&self, index: usize, cx: &Context<Self>) -> AnyElement {
+        h_flex()
+            .id(("agent-retry", index))
+            .gap(px(SPACE_SM))
+            .pt(px(SPACE_LG))
+            .text_size(ui(12.))
+            .text_color(cx.theme().status().error)
+            .cursor_pointer()
+            .child("Not delivered. Click to retry.")
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.session
+                    .update(cx, |session, cx| session.retry_undelivered(index, cx))
+            }))
+            .into_any_element()
+    }
+
+    fn group_header(
+        &self,
+        id: ElementId,
+        open: bool,
+        title: AnyElement,
+        cx: &Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let colors = cx.theme().colors();
+        let muted = colors.text_muted;
+        let text = colors.text;
+        let rotation = if open {
+            0.
+        } else {
+            -std::f32::consts::FRAC_PI_2
+        };
+        h_flex()
+            .id(id)
+            .relative()
+            .gap(px(6.))
+            .pr(px(4.))
+            .h(px(TOOL_GROUP_HEADER_HEIGHT))
+            .cursor_pointer()
+            .text_size(px(TOOL_TEXT_SIZE))
+            .line_height(px(TOOL_LINE_HEIGHT))
+            .text_color(muted)
+            .hover(|style| style.text_color(text))
+            .child(
+                div().w(px(22.)).h(px(TOOL_LINE_HEIGHT)).flex_none().relative().child(
+                    icon(IconName::AgentArrowDown, 14.)
+                        .absolute()
+                        .left(px(TREE_TRUNK_X - 7.))
+                        .top(px(2.))
+                        .with_transformation(Transformation::rotate(radians(rotation)))
+                        .text_color(muted),
+                ),
+            )
+            .child(
+                div()
+                    .min_w_0()
+                    .h(px(TOOL_LINE_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .overflow_hidden()
+                    .child(title),
+            )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn render_assistant_turn(
         &self,
         turn_index: usize,
         items: &[usize],
         is_last_turn: bool,
+        leading_gap: f32,
         message_style: &MarkdownStyle,
         window: &Window,
         cx: &Context<Self>,
@@ -1051,7 +1294,7 @@ impl ChatView {
         let is_working = self.is_working(cx);
         let last_entry = entries.len().saturating_sub(1);
         let group: SharedString = format!("agent-turn-{turn_index}").into();
-        let mut children: Vec<AnyElement> = Vec::new();
+        let mut rows: Vec<(TranscriptRow, AnyElement)> = Vec::new();
         let all_items = items;
         let reply_position = items
             .iter()
@@ -1084,49 +1327,45 @@ impl ChatView {
                 _ => "Worked".to_string(),
             };
             let open = self.expanded_work.contains(&turn_index);
-            let colors = cx.theme().colors();
-            children.push(
-                h_flex()
-                    .id(("agent-worked", turn_index))
-                    .h(px(26.))
-                    .gap(px(6.))
-                    .cursor_pointer()
-                    .text_size(ui(12.))
-                    .text_color(colors.text_muted)
-                    .hover(|style| style.text_color(colors.text))
-                    .child(
-                        Icon::new(if open {
-                            IconName::AgentArrowDown
-                        } else {
-                            IconName::AgentArrowRight
-                        })
-                        .size(IconSize::Small)
-                        .color(Color::Muted),
-                    )
-                    .child(label)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if !this.expanded_work.remove(&turn_index) {
-                            this.expanded_work.insert(turn_index);
-                        }
-                        cx.notify();
-                    }))
-                    .into_any_element(),
-            );
+            rows.push((
+                TranscriptRow::ToolGroup,
+                self.group_header(
+                    ("agent-worked", turn_index).into(),
+                    open,
+                    SharedString::from(label).into_any_element(),
+                    cx,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if !this.expanded_work.remove(&turn_index) {
+                        this.expanded_work.insert(turn_index);
+                    }
+                    cx.notify();
+                }))
+                .into_any_element(),
+            ));
         }
+        let is_agent = |index: usize| {
+            matches!(&entries[index], Entry::Tool(tool) if tool.call.is_subagent_spawn())
+        };
         let mut cursor = 0;
         while cursor < items.len() {
             let index = items[cursor];
             match &entries[index] {
                 Entry::Tool(_) | Entry::Thinking(_) => {
+                    let genus = is_agent(index);
                     let end = items[cursor..]
                         .iter()
                         .position(|index| {
                             !matches!(entries[*index], Entry::Tool(_) | Entry::Thinking(_))
+                                || is_agent(*index) != genus
                         })
                         .map_or(items.len(), |offset| cursor + offset);
                     let group_items = &items[cursor..end];
                     let is_live = is_working && group_items.contains(&last_entry);
-                    children.push(self.render_tool_group(group_items, is_live, window, cx));
+                    rows.push((
+                        TranscriptRow::ToolGroup,
+                        self.render_tool_group(group_items, is_live, window, cx),
+                    ));
                     cursor = end;
                 }
                 Entry::Assistant { markdown, .. } => {
@@ -1134,7 +1373,8 @@ impl ChatView {
                     let link_view = view.clone();
                     let cwd = self.session.read(cx).metadata().cwd.clone();
                     let menu_markdown = markdown.clone();
-                    children.push(
+                    rows.push((
+                        TranscriptRow::Other,
                         div()
                             .w_full()
                             .on_mouse_down(
@@ -1166,38 +1406,51 @@ impl ChatView {
                                     }),
                             )
                             .into_any_element(),
-                    );
+                    ));
                     cursor += 1;
                 }
                 Entry::Notice { text, is_error } => {
-                    children.push(if *is_error {
-                        self.render_error(index, text.clone(), cx)
-                    } else {
-                        div()
-                            .text_size(ui(12.))
-                            .text_color(cx.theme().colors().text_muted)
-                            .child(text.clone())
-                            .into_any_element()
-                    });
+                    rows.push((
+                        TranscriptRow::Other,
+                        if *is_error {
+                            self.render_error(index, text.clone(), cx)
+                        } else {
+                            div()
+                                .text_size(ui(12.))
+                                .text_color(cx.theme().colors().text_muted)
+                                .child(text.clone())
+                                .into_any_element()
+                        },
+                    ));
                     cursor += 1;
                 }
                 Entry::Image { path } => {
                     let path = path.clone();
-                    children.push(
+                    rows.push((
+                        TranscriptRow::Other,
                         div()
                             .id(("agent-generated-image", index))
-                            .max_w(px(420.))
+                            .max_w(px(GENERATED_IMAGE_MAX_WIDTH))
+                            .max_h(px(GENERATED_IMAGE_MAX_HEIGHT))
+                            .flex()
+                            .items_center()
+                            .justify_center()
                             .rounded(px(12.))
                             .overflow_hidden()
-                            .border_1()
-                            .border_color(cx.theme().colors().border)
+                            .bg(ink(0.045, cx))
                             .cursor_pointer()
-                            .child(img(path.clone()).w_full().object_fit(ObjectFit::Contain))
+                            .child(
+                                img(path.clone())
+                                    .max_w(px(GENERATED_IMAGE_MAX_WIDTH))
+                                    .max_h(px(GENERATED_IMAGE_MAX_HEIGHT))
+                                    .rounded(px(12.))
+                                    .object_fit(ObjectFit::Contain),
+                            )
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_image(path.clone(), window, cx)
                             }))
                             .into_any_element(),
-                    );
+                    ));
                     cursor += 1;
                 }
                 Entry::User { .. } => cursor += 1,
@@ -1205,12 +1458,10 @@ impl ChatView {
         }
 
         let settled = !(is_working && is_last_turn);
-        let message_text: Vec<String> = all_items
+        let message_items: Vec<usize> = all_items
             .iter()
-            .filter_map(|index| match &entries[*index] {
-                Entry::Assistant { markdown, .. } => Some(markdown.read(cx).source().to_string()),
-                _ => None,
-            })
+            .copied()
+            .filter(|index| matches!(entries[*index], Entry::Assistant { .. }))
             .collect();
         let last_at = all_items
             .iter()
@@ -1220,24 +1471,33 @@ impl ChatView {
                 _ => None,
             })
             .unwrap_or_default();
+        let copy = (!message_items.is_empty()).then(|| {
+            (
+                SharedString::from(format!("copy-turn-{turn_index}")),
+                CopySource::Messages(message_items),
+            )
+        });
+        let show_strip = settled && !rows.is_empty() && (copy.is_some() || last_at > 0);
+
+        let mut previous = None;
+        let rows = rows.into_iter().map(|(kind, element)| {
+            let gap = match previous {
+                None => leading_gap,
+                Some(previous) => top_gap(previous, kind),
+            };
+            previous = Some(kind);
+            div().w_full().pt(px(gap)).child(element)
+        });
 
         v_flex()
             .group(group.clone())
             .w_full()
-            .gap(px(12.))
-            .children(children)
+            .children(rows)
+            .when(show_strip, |this| {
+                this.child(self.hover_strip(group, last_at, copy, false, cx))
+            })
             .when(is_working && is_last_turn, |this| {
                 this.child(self.render_working_trailer(cx))
-            })
-            .when(settled && !message_text.is_empty(), |this| {
-                this.child(div().mt(px(-12.)).child(self.hover_strip(
-                    group,
-                    last_at,
-                    format!("copy-turn-{turn_index}").into(),
-                    message_text.join("\n\n"),
-                    false,
-                    cx,
-                )))
             })
             .into_any_element()
     }
@@ -1249,8 +1509,9 @@ impl ChatView {
             .unwrap_or(0);
         let colors = cx.theme().colors();
         h_flex()
-            .mt(px(4.))
-            .gap(px(8.))
+            .gap(px(SPACE_SM))
+            .pt(px(SPACE_LG))
+            .text_size(ui(11.))
             .child(gradient_spinner(
                 format!("agent-working-{}", cx.entity_id()).into(),
                 2.5,
@@ -1263,8 +1524,8 @@ impl ChatView {
             )
             .child(
                 div()
-                    .mt(px(1.))
-                    .text_size(ui(11.))
+                    .relative()
+                    .top(px(1.))
                     .text_color(text_faint(cx))
                     .child(format_elapsed(elapsed)),
             )
@@ -1278,21 +1539,25 @@ impl ChatView {
         let is_copied = self.copied.as_ref() == Some(&copy_key);
         div()
             .py(px(4.))
+            .w_full()
             .child(
                 v_flex()
+                    .w_full()
+                    .overflow_hidden()
+                    .gap(px(6.))
                     .rounded(px(10.))
                     .border_1()
                     .border_color(danger.opacity(0.16))
                     .bg(danger.opacity(0.05))
                     .px(px(10.))
                     .py(px(8.))
-                    .gap(px(6.))
-                    .text_size(ui(12.))
+                    .text_size(px(12.))
                     .child(
                         h_flex()
                             .gap(px(8.))
                             .child(
                                 div()
+                                    .flex_none()
                                     .size(px(20.))
                                     .flex()
                                     .items_center()
@@ -1300,9 +1565,8 @@ impl ChatView {
                                     .rounded(px(6.))
                                     .bg(danger.opacity(0.12))
                                     .child(
-                                        Icon::new(IconName::AgentDangerTriangle)
-                                            .size(IconSize::XSmall)
-                                            .color(Color::Custom(danger_muted)),
+                                        icon(IconName::AgentDangerTriangle, 12.)
+                                            .text_color(danger_muted),
                                     ),
                             )
                             .child(
@@ -1315,6 +1579,7 @@ impl ChatView {
                             .child(
                                 div()
                                     .id(ElementId::Name(copy_key.clone()))
+                                    .flex_none()
                                     .size(px(20.))
                                     .flex()
                                     .items_center()
@@ -1322,18 +1587,22 @@ impl ChatView {
                                     .rounded(px(6.))
                                     .cursor_pointer()
                                     .hover(|style| style.bg(danger.opacity(0.12)))
+                                    .tooltip(Tooltip::text("Copy message"))
                                     .child(
-                                        Icon::new(if is_copied {
-                                            IconName::AgentCheck
-                                        } else {
-                                            IconName::AgentCopy
-                                        })
-                                        .size(IconSize::XSmall)
-                                        .color(Color::Custom(danger_muted)),
+                                        icon(
+                                            if is_copied {
+                                                IconName::AgentCheck
+                                            } else {
+                                                IconName::AgentCopy
+                                            },
+                                            12.,
+                                        )
+                                        .text_color(danger_muted),
                                     )
                                     .on_click(cx.listener({
                                         let text = text.to_string();
                                         move |this, _, _, cx| {
+                                            cx.stop_propagation();
                                             this.copy(copy_key.clone(), text.clone(), cx)
                                         }
                                     })),
@@ -1341,6 +1610,8 @@ impl ChatView {
                     )
                     .child(
                         div()
+                            .min_w_0()
+                            .w_full()
                             .text_color(cx.theme().colors().text.opacity(0.8))
                             .child(text),
                     ),
@@ -1361,22 +1632,20 @@ impl ChatView {
                 _ => {}
             }
         }
-        let thought = match thoughts {
-            0 => None,
-            1 => Some("thought process".to_string()),
-            count => Some(format!("thought {count} times")),
-        };
-        match (tools.is_empty(), thought) {
-            (true, Some(thought)) => {
-                let mut chars = thought.chars();
-                chars
-                    .next()
-                    .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
-                    .unwrap_or_default()
-            }
-            (false, Some(thought)) => format!("{} · {thought}", view::tool_group_summary(&tools)),
-            (_, None) => view::tool_group_summary(&tools),
+        let mut segments: Vec<String> = Vec::new();
+        match thoughts {
+            0 => {}
+            1 => segments.push("thought process".into()),
+            count => segments.push(format!("thought {count} times")),
         }
+        if !tools.is_empty() {
+            segments.push(view::tool_group_summary(&tools));
+        }
+        let mut summary = segments.join(" · ");
+        if let Some(first) = summary.get_mut(..1) {
+            first.make_ascii_uppercase();
+        }
+        summary
     }
 
     fn render_tool_group(
@@ -1387,6 +1656,21 @@ impl ChatView {
         cx: &Context<Self>,
     ) -> AnyElement {
         let entries = self.entries(cx);
+        let collapses = items.iter().any(|index| match &entries[*index] {
+            Entry::Tool(tool) => !tool.call.is_subagent_spawn(),
+            _ => true,
+        });
+        if !collapses {
+            return v_flex()
+                .w_full()
+                .pt(px(CHIPS_TOP_PAD))
+                .children(
+                    items
+                        .iter()
+                        .map(|index| self.render_subagent_chip(*index, cx)),
+                )
+                .into_any_element();
+        }
         let group_key = match items.first().map(|index| &entries[*index]) {
             Some(Entry::Tool(tool)) => format!("tools-{}", tool.id),
             _ => format!("tools-at-{}", items.first().copied().unwrap_or_default()),
@@ -1396,51 +1680,28 @@ impl ChatView {
             .get(&group_key)
             .copied()
             .unwrap_or(is_live);
-        let summary = self.group_summary(items, cx);
+        let summary: SharedString = self.group_summary(items, cx).into();
         let colors = cx.theme().colors();
-        let muted = colors.text_muted;
-        let text = colors.text;
-        let header_key: SharedString = format!("{group_key}-header").into();
-        let header = h_flex()
-            .id(ElementId::Name(header_key))
-            .h(px(26.))
-            .gap(px(6.))
-            .pr(px(4.))
-            .cursor_pointer()
-            .text_size(ui(12.))
-            .line_height(ui(18.))
-            .text_color(muted)
-            .hover(|style| style.text_color(text))
-            .child(
-                div().relative().w(px(22.)).h(px(18.)).child(
-                    div().absolute().left(px(5.5)).top(px(2.)).child(
-                        Icon::new(if open {
-                            IconName::AgentArrowDown
-                        } else {
-                            IconName::AgentArrowRight
-                        })
-                        .size(IconSize::Small)
-                        .color(Color::Muted),
-                    ),
-                ),
+        let title = if is_live {
+            shimmer_title(
+                summary,
+                ElementId::Name(format!("{group_key}-shimmer").into()),
+                colors.text_muted,
+                colors.text,
             )
-            .child(if is_live {
-                div()
-                    .child(summary)
-                    .with_animation(
-                        ElementId::Name(format!("{group_key}-shimmer").into()),
-                        Animation::new(GROUP_SHIMMER).repeat(),
-                        move |label, delta| {
-                            let amount = 0.5 - 0.5 * (delta * std::f32::consts::TAU).cos();
-                            label.text_color(mix(muted, text, amount))
-                        },
-                    )
-                    .into_any_element()
-            } else {
-                div().child(summary).into_any_element()
-            })
+        } else {
+            summary.into_any_element()
+        };
+        let header = self
+            .group_header(
+                ElementId::Name(format!("{group_key}-header").into()),
+                open,
+                title,
+                cx,
+            )
             .on_click(cx.listener({
                 move |this, _, _, cx| {
+                    cx.stop_propagation();
                     this.group_overrides.insert(group_key.clone(), !open);
                     cx.notify();
                 }
@@ -1451,12 +1712,19 @@ impl ChatView {
             .w_full()
             .child(header)
             .when(open, |this| {
-                this.child(v_flex().pt(px(2.)).children(items.iter().enumerate().map(
-                    |(position, index)| {
-                        let is_last = position + 1 == row_count;
-                        self.render_tree_row(*index, is_last, is_live, window, cx)
-                    },
-                )))
+                this.child(
+                    v_flex()
+                        .pt(px(CHIPS_TOP_PAD))
+                        .children(items.iter().enumerate().map(|(position, index)| {
+                            self.render_tree_row(
+                                *index,
+                                position + 1 < row_count,
+                                is_live,
+                                window,
+                                cx,
+                            )
+                        })),
+                )
             })
             .into_any_element()
     }
@@ -1464,7 +1732,7 @@ impl ChatView {
     fn render_tree_row(
         &self,
         index: usize,
-        is_last: bool,
+        continues: bool,
         is_live: bool,
         window: &Window,
         cx: &Context<Self>,
@@ -1472,63 +1740,27 @@ impl ChatView {
         let entries = self.entries(cx);
         let colors = cx.theme().colors();
         let danger = cx.theme().status().error;
-        let line_color = hairline(0.12, cx);
-        let mut spawn = None;
-        let (key, icon, label, detail, failed, body): (
-            String,
-            IconName,
-            SharedString,
-            Option<String>,
-            bool,
-            Option<AnyElement>,
-        ) = match &entries[index] {
-            Entry::Tool(tool) if tool.call.is_subagent_spawn() => {
-                let (label, detail) = view::tool_chip_content(&tool.call);
-                let activity = self
-                    .session
-                    .read(cx)
-                    .subagent_running(&tool.id)
-                    .then(|| self.subagent_activity(&tool.id, cx))
-                    .flatten();
-                spawn = Some((tool.id.clone(), tool.call.clone()));
-                (
-                    format!("tool-{}", tool.id),
-                    tool_icon(&tool.call),
-                    label.into(),
-                    activity.or((!detail.is_empty()).then_some(detail)),
-                    tool.status == ToolStatus::Failed,
-                    None,
-                )
-            }
-            Entry::Tool(tool) => {
-                let (label, detail) = view::tool_chip_content(&tool.call);
-                (
-                    format!("tool-{}", tool.id),
-                    tool_icon(&tool.call),
-                    label.into(),
-                    (!detail.is_empty()).then_some(detail),
-                    tool.status == ToolStatus::Failed,
-                    Some(self.render_tool_detail(tool, cx)),
-                )
-            }
-            Entry::Thinking(markdown) => (
-                format!("thought-{index}"),
-                IconName::AgentChatRoundLine,
-                "Thought process".into(),
-                None,
-                false,
-                Some(
-                    div()
-                        .py(px(6.))
-                        .child(MarkdownElement::new(
-                            markdown.clone(),
-                            Self::thought_style(window, cx),
-                        ))
-                        .into_any_element(),
+        let (key, icon_name, label, detail, failed): (String, IconName, SharedString, String, bool) =
+            match &entries[index] {
+                Entry::Tool(tool) => {
+                    let (label, detail) = view::tool_chip_content(&tool.call);
+                    (
+                        format!("tool-{}", tool.id),
+                        tool_icon(&tool.call),
+                        label.into(),
+                        detail,
+                        tool.status == ToolStatus::Failed,
+                    )
+                }
+                Entry::Thinking(_) => (
+                    format!("thought-{index}"),
+                    IconName::AgentChatRoundLine,
+                    "Thought process".into(),
+                    String::new(),
+                    false,
                 ),
-            ),
-            _ => return div().into_any_element(),
-        };
+                _ => return div().into_any_element(),
+            };
         let stats = match &entries[index] {
             Entry::Tool(tool) => tool
                 .diff
@@ -1540,130 +1772,279 @@ impl ChatView {
         let streaming_thought =
             is_live && index + 1 == entries.len() && matches!(entries[index], Entry::Thinking(_));
         let expanded = self.expanded_rows.contains(&key) || streaming_thought;
-        let row_color = if failed { danger } else { colors.text_muted };
-        let hover_group: SharedString = format!("{key}-row").into();
-        let continues = !is_last;
-        v_flex()
+        let body = expanded.then(|| match &entries[index] {
+            Entry::Tool(tool) => self.render_tool_detail(tool, cx),
+            Entry::Thinking(markdown) => v_flex()
+                .w_full()
+                .min_w_0()
+                .child(detail_separator())
+                .child(
+                    div().py(px(6.)).child(
+                        MarkdownElement::new(markdown.clone(), Self::thought_style(window, cx))
+                            .code_block_renderer(plain_code_block_renderer()),
+                    ),
+                )
+                .into_any_element(),
+            _ => div().into_any_element(),
+        });
+        let tint = if failed { danger } else { colors.text_muted };
+        let text = colors.text;
+        let hover_group: SharedString = format!("{key}-header").into();
+        let hover_text = !failed;
+        let header_row = h_flex()
+            .group(hover_group.clone())
+            .h(px(CHIP_CARD_HEIGHT))
             .w_full()
-            .with_animation(
-                ElementId::Name(format!("{key}-fade").into()),
-                Animation::new(FADE_IN).with_easing(ease_out_quint()),
-                |this, delta| this.opacity(delta),
+            .min_w_0()
+            .gap(px(8.))
+            .text_size(px(TOOL_TEXT_SIZE))
+            .line_height(px(TOOL_LINE_HEIGHT))
+            .child(
+                div()
+                    .id(ElementId::Name(format!("{key}-label").into()))
+                    .flex_none()
+                    .h(px(TOOL_LINE_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .text_color(tint)
+                    .when(hover_text, |this| {
+                        this.group_hover(hover_group.clone(), |style| style.text_color(text))
+                    })
+                    .child(label),
             )
             .child(
                 div()
-                    .id(ElementId::Name(hover_group.clone()))
-                    .group(hover_group.clone())
-                    .relative()
-                    .w_full()
-                    .h(px(TREE_ROW_HEIGHT))
-                    .cursor_pointer()
-                    .child(tree_lines(continues || expanded, line_color))
+                    .id(ElementId::Name(format!("{key}-detail").into()))
+                    .min_w_0()
+                    .h(px(TOOL_LINE_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .when(detail.is_empty(), |this| this.hidden())
+                    .truncate()
+                    .text_color(tint)
+                    .when(hover_text, |this| {
+                        this.group_hover(hover_group.clone(), |style| style.text_color(text))
+                    })
+                    .child(div().min_w_0().truncate().child(detail)),
+            )
+            .when_some(stats, |this, (additions, deletions)| {
+                let status = cx.theme().status();
+                this.child(
+                    h_flex()
+                        .flex_none()
+                        .gap(px(4.))
+                        .font_family(CODE_FONT)
+                        .text_size(px(11.))
+                        .when(additions > 0, |this| {
+                            this.child(
+                                div()
+                                    .text_color(status.created)
+                                    .child(format!("+{additions}")),
+                            )
+                        })
+                        .when(deletions > 0, |this| {
+                            this.child(
+                                div()
+                                    .text_color(status.deleted)
+                                    .child(format!("−{deletions}")),
+                            )
+                        }),
+                )
+            })
+            .child(
+                div()
+                    .size(px(18.))
+                    .flex_none()
+                    .opacity(0.)
+                    .group_hover(hover_group.clone(), |style| style.opacity(1.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .child(
-                        div()
-                            .absolute()
-                            .left(px(TREE_ICON_LEFT))
-                            .top(px((TREE_ROW_HEIGHT - 16.) / 2.))
-                            .child(
-                                Icon::new(icon)
-                                    .size(IconSize::Medium)
-                                    .color(Color::Custom(row_color)),
-                            ),
-                    )
+                        icon(
+                            if expanded {
+                                IconName::AgentArrowDown
+                            } else {
+                                IconName::AgentArrowRight
+                            },
+                            12.,
+                        )
+                        .text_color(text_faint(cx))
+                        .group_hover(hover_group, move |style| {
+                            style.text_color(if failed { danger } else { text })
+                        }),
+                    ),
+            );
+        let card = v_flex()
+            .ml(px(TREE_TEXT_GAP))
+            .my(px((TREE_ROW_HEIGHT - CHIP_CARD_HEIGHT) / 2.))
+            .min_w_0()
+            .flex_1()
+            .overflow_hidden()
+            .child(
+                div()
+                    .id(ElementId::Name(key.clone().into()))
+                    .h(px(CHIP_CARD_HEIGHT))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .cursor_pointer()
+                    .child(header_row)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        if !this.expanded_rows.remove(&key) {
+                            this.expanded_rows.insert(key.clone());
+                        }
+                        cx.notify();
+                    })),
+            )
+            .children(body);
+        div()
+            .w_full()
+            .flex_none()
+            .flex()
+            .flex_row()
+            .with_animation(
+                ("agent-tree-row-fade", index),
+                Animation::new(FADE_IN).with_easing(ease_out_quint()),
+                |this, delta| this.opacity(delta),
+            )
+            .child(activity_rail(
+                icon_name,
+                tint,
+                continues,
+                hairline(0.12, cx),
+            ))
+            .child(card)
+            .into_any_element()
+    }
+
+    fn render_subagent_chip(&self, index: usize, cx: &Context<Self>) -> AnyElement {
+        let Some(Entry::Tool(tool)) = self.entries(cx).get(index) else {
+            return div().into_any_element();
+        };
+        let colors = cx.theme().colors();
+        let danger = cx.theme().status().error;
+        let (label, detail) = view::tool_chip_content(&tool.call);
+        let running = self.session.read(cx).subagent_running(&tool.id);
+        let detail = running
+            .then(|| self.subagent_activity(&tool.id, cx))
+            .flatten()
+            .unwrap_or(detail);
+        let failed = tool.status == ToolStatus::Failed;
+        let tint = if failed { danger } else { colors.text_muted };
+        let model = tool.call.subagent_model().map(|model| model.to_string());
+        let id = tool.id.clone();
+        let call = tool.call.clone();
+        div()
+            .h(px(CHIP_HEIGHT))
+            .w_full()
+            .flex_none()
+            .flex()
+            .flex_row()
+            .items_center()
+            .child(
+                div()
+                    .id(SharedString::from(format!("subagent-{}", tool.id)))
+                    .h(px(CHIP_CARD_HEIGHT))
+                    .min_w_0()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .overflow_hidden()
+                    .rounded(px(9.))
+                    .border_1()
+                    .border_color(hairline(0.07, cx))
+                    .bg(ink(0.03, cx))
+                    .cursor_pointer()
+                    .hover(|style| style.bg(ink(0.05, cx)))
+                    .tooltip(Tooltip::text("Open subagent"))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open_subagent(id.clone(), &call, window, cx)
+                    }))
                     .child(
                         h_flex()
-                            .size_full()
-                            .pl(px(TREE_GUTTER + TREE_TEXT_GAP))
+                            .h(px(CHIP_HEADER_HEIGHT))
+                            .w_full()
+                            .min_w_0()
                             .gap(px(8.))
-                            .text_size(ui(12.))
-                            .line_height(ui(18.))
-                            .text_color(row_color)
-                            .group_hover(hover_group.clone(), |style| {
-                                if failed {
-                                    style
-                                } else {
-                                    style.text_color(colors.text)
-                                }
-                            })
-                            .child(div().flex_none().child(label))
+                            .px(px(8.))
+                            .text_size(px(TOOL_TEXT_SIZE))
+                            .line_height(px(TOOL_LINE_HEIGHT))
+                            .child(
+                                div()
+                                    .size(px(18.))
+                                    .flex_none()
+                                    .rounded(px(5.))
+                                    .bg(ink(0.08, cx))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(
+                                        icon(tool_icon(&tool.call), 12.)
+                                            .text_color(colors.text_muted),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .h(px(TOOL_LINE_HEIGHT))
+                                    .flex()
+                                    .items_center()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(tint)
+                                    .child(label),
+                            )
                             .child(
                                 div()
                                     .flex_1()
                                     .min_w_0()
+                                    .h(px(TOOL_LINE_HEIGHT))
+                                    .flex()
+                                    .items_center()
                                     .truncate()
-                                    .when_some(detail, |this, detail| this.child(detail)),
+                                    .text_color(if failed {
+                                        danger
+                                    } else {
+                                        colors.text.opacity(0.85)
+                                    })
+                                    .child(div().min_w_0().truncate().child(detail)),
                             )
-                            .when_some(stats, |this, (additions, deletions)| {
-                                let status = cx.theme().status();
+                            .when_some(model, |this, model| {
                                 this.child(
-                                    h_flex()
+                                    div()
                                         .flex_none()
-                                        .gap(px(4.))
-                                        .font_family(CODE_FONT)
+                                        .h(px(18.))
+                                        .flex()
+                                        .items_center()
                                         .text_size(px(11.))
-                                        .when(additions > 0, |this| {
-                                            this.child(
-                                                div()
-                                                    .text_color(status.created)
-                                                    .child(format!("+{additions}")),
-                                            )
-                                        })
-                                        .when(deletions > 0, |this| {
-                                            this.child(
-                                                div()
-                                                    .text_color(status.deleted)
-                                                    .child(format!("−{deletions}")),
-                                            )
-                                        }),
+                                        .text_color(text_faint(cx))
+                                        .child(model),
                                 )
+                            })
+                            .when(running, |this| {
+                                this.child(div().flex_none().child(subagent_spinner(
+                                    format!("subagent-spinner-{}", tool.id).into(),
+                                    accent(cx),
+                                    cx.theme().appearance.is_light(),
+                                )))
                             })
                             .child(
                                 div()
-                                    .flex_none()
                                     .size(px(18.))
+                                    .flex_none()
+                                    .rounded(px(5.))
+                                    .bg(ink(0.06, cx))
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .when(spawn.is_none(), |this| this.visible_on_hover(hover_group))
                                     .child(
-                                        Icon::new(if spawn.is_some() {
-                                            IconName::AgentArrowUpRight
-                                        } else if expanded {
-                                            IconName::AgentArrowDown
-                                        } else {
-                                            IconName::AgentArrowRight
-                                        })
-                                        .size(IconSize::XSmall)
-                                        .color(Color::Custom(text_faint(cx))),
+                                        icon(IconName::AgentArrowUpRight, 11.)
+                                            .text_color(colors.text_muted.opacity(0.8)),
                                     ),
                             ),
-                    )
-                    .when_some(spawn.clone(), |this, _| {
-                        this.tooltip(Tooltip::text("Open subagent"))
-                    })
-                    .on_click(cx.listener({
-                        move |this, _, window, cx| {
-                            if let Some((id, call)) = &spawn {
-                                this.open_subagent(id.clone(), call, window, cx);
-                                return;
-                            }
-                            if !this.expanded_rows.remove(&key) {
-                                this.expanded_rows.insert(key.clone());
-                            }
-                            cx.notify();
-                        }
-                    })),
+                    ),
             )
-            .when(expanded, |this| {
-                this.child(
-                    div()
-                        .relative()
-                        .w_full()
-                        .pl(px(TREE_GUTTER + TREE_TEXT_GAP))
-                        .when(continues, |this| this.child(trunk_line(line_color)))
-                        .children(body),
-                )
-            })
             .into_any_element()
     }
 
@@ -1687,788 +2068,80 @@ impl ChatView {
     }
 
     fn render_tool_detail(&self, tool: &ToolEntry, cx: &Context<Self>) -> AnyElement {
-        let call_text = view::tool_call_text(&tool.call);
+        let faint = text_faint(cx);
         let show_all = self.full_output.contains(&tool.id);
-        let output_lines: Vec<String> = tool
-            .output
-            .as_ref()
-            .map(|output| output.lines().map(str::to_string).collect())
-            .unwrap_or_default();
-        let hidden = if show_all {
-            0
-        } else {
-            output_lines.len().saturating_sub(OUTPUT_MAX_LINES)
-        };
+        let max_lines = if show_all { usize::MAX } else { OUTPUT_MAX_LINES };
+        let call_text = view::tool_call_text(&tool.call);
+        let invocation = clip_lines(&call_text, CALL_WRAP_COLUMNS, max_lines);
+        let output = clip_lines(tool.output.as_deref().unwrap_or(""), usize::MAX, max_lines);
         let output_size = tool.output.as_ref().map_or(0, |output| output.len());
         let diff = tool
             .diff
             .as_ref()
             .map(|diff| self.diff_view(&tool.id, diff, cx));
-        let tool_id = tool.id.clone();
+        let invocation_hidden = invocation.hidden;
+        let output_hidden = output.hidden;
         v_flex()
-            .py(px(6.))
-            .font_family(CODE_FONT)
-            .text_size(px(12.))
-            .line_height(px(18.))
-            .text_color(text_faint(cx))
-            .child(div().child(call_text))
-            .children(diff.map(|diff| self.render_diff(&diff, cx)))
-            .when(!output_lines.is_empty() && tool.diff.is_none(), |this| {
-                this.child(
-                    div()
-                        .pt(px(6.))
-                        .children(
-                            output_lines
-                                .into_iter()
-                                .take(if show_all { usize::MAX } else { OUTPUT_MAX_LINES })
-                                .map(|line| div().truncate().child(line)),
-                        )
-                        .when(hidden > 0, |this| {
-                            this.child(
-                                div()
-                                    .id(SharedString::from(format!("agent-full-output-{tool_id}")))
-                                    .pt(px(4.))
-                                    .cursor_pointer()
-                                    .text_color(cx.theme().colors().text_muted)
-                                    .hover(|style| style.text_color(cx.theme().colors().text))
-                                    .child(format!(
-                                        "Show full output ({})",
-                                        format_bytes(output_size)
-                                    ))
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.full_output.insert(tool_id.clone());
-                                        cx.notify();
-                                    })),
-                            )
-                        }),
-                )
-            })
-            .into_any_element()
-    }
-
-    fn render_model_chip(&self, cx: &Context<Self>) -> impl IntoElement {
-        let session = self.session.read(cx);
-        let kind = session.kind();
-        let settings = session.settings();
-        let selection = Selection::resolve(self.store.read(cx).models(kind), settings);
-        let model_label = selection.model_label(settings, kind);
-        let effort = selection.reasoning.map(view::reasoning_label);
-        let fast = selection.fast_on();
-        let colors = cx.theme().colors();
-        let session = self.session.clone();
-        let store = self.store.clone();
-        PopoverMenu::new(SharedString::from(format!(
-            "agent-model-picker-{}",
-            cx.entity_id()
-        )))
-        .trigger(Chip::new(
-            "agent-model-chip",
-            8.,
-            h_flex()
-                .h(px(32.))
-                .max_w(px(248.))
-                .px(px(6.))
-                .gap(px(6.))
-                .text_size(ui(12.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(colors.text.opacity(0.9))
-                .child(agent_icon(kind).size(IconSize::Medium))
-                .child(div().min_w_0().truncate().child(model_label))
-                .when_some(effort, |this, effort| {
-                    this.child(
-                        div()
-                            .flex_none()
-                            .text_color(colors.text_muted.opacity(0.7))
-                            .child(effort),
-                    )
-                })
-                .when(fast, |this| {
-                    this.child(
-                        Icon::new(IconName::AgentFastFilled)
-                            .size(IconSize::XSmall)
-                            .color(Color::Accent),
-                    )
-                }),
-        ))
-        .menu(move |window, cx| {
-            let session = session.clone();
-            let store = store.clone();
-            Some(cx.new(|cx| ModelPicker::new(session, store, window, cx)))
-        })
-        .with_handle(self.model_picker.clone())
-        .anchor(Anchor::BottomRight)
-        .attach(Anchor::TopRight)
-        .offset(point(px(0.), px(-6.)))
-    }
-
-    fn render_send_button(&self, cx: &Context<Self>) -> AnyElement {
-        let colors = cx.theme().colors();
-        let is_working = self.session.read(cx).is_working();
-        let has_text = self.staging_count == 0
-            && (!self.composer.read(cx).text(cx).trim().is_empty()
-                || !self.attachments.is_empty());
-        let focus_handle = self.composer.focus_handle(cx);
-        let plate = page(cx);
-        let circle = |id: &'static str| {
-            div()
-                .id(id)
-                .size(px(SEND_BUTTON_SIZE))
-                .flex_none()
-                .rounded_full()
-                .bg(colors.text)
-                .flex()
-                .items_center()
-                .justify_center()
-        };
-        if is_working && !has_text {
-            return circle("agent-stop")
-                .cursor_pointer()
-                .hover(|style| style.opacity(0.85))
-                .tooltip(move |_, cx| Tooltip::for_action_in("Stop", &Stop, &focus_handle, cx))
-                .on_click(cx.listener(|this, _, window, cx| this.stop(&Stop, window, cx)))
-                .child(div().size(px(11.)).rounded(px(3.)).bg(plate))
-                .into_any_element();
-        }
-        circle("agent-send")
-            .when(!has_text, |this| this.opacity(0.35))
-            .when(has_text, |this| {
-                this.cursor_pointer()
-                    .hover(|style| style.opacity(0.85))
-                    .on_click(cx.listener(|this, _, window, cx| this.send(&Send, window, cx)))
-            })
-            .tooltip(move |_, cx| {
-                Tooltip::for_action_in(
-                    if is_working {
-                        "Queue message"
-                    } else {
-                        "Send message"
-                    },
-                    &Send,
-                    &focus_handle,
-                    cx,
-                )
-            })
-            .child(
-                Icon::new(IconName::AgentSend)
-                    .size(IconSize::Small)
-                    .color(Color::Custom(plate)),
-            )
-            .into_any_element()
-    }
-
-    fn composer_is_expanded(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let text = self.composer.read(cx).text(cx);
-        if text.contains('\n')
-            || !self.attachments.is_empty()
-            || self.staging_count > 0
-            || self.attachment_error.is_some()
-            || !matches!(self.dictation, dictation::DictationState::Idle)
-        {
-            return true;
-        }
-        self.composer.update(cx, |editor, cx| {
-            editor
-                .snapshot(window, cx)
-                .display_snapshot
-                .max_point()
-                .row()
-                .0
-                > 0
-        })
-    }
-
-    fn render_pill(
-        &self,
-        expanded: bool,
-        radius: f32,
-        window: &Window,
-        cx: &Context<Self>,
-    ) -> AnyElement {
-        let colors = cx.theme().colors();
-        let show_commands = self.command_menu.is_some()
-            && self.composer.focus_handle(cx).is_focused(window);
-        let mut key_context = KeyContext::default();
-        key_context.add("AgentComposer");
-        if AgentChatSettings::get_global(cx).send_with == AgentChatSendKey::ModifierEnter {
-            key_context.add("send_with_modifier");
-        }
-        if show_commands {
-            key_context.add("command_menu");
-        }
-        let pill = div()
-            .key_context(key_context)
-            .relative()
-            .capture_action(cx.listener(|this, _: &editor::actions::Paste, _, cx| {
-                if this.paste_images(cx) {
-                    cx.stop_propagation();
-                }
-            }))
-            .when(show_commands, |this| this.child(self.render_command_menu(cx)))
             .w_full()
-            .rounded(px(radius))
-            .border_1()
-            .border_color(colors.border)
-            .bg(colors.element_background);
-        let attach_button = Chip::new(
-            "agent-attach",
-            8.,
-            div()
-                .size(px(32.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    Icon::new(IconName::AgentPaperclip)
-                        .size(IconSize::Small)
-                        .color(Color::Muted),
-                ),
-        )
-        .tooltip("Attach images")
-        .on_click(cx.listener(|this, _, window, cx| this.pick_images(window, cx)));
-        if expanded {
-            pill.flex()
-                .flex_col()
-                .min_h(px(120.))
-                .children(self.render_attachment_strip(cx))
-                .children(self.render_dictation_strip(cx))
-                .child(
-                    div()
-                        .px(px(16.))
-                        .pt(px(16.))
-                        .pb(px(4.))
-                        .min_h(px(76.))
-                        .max_h(px(260.))
-                        .child(self.composer.clone()),
-                )
-                .child(
-                    h_flex()
-                        .h(px(42.))
-                        .pt(px(2.))
-                        .pb(px(8.))
-                        .px(px(12.))
-                        .gap(px(2.))
-                        .child(attach_button)
-                        .children(self.render_dictation_button(cx))
-                        .child(div().flex_1())
-                        .child(self.render_model_chip(cx))
-                        .child(div().pl(px(6.)).child(self.render_send_button(cx))),
-                )
-                .into_any_element()
-        } else {
-            pill.flex()
-                .items_center()
-                .h(px(49.))
-                .child(div().pl(px(8.)).child(attach_button))
-                .children(self.render_dictation_button(cx))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .pl(px(6.))
-                        .pr(px(8.))
-                        .child(self.composer.clone()),
-                )
-                .child(self.render_model_chip(cx))
-                .child(
-                    div()
-                        .pl(px(8.))
-                        .pr(px(10.))
-                        .child(self.render_send_button(cx)),
-                )
-                .into_any_element()
-        }
-    }
-
-    fn branch_name(&self, cx: &App) -> Option<SharedString> {
-        let repository = self.project.read(cx).active_repository(cx)?;
-        let repository = repository.read(cx);
-        Some(
-            repository
-                .branch
-                .as_ref()
-                .map(|branch| SharedString::from(branch.name().to_string()))
-                .unwrap_or_else(|| "No ref".into()),
-        )
-    }
-
-    fn footer_label(icon: IconName, label: SharedString, cx: &App) -> impl IntoElement {
-        let color = cx.theme().colors().text_muted.opacity(0.6);
-        h_flex()
-            .h(px(20.))
-            .max_w(px(160.))
-            .px(px(8.))
-            .gap(px(6.))
-            .text_size(ui(12.))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(color)
-            .child(
-                Icon::new(icon)
-                    .size(IconSize::XSmall)
-                    .color(Color::Custom(color)),
-            )
-            .child(div().min_w_0().truncate().child(label))
-    }
-
-    fn render_checkout(&self, cx: &App) -> impl IntoElement {
-        let metadata = self.session.read(cx).metadata();
-        let label: SharedString = if metadata.project_root.is_some() {
-            "Worktree".into()
-        } else {
-            "Local checkout".into()
-        };
-        let branch = metadata
-            .branch
-            .clone()
-            .map(SharedString::from)
-            .or_else(|| self.branch_name(cx));
-        h_flex()
-            .px(px(10.))
-            .gap(px(4.))
-            .when_some(branch, |this, branch| {
-                this.child(Self::footer_label(IconName::AgentFolder, label, cx))
-                    .child(Self::footer_label(IconName::AgentGitBranch, branch, cx))
-            })
-    }
-
-    fn render_footer(&self, cx: &Context<Self>) -> impl IntoElement {
-        let session = self.session.read(cx);
-        let kind = session.kind();
-        let context = session.context();
-        let context_fraction = context
-            .and_then(|context| context.fraction())
-            .map(|fraction| fraction as f32);
-        let usage_fraction = self
-            .store
-            .read(cx)
-            .plan_usage(kind)
-            .and_then(|state| state.usage.as_ref())
-            .and_then(|usage| usage.used_fraction());
-        let store = self.store.clone();
-        h_flex()
-            .h(px(24.))
-            .justify_between()
-            .child(self.render_checkout(cx))
-            .child(
-                h_flex()
-                    .pl(px(4.))
-                    .pr(px(10.))
-                    .gap(px(4.))
-                    .child(
-                        PopoverMenu::new(SharedString::from(format!(
-                            "agent-plan-usage-{}",
-                            cx.entity_id()
-                        )))
-                        .trigger(Chip::new(
-                            "agent-plan-usage-chip",
-                            6.,
-                            usage_chip(usage_fraction, cx),
-                        ))
-                        .menu(move |_, cx| {
-                            let store = store.clone();
-                            Some(cx.new(|cx| UsageCard::new(store, kind, cx)))
-                        })
-                        .anchor(Anchor::BottomRight)
-                        .attach(Anchor::TopRight)
-                        .offset(point(px(0.), px(-4.))),
-                    )
-                    .child(
-                        PopoverMenu::new(SharedString::from(format!(
-                            "agent-context-usage-{}",
-                            cx.entity_id()
-                        )))
-                        .trigger(Chip::new(
-                            "agent-context-chip",
-                            6.,
-                            context_chip(context_fraction, cx),
-                        ))
-                        .menu(move |_, cx| Some(cx.new(|cx| ContextCard::new(context, cx))))
-                        .anchor(Anchor::BottomRight)
-                        .attach(Anchor::TopRight)
-                        .offset(point(px(0.), px(-4.))),
-                    ),
-            )
-    }
-
-    fn render_status_strip(&self, cx: &Context<Self>) -> impl IntoElement {
-        let failed = self.session.read(cx).run_failed();
-        h_flex()
-            .h(px(24.))
-            .px(px(24.))
-            .text_size(ui(11.))
-            .when(failed, |this| {
-                this.text_color(cx.theme().status().error)
-                    .child("Run failed")
-            })
-    }
-
-    fn render_scroll_button(&self, cx: &Context<Self>) -> impl IntoElement {
-        let colors = cx.theme().colors();
-        h_flex()
-            .absolute()
-            .bottom(px(6.))
-            .left_0()
-            .right(px(10.))
-            .justify_center()
-            .child(
-                h_flex()
-                    .id("agent-scroll-to-bottom")
-                    .h(px(30.))
-                    .pl(px(11.))
-                    .pr(px(13.))
-                    .gap(px(6.))
-                    .rounded_full()
-                    .border_1()
-                    .border_color(colors.border)
-                    .bg(colors.elevated_surface_background)
-                    .shadow_md()
-                    .cursor_pointer()
-                    .text_size(ui(13.))
-                    .hover(|style| style.bg(colors.element_hover))
-                    .child(div().text_color(colors.text_muted).child("↓"))
-                    .child(div().text_color(colors.text).child("Scroll to bottom"))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.follow_tail = true;
-                        this.show_scroll_button = false;
-                        this.scroll_handle.scroll_to_bottom();
-                        cx.notify();
-                    })),
-            )
-    }
-
-    fn pick_option(
-        &mut self,
-        pending_id: SharedString,
-        question_id: String,
-        option: String,
-        multi_select: bool,
-        question_count: usize,
-        cx: &mut Context<Self>,
-    ) {
-        let labels = self.selected_options.entry(question_id).or_default();
-        if multi_select {
-            if let Some(position) = labels.iter().position(|label| *label == option) {
-                labels.remove(position);
-            } else {
-                labels.push(option);
-            }
-            cx.notify();
-            return;
-        }
-        *labels = vec![option];
-        cx.notify();
-        self._auto_advance = cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(AUTO_ADVANCE).await;
-            this.update(cx, |this, cx| {
-                let page = this
-                    .question_pages
-                    .get(pending_id.as_ref())
-                    .copied()
-                    .unwrap_or(0);
-                if page + 1 < question_count {
-                    this.question_pages.insert(pending_id.to_string(), page + 1);
-                    cx.notify();
-                } else {
-                    this.submit_answers(&pending_id, cx);
-                }
-            })
-            .ok();
-        });
-    }
-
-    fn submit_answers(&mut self, id: &str, cx: &mut Context<Self>) {
-        let Some(pending) = self
-            .session
-            .read(cx)
-            .pending_questions()
-            .iter()
-            .find(|pending| pending.id() == id)
-        else {
-            return;
-        };
-        let answers: Vec<UserInputAnswer> = pending
-            .questions
-            .iter()
-            .map(|question| UserInputAnswer {
-                question_id: question.id.clone(),
-                labels: self.answer_labels(&question.id, cx),
-            })
-            .collect();
-        for answer in &answers {
-            self.selected_options.remove(&answer.question_id);
-        }
-        self.question_pages.remove(id);
-        self.session
-            .update(cx, |session, cx| session.answer(id, answers, cx));
-    }
-
-    fn render_option_row(
-        &self,
-        key: SharedString,
-        number: usize,
-        label: SharedString,
-        picked: bool,
-        cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
-        let colors = cx.theme().colors();
-        let hover = ink(0.06, cx);
-        h_flex()
-            .id(ElementId::Name(key))
-            .px(px(14.))
-            .py(px(10.))
-            .gap(px(12.))
-            .rounded(px(12.))
-            .border_1()
-            .border_color(if picked {
-                ink(0.16, cx)
-            } else {
-                gpui::transparent_black()
-            })
-            .bg(if picked {
-                ink(0.09, cx)
-            } else {
-                ink(0.025, cx)
-            })
-            .when(!picked, |this| this.hover(move |style| style.bg(hover)))
-            .cursor_pointer()
-            .child(
-                div()
-                    .flex_none()
-                    .size(px(22.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(6.))
-                    .bg(if picked { ink(0.16, cx) } else { ink(0.05, cx) })
-                    .text_size(ui(11.))
-                    .text_color(colors.text_muted)
-                    .child(number.to_string()),
-            )
-            .child(
-                div()
-                    .text_size(ui(13.5))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(if picked {
-                        colors.text
-                    } else {
-                        colors.text.opacity(0.9)
-                    })
-                    .child(label),
-            )
-    }
-
-    fn render_question_panel(&self, pending: &PendingQuestion, cx: &Context<Self>) -> AnyElement {
-        let colors = cx.theme().colors();
-        let pending_id: SharedString = pending.id().to_string().into();
-        let count = pending.questions.len();
-        let page_index = self
-            .question_pages
-            .get(pending_id.as_ref())
-            .copied()
-            .unwrap_or(0)
-            .min(count.saturating_sub(1));
-        let Some(question) = pending.questions.get(page_index) else {
-            return div().into_any_element();
-        };
-        let is_permission = pending.is_permission();
-        let selected = self
-            .selected_options
-            .get(&question.id)
-            .cloned()
-            .unwrap_or_default();
-        let answer_editor = self
-            .answer_editors
-            .get(&question.id)
-            .map(|(editor, _)| editor.clone());
-        let options: Vec<AnyElement> = if let Some(editor) = answer_editor {
-            vec![
-                div()
-                    .px(px(14.))
-                    .py(px(10.))
-                    .rounded(px(12.))
-                    .border_1()
-                    .border_color(ink(0.16, cx))
-                    .bg(ink(0.025, cx))
-                    .child(editor)
-                    .into_any_element(),
-            ]
-        } else if is_permission {
-            [
-                ("Allow", Some(true)),
-                ("Allow all in this chat", None),
-                ("Deny", Some(false)),
-            ]
-            .into_iter()
-            .enumerate()
-            .map(|(position, (label, allow))| {
-                let pending_id = pending_id.clone();
-                self.render_option_row(
-                    format!("permission-{pending_id}-{position}").into(),
-                    position + 1,
-                    label.into(),
-                    false,
-                    cx,
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.session.update(cx, |session, cx| match allow {
-                        Some(allow) => session.answer_permission(&pending_id, allow, cx),
-                        None => session.set_auto_approve(true, cx),
-                    })
-                }))
-                .into_any_element()
-            })
-            .collect()
-        } else {
-            question
-                .options
-                .iter()
-                .enumerate()
-                .map(|(position, option)| {
-                    let picked = selected.contains(option);
-                    let pending_id = pending_id.clone();
-                    let question_id = question.id.clone();
-                    let option = option.clone();
-                    let multi_select = question.multi_select;
-                    self.render_option_row(
-                        format!("option-{}-{position}", question.id).into(),
-                        position + 1,
-                        option.clone().into(),
-                        picked,
-                        cx,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.pick_option(
-                            pending_id.clone(),
-                            question_id.clone(),
-                            option.clone(),
-                            multi_select,
-                            count,
+            .min_w_0()
+            .overflow_hidden()
+            .when(!invocation.lines.is_empty(), |this| {
+                this.child(detail_separator())
+                    .child(detail_lines(invocation.lines, invocation_hidden, faint))
+                    .when(invocation_hidden > 0, |this| {
+                        this.child(self.render_show_full(
+                            format!("agent-full-input-{}", tool.id),
+                            format!("Show full input ({})", format_bytes(call_text.len())),
+                            &tool.id,
                             cx,
-                        )
-                    }))
-                    .into_any_element()
-                })
-                .collect()
-        };
-        let answered = !self.answer_labels(&question.id, cx).is_empty();
-        let is_last_page = page_index + 1 >= count;
-        let header = if is_permission {
-            "Permission".to_string()
-        } else {
-            question.header.clone()
-        };
-        v_flex()
-            .w_full()
-            .rounded(px(COMPOSER_RADIUS))
-            .border_1()
-            .border_color(colors.border)
-            .bg(colors.element_background)
-            .child(
-                v_flex()
-                    .px(px(16.))
-                    .pt(px(16.))
-                    .child(
-                        h_flex()
-                            .gap(px(8.))
-                            .child(
-                                div()
-                                    .text_size(ui(10.5))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(colors.text_muted.opacity(0.6))
-                                    .child(header.to_uppercase()),
-                            )
-                            .when(count > 1, |this| {
-                                this.child(
-                                    div()
-                                        .h(px(20.))
-                                        .px(px(6.))
-                                        .flex()
-                                        .items_center()
-                                        .rounded(px(6.))
-                                        .bg(ink(0.06, cx))
-                                        .text_size(ui(10.))
-                                        .text_color(colors.text_muted)
-                                        .child(format!("{} of {count}", page_index + 1)),
-                                )
-                            }),
-                    )
-                    .child(
-                        div()
-                            .mt(px(6.))
-                            .text_size(ui(15.))
-                            .line_height(ui(20.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(colors.text)
-                            .child(question.question.clone()),
-                    )
-                    .when(question.multi_select, |this| {
-                        this.child(
-                            div()
-                                .mt(px(4.))
-                                .text_size(ui(12.))
-                                .text_color(colors.text_muted.opacity(0.65))
-                                .child("Select one or more options."),
-                        )
+                        ))
                     })
-                    .child(v_flex().mt(px(12.)).gap(px(4.)).children(options)),
-            )
-            .child(
-                h_flex()
-                    .px(px(16.))
-                    .pt(px(4.))
-                    .pb(px(16.))
-                    .justify_between()
-                    .child(if page_index > 0 {
-                        let pending_id = pending_id.clone();
-                        div()
-                            .id("agent-question-back")
-                            .px(px(12.))
-                            .py(px(6.))
-                            .rounded(px(8.))
-                            .cursor_pointer()
-                            .text_size(ui(13.))
-                            .text_color(colors.text_muted)
-                            .hover(|style| style.bg(ink(0.06, cx)).text_color(colors.text))
-                            .child("Back")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.question_pages
-                                    .insert(pending_id.to_string(), page_index - 1);
-                                cx.notify();
-                            }))
-                            .into_any_element()
-                    } else {
-                        div().into_any_element()
-                    })
-                    .when(!is_permission, |this| {
-                        let pending_id = pending_id.clone();
-                        this.child(
-                            div()
-                                .id("agent-question-next")
-                                .px(px(16.))
-                                .py(px(6.))
-                                .rounded(px(8.))
-                                .bg(colors.text)
-                                .text_size(ui(13.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(page(cx))
-                                .when(!answered, |this| this.opacity(0.4))
-                                .when(answered, |this| {
-                                    this.cursor_pointer()
-                                        .hover(|style| style.opacity(0.9))
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            if is_last_page {
-                                                this.submit_answers(&pending_id, cx);
-                                            } else {
-                                                this.question_pages
-                                                    .insert(pending_id.to_string(), page_index + 1);
-                                                cx.notify();
-                                            }
-                                        }))
-                                })
-                                .child(if is_last_page { "Submit" } else { "Next" }),
-                        )
+            })
+            .map(|this| match diff {
+                Some(diff) => this
+                    .child(detail_separator())
+                    .child(self.render_diff(&diff, cx)),
+                None if !output.lines.is_empty() => this
+                    .child(detail_separator())
+                    .child(detail_lines(output.lines, output_hidden, faint))
+                    .when(output_hidden > 0, |this| {
+                        this.child(self.render_show_full(
+                            format!("agent-full-output-{}", tool.id),
+                            format!("Show full output ({})", format_bytes(output_size)),
+                            &tool.id,
+                            cx,
+                        ))
                     }),
-            )
+                None => this,
+            })
             .into_any_element()
+    }
+
+    fn render_show_full(
+        &self,
+        id: String,
+        label: String,
+        tool_id: &str,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let tool_id = tool_id.to_string();
+        let muted = cx.theme().colors().text_muted;
+        div()
+            .id(SharedString::from(id))
+            .h(px(BLOB_AFFORDANCE_HEIGHT))
+            .flex_none()
+            .flex()
+            .items_center()
+            .text_size(px(TOOL_TEXT_SIZE))
+            .text_color(text_faint(cx))
+            .cursor_pointer()
+            .hover(|style| style.text_color(muted))
+            .child(label)
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.full_output.insert(tool_id.clone());
+                cx.notify();
+            }))
     }
 
     fn render_new_chat(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
@@ -2480,7 +2153,6 @@ impl ChatView {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned().into())
             .unwrap_or_default();
-        let colors = cx.theme().colors();
         v_flex()
             .size_full()
             .justify_center()
@@ -2493,21 +2165,9 @@ impl ChatView {
                     .px(px(16.))
                     .gap(px(8.))
                     .child(
-                        h_flex().h(px(20.)).px(px(26.)).justify_end().child(
-                            h_flex()
-                                .h(px(20.))
-                                .px(px(8.))
-                                .gap(px(6.))
-                                .rounded(px(6.))
-                                .text_size(ui(12.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(colors.text_muted.opacity(0.7))
-                                .child(
-                                    Icon::new(IconName::AgentFolder)
-                                        .size(IconSize::XSmall)
-                                        .color(Color::Custom(colors.text_muted.opacity(0.7))),
-                                )
-                                .child(project_name),
+                        h_flex().h(px(20.)).px(px(10.)).justify_end().child(
+                            Self::footer_label_shell(IconName::AgentFolder, cx)
+                                .child(div().min_w_0().truncate().child(project_name)),
                         ),
                     )
                     .child(self.render_pill(true, COMPOSER_RADIUS, window, cx))
@@ -2522,46 +2182,35 @@ impl ChatView {
     }
 }
 
-fn render_diagram(diagram: mermaid::Diagram, view: WeakEntity<ChatView>, cx: &App) -> AnyElement {
-    match diagram {
-        mermaid::Diagram::Ready {
-            image,
-            width,
-            height,
-        } => div()
-            .id(SharedString::from(format!("agent-diagram-{}", image.id())))
-            .w_full()
-            .p(px(12.))
-            .flex()
-            .justify_center()
-            .cursor_pointer()
-            .child(
-                img(image.clone())
-                    .max_w_full()
-                    .w(px(width))
-                    .h(px(height))
-                    .object_fit(ObjectFit::Contain),
-            )
-            .on_click(move |_, window, cx| {
-                let image = image.clone();
-                view.update(cx, |this, cx| this.open_image_data(image, window, cx))
-                    .ok();
-            })
-            .into_any_element(),
-        mermaid::Diagram::Pending => div()
-            .p(px(12.))
-            .text_size(ui(12.))
-            .text_color(cx.theme().colors().text_muted)
-            .child("Drawing diagram…")
-            .into_any_element(),
-        mermaid::Diagram::Failed(error) => div()
-            .px(px(12.))
-            .pt(px(8.))
-            .text_size(ui(12.))
-            .text_color(cx.theme().status().error)
-            .child(format!("Couldn't draw this diagram: {error}"))
-            .into_any_element(),
-    }
+fn render_diagram(diagram: mermaid::Diagram, view: WeakEntity<ChatView>) -> AnyElement {
+    let mermaid::Diagram::Ready {
+        image,
+        width,
+        height,
+    } = diagram
+    else {
+        return gpui::Empty.into_any_element();
+    };
+    div()
+        .id(SharedString::from(format!("agent-diagram-{}", image.id())))
+        .w_full()
+        .max_w(px(width))
+        .mx_auto()
+        .max_h(px(DIAGRAM_MAX_HEIGHT))
+        .aspect_ratio(width / height.max(1.))
+        .cursor_pointer()
+        .child(
+            img(image.clone())
+                .size_full()
+                .object_fit(ObjectFit::Contain),
+        )
+        .on_click(move |_, window, cx| {
+            cx.stop_propagation();
+            let image = image.clone();
+            view.update(cx, |this, cx| this.open_image_data(image, window, cx))
+                .ok();
+        })
+        .into_any_element()
 }
 
 fn format_bytes(bytes: usize) -> String {
@@ -2594,57 +2243,347 @@ fn subagent_title(call: &ToolCall) -> SharedString {
         .map_or_else(|| "Subagent".into(), Into::into)
 }
 
-fn tree_lines(continues: bool, color: Hsla) -> impl IntoElement {
-    canvas(
-        |_, _, _| (),
-        move |bounds, _, window, _| {
-            let x = bounds.left() + px(TREE_TRUNK_X);
-            let top = bounds.top();
-            let middle = top + bounds.size.height / 2.;
-            let radius = px(TREE_BEND_RADIUS);
-            let mut elbow = PathBuilder::stroke(px(1.));
-            elbow.move_to(point(x, top));
-            elbow.line_to(point(x, middle - radius));
-            elbow.curve_to(point(x + radius, middle), point(x, middle));
-            elbow.line_to(point(bounds.left() + px(TREE_BRANCH_END_X), middle));
-            if let Ok(path) = elbow.build() {
-                window.paint_path(path, color);
-            }
-            if continues {
-                let mut trunk = PathBuilder::stroke(px(1.));
-                trunk.move_to(point(x, middle - radius));
-                trunk.line_to(point(x, bounds.bottom()));
-                if let Ok(path) = trunk.build() {
-                    window.paint_path(path, color);
-                }
-            }
-        },
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .w(px(TREE_GUTTER))
-    .h_full()
+fn icon(name: IconName, size: f32) -> Svg {
+    svg().path(name.path()).size(px(size)).flex_none()
 }
 
-fn trunk_line(color: Hsla) -> impl IntoElement {
+enum CopySource {
+    Text(SharedString),
+    Messages(Vec<usize>),
+}
+
+impl CopySource {
+    fn text(&self, chat: &ChatView, cx: &App) -> String {
+        match self {
+            CopySource::Text(text) => text.to_string(),
+            CopySource::Messages(indices) => {
+                let entries = chat.entries(cx);
+                indices
+                    .iter()
+                    .filter_map(|index| match entries.get(*index) {
+                        Some(Entry::Assistant { markdown, .. }) => {
+                            Some(markdown.read(cx).source().to_string())
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum TranscriptRow {
+    ToolGroup,
+    Other,
+}
+
+fn top_gap(previous: TranscriptRow, current: TranscriptRow) -> f32 {
+    if previous == TranscriptRow::ToolGroup || current == TranscriptRow::ToolGroup {
+        SPACE_MD
+    } else {
+        SPACE_SM
+    }
+}
+
+fn shimmer_amount(x: f32, phase: f32) -> f32 {
+    let primary_center = -2.5 + phase.clamp(0., 1.) * 6.;
+    (-2..=2)
+        .map(|copy| primary_center + copy as f32 * 3.)
+        .map(|center| (1. - (x - center).abs() / TOOL_SHIMMER_HALF_WIDTH).clamp(0., 1.))
+        .fold(0., f32::max)
+}
+
+fn shimmer_overlay(text: SharedString, phase: f32, base: Hsla, peak: Hsla) -> impl IntoElement {
     canvas(
-        |_, _, _| (),
-        move |bounds, _, window, _| {
-            let x = bounds.left() + px(TREE_TRUNK_X);
-            let mut trunk = PathBuilder::stroke(px(1.));
-            trunk.move_to(point(x, bounds.top()));
-            trunk.line_to(point(x, bounds.bottom()));
-            if let Ok(path) = trunk.build() {
-                window.paint_path(path, color);
+        move |bounds, window, _| {
+            let font = window.text_style().font();
+            let run = |color: Hsla| TextRun {
+                len: text.len(),
+                font: font.clone(),
+                color,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            let text_system = window.text_system();
+            let probe =
+                text_system.shape_line(text.clone(), px(TOOL_TEXT_SIZE), &[run(peak)], None);
+            let text_width = f32::from(probe.width()).min(f32::from(bounds.size.width));
+            let strip_count = (text_width / TOOL_SHIMMER_STRIP_WIDTH).ceil() as usize;
+            let mut strips = Vec::with_capacity(strip_count);
+            for strip in 0..strip_count {
+                let left = strip as f32 * TOOL_SHIMMER_STRIP_WIDTH;
+                let right = ((strip + 1) as f32 * TOOL_SHIMMER_STRIP_WIDTH).min(text_width);
+                let x = (left + right) * 0.5 / text_width.max(1.);
+                let amount = shimmer_amount(x, phase);
+                if amount <= 0.001 {
+                    continue;
+                }
+                let line = text_system.shape_line(
+                    text.clone(),
+                    px(TOOL_TEXT_SIZE),
+                    &[run(mix(base, peak, amount))],
+                    None,
+                );
+                strips.push((left, right, line));
+            }
+            strips
+        },
+        move |bounds, strips, window, cx| {
+            for (left, right, line) in strips {
+                let mask = ContentMask {
+                    bounds: Bounds {
+                        origin: point(bounds.origin.x + px(left), bounds.origin.y),
+                        size: size(px(right - left), bounds.size.height),
+                    },
+                };
+                window.with_content_mask(Some(mask), |window| {
+                    line.paint(
+                        bounds.origin,
+                        px(TOOL_LINE_HEIGHT),
+                        TextAlign::Left,
+                        None,
+                        window,
+                        cx,
+                    )
+                    .log_err();
+                });
             }
         },
     )
     .absolute()
-    .top_0()
-    .left_0()
-    .w(px(TREE_GUTTER))
-    .h_full()
+    .inset_0()
+}
+
+fn shimmer_title(text: SharedString, id: ElementId, base: Hsla, peak: Hsla) -> AnyElement {
+    div()
+        .relative()
+        .h_full()
+        .min_w_0()
+        .flex_1()
+        .overflow_hidden()
+        .child(text.clone())
+        .with_animation(
+            id,
+            Animation::new(GROUP_SHIMMER).repeat(),
+            move |title, phase| title.child(shimmer_overlay(text.clone(), phase, base, peak)),
+        )
+        .into_any_element()
+}
+
+fn activity_ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
+    let (Some(first), Some(last)) = (points.first(), points.last()) else {
+        return;
+    };
+    let mut left = Vec::with_capacity(points.len());
+    let mut right = Vec::with_capacity(points.len());
+    for (position, current) in points.iter().enumerate() {
+        let previous = points.get(position.wrapping_sub(1)).unwrap_or(first);
+        let next = points.get(position + 1).unwrap_or(last);
+        let dx = f32::from(next.x - previous.x);
+        let dy = f32::from(next.y - previous.y);
+        let length = dx.hypot(dy).max(0.0001);
+        let normal = point(px(-dy / length * 0.5), px(dx / length * 0.5));
+        left.push(*current + normal);
+        right.push(*current - normal);
+    }
+    let Some(start) = left.first() else {
+        return;
+    };
+    path.move_to(*start);
+    for corner in left.iter().skip(1).chain(right.iter().rev()) {
+        path.line_to(*corner);
+    }
+    path.close();
+}
+
+fn activity_branch_points() -> Vec<Point<f32>> {
+    let mut points: Vec<Point<f32>> = (0..=24)
+        .map(|step| {
+            let t = step as f32 / 24.;
+            point(
+                TREE_BEND_RADIUS * t * t,
+                TREE_BEND_RADIUS * (2. * t - t * t),
+            )
+        })
+        .collect();
+    points.push(point(TREE_BRANCH_END_X - TREE_TRUNK_X, TREE_BEND_RADIUS));
+    points
+}
+
+fn activity_rail(
+    icon_name: IconName,
+    tint: Hsla,
+    continues: bool,
+    color: Hsla,
+) -> impl IntoElement {
+    div()
+        .relative()
+        .w(px(TREE_GUTTER))
+        .flex_none()
+        .child(
+            canvas(
+                |_, _, _| (),
+                move |bounds, _, window, _| {
+                    let x = bounds.origin.x + px(TREE_TRUNK_X);
+                    let bend_y = bounds.origin.y + px(TREE_ROW_HEIGHT / 2. - TREE_BEND_RADIUS);
+                    let bottom = if continues { bounds.bottom() } else { bend_y };
+                    let mut tree = PathBuilder::fill().with_style(PathStyle::Fill(
+                        FillOptions::default().with_fill_rule(FillRule::NonZero),
+                    ));
+                    activity_ribbon(&mut tree, &[point(x, bounds.origin.y), point(x, bottom)]);
+                    let branch: Vec<Point<Pixels>> = activity_branch_points()
+                        .into_iter()
+                        .map(|offset| point(x + px(offset.x), bend_y + px(offset.y)))
+                        .collect();
+                    activity_ribbon(&mut tree, &branch);
+                    if let Ok(path) = tree.build() {
+                        window.paint_path(path, color);
+                    }
+                },
+            )
+            .absolute()
+            .inset_0(),
+        )
+        .child(
+            icon(icon_name, TREE_ICON_SIZE)
+                .absolute()
+                .left(px(TREE_ICON_LEFT))
+                .top(px(TREE_ROW_HEIGHT / 2. - TREE_ICON_SIZE / 2.))
+                .text_color(tint),
+        )
+}
+
+fn detail_separator() -> impl IntoElement {
+    div().h(px(DETAIL_SEPARATOR)).flex_none()
+}
+
+fn detail_lines(lines: Vec<String>, hidden: usize, color: Hsla) -> impl IntoElement {
+    v_flex()
+        .w_full()
+        .min_w_0()
+        .overflow_hidden()
+        .py(px(6.))
+        .font_family(CODE_FONT)
+        .text_size(px(TOOL_TEXT_SIZE))
+        .children(lines.into_iter().map(move |line| {
+            div()
+                .h(px(OUTPUT_LINE_HEIGHT))
+                .w_full()
+                .min_w_0()
+                .flex()
+                .items_center()
+                .text_color(color)
+                .child(div().w_full().min_w_0().truncate().child(line))
+        }))
+        .when(hidden > 0, |this| {
+            this.child(
+                div()
+                    .h(px(OUTPUT_LINE_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .text_size(px(TOOL_TEXT_SIZE))
+                    .text_color(color)
+                    .child(format!("… {hidden} more lines")),
+            )
+        })
+}
+
+#[derive(Debug, PartialEq)]
+struct ClippedLines {
+    lines: Vec<String>,
+    hidden: usize,
+}
+
+fn wrapped_line_count(line: &str, columns: usize) -> usize {
+    line.chars().count().div_ceil(columns).max(1)
+}
+
+fn clip_lines(text: &str, columns: usize, max_lines: usize) -> ClippedLines {
+    let mut lines = Vec::new();
+    let mut hidden = 0;
+    for line in text.trim_end().lines() {
+        if lines.len() >= max_lines {
+            hidden += wrapped_line_count(line, columns);
+            continue;
+        }
+        let mut rest = line;
+        loop {
+            let split = rest
+                .char_indices()
+                .nth(columns)
+                .map_or(rest.len(), |(index, _)| index);
+            let (chunk, tail) = rest.split_at(split);
+            lines.push(chunk.to_string());
+            rest = tail;
+            if rest.is_empty() {
+                break;
+            }
+            if lines.len() >= max_lines {
+                hidden += wrapped_line_count(rest, columns);
+                break;
+            }
+        }
+    }
+    ClippedLines { lines, hidden }
+}
+
+fn plain_code_block_renderer() -> CodeBlockRenderer {
+    CodeBlockRenderer::Custom {
+        render: Arc::new(|_, _, _, _, _, _| div().w_full()),
+        transform: None,
+        hide_body: None,
+    }
+}
+
+fn spinner_opacity(t: f32) -> f32 {
+    let t = t.rem_euclid(1.);
+    if t < 0.45 {
+        1. + (SUBAGENT_SPINNER_DIM - 1.) * (t / 0.45)
+    } else if t < 0.92 {
+        SUBAGENT_SPINNER_DIM
+    } else {
+        SUBAGENT_SPINNER_DIM + (1. - SUBAGENT_SPINNER_DIM) * ((t - 0.92) / 0.08)
+    }
+}
+
+fn subagent_spinner(id: SharedString, accent: Hsla, is_light: bool) -> impl IntoElement {
+    const RING: [[usize; 2]; 3] = [[0, 1], [5, 2], [4, 3]];
+    let mut light = accent;
+    let mut deep = accent;
+    if is_light {
+        light.l = (light.l + 0.11).min(0.76);
+        light.s *= 0.78;
+        deep.l = (deep.l - 0.09).max(0.22);
+    } else {
+        light.l = (light.l + 0.14).min(0.9);
+        light.s *= 0.72;
+        deep.l = (deep.l - 0.08).max(0.22);
+    }
+    let tints = [light, accent, deep];
+    let cell = SUBAGENT_SPINNER_CELL;
+    v_flex()
+        .flex_none()
+        .gap(px(cell / 2.))
+        .children(tints.into_iter().enumerate().map(move |(row, tint)| {
+            let id = id.clone();
+            h_flex()
+                .gap(px(cell / 2.))
+                .children((0..2).map(move |column| {
+                    let phase = RING[row][column] as f32 / 6.;
+                    div()
+                        .size(px(cell))
+                        .rounded(px(cell / 2.))
+                        .bg(tint)
+                        .with_animation(
+                            ElementId::Name(format!("{id}-{row}-{column}").into()),
+                            Animation::new(SUBAGENT_SPINNER_PERIOD).repeat(),
+                            move |cell, delta| cell.opacity(spinner_opacity(delta + phase)),
+                        )
+                }))
+        }))
 }
 
 fn tool_icon(call: &ToolCall) -> IconName {
@@ -2658,6 +2597,7 @@ fn tool_icon(call: &ToolCall) -> IconName {
         ToolCall::WebFetch { .. } | ToolCall::WebSearch { .. } => IconName::AgentGlobal,
         ToolCall::Todo { .. } => IconName::AgentChecklist,
         call if call.is_subagent_spawn() => IconName::AgentBot,
+        ToolCall::Unknown { name, .. } if name == "Wait for agents" => IconName::AgentBot,
         ToolCall::Mcp { .. } | ToolCall::Unknown { .. } => IconName::AgentWidget,
     }
 }
@@ -2667,10 +2607,18 @@ fn column(content: impl IntoElement) -> impl IntoElement {
         .w_full()
         .justify_center()
         .px(px(SIDE_GUTTER))
-        .child(div().w_full().max_w(px(CONTENT_WIDTH)).child(content))
+        .child(div().w_full().max_w(px(CONTENT_WIDTH)).min_w_0().child(content))
 }
 
 impl ChatView {
+    fn first_row_inset(&self) -> f32 {
+        if self.subagent.is_some() {
+            SPACE_LG
+        } else {
+            SPACE_LG + FIRST_ROW_BREATHING_ROOM
+        }
+    }
+
     fn render_transcript(&self, turns: Vec<AnyElement>, cx: &Context<Self>) -> impl IntoElement {
         let container = self.turn_bounds.container.clone();
         div()
@@ -2694,9 +2642,8 @@ impl ChatView {
                     .child(column(
                         v_flex()
                             .w_full()
-                            .pt(px(16.))
-                            .pb(px(32.))
-                            .gap(px(16.))
+                            .pt(px(self.first_row_inset()))
+                            .pb(px(TRANSCRIPT_BOTTOM_PAD))
                             .children(turns),
                     )),
             )
@@ -2892,7 +2839,10 @@ impl Item for ChatView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::tests::{new_store, run_until};
+    use crate::{
+        AcceptCommand, AgentKind, DismissCommands, SelectNextCommand, SelectPreviousCommand,
+        session::tests::{new_store, run_until},
+    };
     use gpui::{KeyBinding, TestAppContext, VisualTestContext};
     use project::FakeFs;
 
@@ -2912,6 +2862,29 @@ mod tests {
 
     fn composer_text(view: &Entity<ChatView>, cx: &mut VisualTestContext) -> String {
         view.read_with(cx, |view, cx| view.composer.read(cx).text(cx))
+    }
+
+    #[test]
+    fn clip_lines_wraps_only_the_visible_lines_and_counts_the_rest() {
+        let text = format!("{}\nshort\n\n{}\n\n  \n", "a".repeat(25), "b".repeat(21));
+        assert_eq!(
+            clip_lines(&text, 10, 4),
+            ClippedLines {
+                lines: vec!["a".repeat(10), "a".repeat(10), "a".repeat(5), "short".into()],
+                hidden: 4,
+            }
+        );
+        assert_eq!(
+            clip_lines(&text, 10, 2),
+            ClippedLines {
+                lines: vec!["a".repeat(10), "a".repeat(10)],
+                hidden: 6,
+            }
+        );
+        assert_eq!(clip_lines(&text, 10, usize::MAX).hidden, 0);
+        assert_eq!(clip_lines("é".repeat(3).as_str(), 2, 1).lines, ["éé"]);
+        assert_eq!(clip_lines("one\ntwo", usize::MAX, 1).hidden, 1);
+        assert!(clip_lines(" \n\n", 10, 4).lines.is_empty());
     }
 
     fn matches(view: &Entity<ChatView>, cx: &mut VisualTestContext) -> Vec<String> {

@@ -1,13 +1,16 @@
 use gpui::{
     Animation, AnimationExt as _, AnyElement, App, ClickEvent, CursorStyle, ElementId, Hsla,
-    IntoElement, ParentElement, Rems, RenderOnce, Styled, Window, div, hsla, px, rems, rgb,
+    IntoElement, ParentElement, Pixels, Rems, RenderOnce, Styled, Window, div, hsla, px, rems,
+    rgb, svg,
 };
 use std::time::Duration;
 use theme::ActiveTheme as _;
-use ui::{Clickable, Toggleable, Tooltip, prelude::*};
+use ui::{Clickable, IconName, IconSize, Toggleable, Tooltip, prelude::*};
+
+const WU_DEFAULT_UI_FONT_SIZE: f32 = 15.0;
 
 pub(crate) fn ui(pixels_at_default: f32) -> Rems {
-    rems(pixels_at_default / 16.0)
+    rems(pixels_at_default / WU_DEFAULT_UI_FONT_SIZE)
 }
 
 const INK_HAIRLINE_SCALE: f32 = 1.35;
@@ -74,6 +77,90 @@ pub(crate) fn selected_row(cx: &App) -> Hsla {
     }
 }
 
+pub(crate) fn icon(name: IconName, size: Pixels, color: Hsla) -> gpui::Svg {
+    svg()
+        .path(name.path())
+        .flex_none()
+        .size(size)
+        .text_color(color)
+}
+
+pub(crate) fn icon_size_px(pixels: f32, window: &Window) -> IconSize {
+    IconSize::Custom(rems(pixels / f32::from(window.rem_size())))
+}
+
+/// Opaque so the trays tucked behind the composer stay hidden.
+pub(crate) fn composer_surface(cx: &App) -> Hsla {
+    let input = cx.theme().colors().element_background;
+    mix(page(cx), input.opacity(1.0), input.a)
+}
+
+pub(crate) const MENU_ITEM_RADIUS: f32 = 7.;
+
+pub(crate) fn menu_row(selected: bool, cx: &App) -> gpui::Div {
+    let text = cx.theme().colors().text;
+    let wash = selected_row(cx);
+    let row = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(10.))
+        .px(px(8.))
+        .py(px(6.))
+        .rounded(px(MENU_ITEM_RADIUS))
+        .text_size(ui(13.))
+        .cursor_pointer();
+    if selected {
+        row.bg(wash).text_color(text)
+    } else {
+        row.text_color(text.opacity(0.9))
+            .hover(move |style| style.bg(wash).text_color(text))
+    }
+}
+
+pub(crate) fn tracked_upper(label: &str) -> String {
+    let mut tracked = String::with_capacity(label.len() * 2);
+    for (index, character) in label.to_uppercase().chars().enumerate() {
+        if index > 0 {
+            tracked.push('\u{200A}');
+        }
+        tracked.push(character);
+    }
+    tracked
+}
+
+pub(crate) fn menu_heading(label: &str, cx: &App) -> gpui::Div {
+    div()
+        .px(px(8.))
+        .pb(px(4.))
+        .pt(px(6.))
+        .text_size(ui(10.))
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_color(cx.theme().colors().text_muted)
+        .child(SharedString::from(tracked_upper(label)))
+}
+
+pub(crate) fn menu_section(cx: &App) -> gpui::Div {
+    div()
+        .mt(px(4.))
+        .pt(px(4.))
+        .border_t_1()
+        .border_color(hairline(0.06, cx))
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+}
+
+pub(crate) fn search_input_frame(cx: &App) -> gpui::Div {
+    div()
+        .mb(px(4.))
+        .px(px(10.))
+        .py(px(6.))
+        .rounded(px(MENU_ITEM_RADIUS))
+        .bg(ink(0.04, cx))
+        .text_size(ui(13.))
+}
+
 pub(crate) fn popover_card(cx: &App) -> gpui::Div {
     let colors = cx.theme().colors();
     div()
@@ -97,6 +184,9 @@ pub(crate) struct Chip {
     child: AnyElement,
     radius: f32,
     selected: bool,
+    shrinkable: bool,
+    hover_background: Option<Hsla>,
+    text_colors: Option<(Hsla, Hsla)>,
     tooltip: Option<SharedString>,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
 }
@@ -108,6 +198,9 @@ impl Chip {
             child: child.into_any_element(),
             radius,
             selected: false,
+            shrinkable: false,
+            hover_background: None,
+            text_colors: None,
             tooltip: None,
             on_click: None,
         }
@@ -115,6 +208,21 @@ impl Chip {
 
     pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
         self.tooltip = Some(text.into());
+        self
+    }
+
+    pub fn shrinkable(mut self) -> Self {
+        self.shrinkable = true;
+        self
+    }
+
+    pub fn hover_background(mut self, color: Hsla) -> Self {
+        self.hover_background = Some(color);
+        self
+    }
+
+    pub fn text_colors(mut self, rest: Hsla, hover: Hsla) -> Self {
+        self.text_colors = Some((rest, hover));
         self
     }
 }
@@ -139,14 +247,30 @@ impl Toggleable for Chip {
 
 impl RenderOnce for Chip {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let hover = cx.theme().colors().element_hover;
+        let hover = self
+            .hover_background
+            .unwrap_or(cx.theme().colors().element_hover);
+        let text_colors = self.text_colors;
         div()
             .id(self.id)
-            .flex_none()
+            .map(|this| {
+                if self.shrinkable {
+                    this.min_w_0()
+                } else {
+                    this.flex_none()
+                }
+            })
             .rounded(px(self.radius))
             .cursor_pointer()
+            .when_some(text_colors, |this, (rest, _)| this.text_color(rest))
             .when(self.selected, |this| this.bg(hover))
-            .hover(|style| style.bg(hover))
+            .hover(move |style| {
+                let style = style.bg(hover);
+                match text_colors {
+                    Some((_, hover_text)) => style.text_color(hover_text),
+                    None => style,
+                }
+            })
             .child(self.child)
             .when_some(self.tooltip, |this, text| this.tooltip(Tooltip::text(text)))
             .when_some(self.on_click, |this, on_click| {
@@ -182,6 +306,14 @@ fn gspin_cell_phase(row: usize, col: usize) -> f32 {
 }
 
 pub(crate) fn gradient_spinner(id: SharedString, cell: f32) -> impl IntoElement {
+    spinner_grid(id, cell, GSPIN_ROW_TINTS.map(|tint| rgb(tint).into()))
+}
+
+pub(crate) fn mono_spinner(id: SharedString, cell: f32, tint: Hsla) -> impl IntoElement {
+    spinner_grid(id, cell, [tint; 3])
+}
+
+fn spinner_grid(id: SharedString, cell: f32, row_tints: [Hsla; 3]) -> impl IntoElement {
     v_flex()
         .flex_none()
         .gap(px(cell / 2.0))
@@ -194,7 +326,7 @@ pub(crate) fn gradient_spinner(id: SharedString, cell: f32) -> impl IntoElement 
                     div()
                         .size(px(cell))
                         .rounded_full()
-                        .bg(rgb(GSPIN_ROW_TINTS[row]))
+                        .bg(row_tints[row])
                         .with_animation(
                             ElementId::Name(format!("{id}-{row}-{col}").into()),
                             Animation::new(Duration::from_millis(GRADIENT_SPIN_MS)).repeat(),

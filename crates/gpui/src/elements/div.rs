@@ -49,6 +49,10 @@ type StackSafe<T> = stacksafe::StackSafe<T>;
 #[cfg(not(feature = "stacker"))]
 type StackSafe<T> = T;
 
+// Matches the default Windows drag rectangle (SM_CXDRAG).
+#[cfg(target_os = "windows")]
+const DRAG_THRESHOLD: f64 = 4.;
+#[cfg(not(target_os = "windows"))]
 const DRAG_THRESHOLD: f64 = 2.;
 const DEFAULT_TOOLTIP_SHOW_DELAY: Duration = Duration::from_millis(500);
 const HOVERABLE_TOOLTIP_HIDE_DELAY: Duration = Duration::from_millis(500);

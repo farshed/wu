@@ -34,6 +34,7 @@ float blur_along_x(float x, float y, float sigma, float corner,
                    float2 half_size);
 float4 over(float4 below, float4 above);
 float radians(float degrees);
+float edge_fade_alpha(float2 position, EdgeFadeParams fade);
 float4 fill_color(Background background, float2 position, Bounds_ScaledPixels bounds,
   float4 solid_color, float4 color0, float4 color1);
 
@@ -103,6 +104,9 @@ fragment float4 quad_fragment(QuadFragmentInput input [[stage_in]],
   Quad quad = quads[input.quad_id];
   float4 background_color = fill_color(quad.background, input.position.xy, quad.bounds,
     input.background_solid, input.background_color0, input.background_color1);
+  // Applied to the fill here so the borderless fast paths below inherit it.
+  float edge_fade = edge_fade_alpha(input.position.xy, quad.fade);
+  background_color.a *= edge_fade;
 
   bool unrounded = quad.corner_radii.top_left == 0.0 &&
     quad.corner_radii.bottom_left == 0.0 &&
@@ -211,6 +215,7 @@ fragment float4 quad_fragment(QuadFragmentInput input [[stage_in]],
   float4 color = background_color;
   if (border_sdf < antialias_threshold) {
     float4 border_color = input.border_color;
+    border_color.a *= edge_fade;
 
     // Dashed border logic when border_style == 1
     if (quad.border_style == 1) {
@@ -622,6 +627,7 @@ struct MonochromeSpriteVertexOutput {
   float4 position [[position]];
   float2 tile_position;
   float4 color [[flat]];
+  uint sprite_id [[flat]];
   float4 clip_distance;
 };
 
@@ -629,6 +635,7 @@ struct MonochromeSpriteFragmentInput {
   float4 position [[position]];
   float2 tile_position;
   float4 color [[flat]];
+  uint sprite_id [[flat]];
   float4 clip_distance;
 };
 
@@ -652,6 +659,7 @@ vertex MonochromeSpriteVertexOutput monochrome_sprite_vertex(
       device_position,
       tile_position,
       color,
+      sprite_id,
       {clip_distance.x, clip_distance.y, clip_distance.z, clip_distance.w}};
 }
 
@@ -668,7 +676,7 @@ fragment float4 monochrome_sprite_fragment(
   float4 sample =
       atlas_texture.sample(atlas_texture_sampler, input.tile_position);
   float4 color = input.color;
-  color.a *= sample.a;
+  color.a *= sample.a * edge_fade_alpha(input.position.xy, sprites[input.sprite_id].fade);
   return color;
 }
 
@@ -708,6 +716,18 @@ vertex PolychromeSpriteVertexOutput polychrome_sprite_vertex(
       {clip_distance.x, clip_distance.y, clip_distance.z, clip_distance.w}};
 }
 
+float image_mask_alpha(float2 position, ImageAlphaMaskParams mask) {
+  if (mask.feather <= 0.0) return 1.0;
+  float2 half_size = float2(mask.bounds.size.width, mask.bounds.size.height) * 0.5;
+  float2 center = float2(mask.bounds.origin.x, mask.bounds.origin.y) + half_size;
+  float2 q = abs(position - center) - half_size + mask.radius;
+  float distance = length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - mask.radius;
+  float alpha = smoothstep(0.0, mask.feather, distance - mask.clearance);
+  if (mask.bottom_feather > 0.0)
+    alpha = min(alpha, smoothstep(0.0, mask.bottom_feather, mask.bottom_y - position.y));
+  return alpha;
+}
+
 fragment float4 polychrome_sprite_fragment(
     PolychromeSpriteFragmentInput input [[stage_in]],
     constant PolychromeSprite *sprites [[buffer(SpriteInputIndex_Sprites)]],
@@ -727,7 +747,9 @@ fragment float4 polychrome_sprite_fragment(
     color.g = grayscale;
     color.b = grayscale;
   }
-  color.a *= sprite.opacity * saturate(0.5 - distance);
+  color.a *= sprite.opacity * saturate(0.5 - distance) *
+             edge_fade_alpha(input.position.xy, sprite.fade) *
+             image_mask_alpha(input.position.xy, sprite.alpha_mask);
   return color;
 }
 
@@ -1177,6 +1199,23 @@ float2x2 rotate2d(float angle) {
     return float2x2(c, -s, s, c);
 }
 
+float edge_fade_alpha(float2 position, EdgeFadeParams fade) {
+  float ramp = 1.0;
+  if (fade.band_top > 0.0) {
+    ramp = min(ramp, clamp((position.y - fade.top_y) / fade.band_top, 0.0, 1.0));
+  }
+  if (fade.band_bottom > 0.0) {
+    ramp = min(ramp, clamp((fade.bottom_y - position.y) / fade.band_bottom, 0.0, 1.0));
+  }
+  if (fade.band_left > 0.0) {
+    ramp = min(ramp, clamp((position.x - fade.left_x) / fade.band_left, 0.0, 1.0));
+  }
+  if (fade.band_right > 0.0) {
+    ramp = min(ramp, clamp((fade.right_x - position.x) / fade.band_right, 0.0, 1.0));
+  }
+  return ramp * ramp;
+}
+
 float4 fill_color(Background background,
                       float2 position,
                       Bounds_ScaledPixels bounds,
@@ -1276,4 +1315,54 @@ float4 fill_color(Background background,
   }
 
   return color;
+}
+
+struct BackdropBlurVertexOutput {
+  float4 position [[position]];
+  uint blur_id [[flat]];
+  float clip_distance [[clip_distance]][4];
+};
+
+struct BackdropBlurFragmentInput {
+  float4 position [[position]];
+  uint blur_id [[flat]];
+};
+
+vertex BackdropBlurVertexOutput backdrop_blur_vertex(
+    uint unit_vertex_id [[vertex_id]], uint blur_id [[instance_id]],
+    constant float2 *unit_vertices [[buffer(BackdropBlurInputIndex_Vertices)]],
+    constant BackdropBlur *blurs [[buffer(BackdropBlurInputIndex_Blurs)]],
+    constant Size_DevicePixels *viewport_size
+    [[buffer(BackdropBlurInputIndex_ViewportSize)]]) {
+  float2 unit_vertex = unit_vertices[unit_vertex_id];
+  BackdropBlur blur = blurs[blur_id];
+  float4 device_position =
+      to_device_position(unit_vertex, blur.bounds, viewport_size);
+  float4 clip_distance = distance_from_clip_rect(unit_vertex, blur.bounds,
+                                                 blur.content_mask.bounds);
+  return BackdropBlurVertexOutput{
+      device_position,
+      blur_id,
+      {clip_distance.x, clip_distance.y, clip_distance.z, clip_distance.w}};
+}
+
+fragment float4 backdrop_blur_fragment(
+    BackdropBlurFragmentInput input [[stage_in]],
+    constant BackdropBlur *blurs [[buffer(BackdropBlurInputIndex_Blurs)]],
+    constant float4 &source_rect [[buffer(BackdropBlurInputIndex_SourceRect)]],
+    texture2d<float> source_texture
+    [[texture(BackdropBlurInputIndex_SourceTexture)]]) {
+  constexpr sampler source_sampler(coord::normalized, address::clamp_to_edge,
+                                   filter::linear);
+  BackdropBlur blur = blurs[input.blur_id];
+
+  // Blending is disabled on this pipeline, so outside fragments must discard.
+  float distance = quad_sdf(input.position.xy, blur.bounds, blur.corner_radii);
+  if (distance > 0.) {
+    discard_fragment();
+  }
+
+  // The snapshot covers only source_rect of the drawable, not the viewport.
+  float2 uv = (input.position.xy - source_rect.xy) / source_rect.zw;
+  return source_texture.sample(source_sampler, uv);
 }

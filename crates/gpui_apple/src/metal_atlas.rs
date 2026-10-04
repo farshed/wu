@@ -26,6 +26,25 @@ impl MetalAtlas {
     pub(crate) fn metal_texture(&self, id: AtlasTextureId) -> metal::Texture {
         self.0.lock().texture(id).metal_texture.clone()
     }
+
+    pub(crate) fn texture_stats(&self) -> (usize, u64) {
+        let lock = self.0.lock();
+        let mut count = 0;
+        let mut bytes = 0;
+        for texture in lock
+            .monochrome_textures
+            .textures
+            .iter()
+            .chain(lock.polychrome_textures.textures.iter())
+            .flatten()
+        {
+            count += 1;
+            bytes += texture.metal_texture.width()
+                * texture.metal_texture.height()
+                * texture.bytes_per_pixel() as u64;
+        }
+        (count, bytes)
+    }
 }
 
 struct MetalAtlasState {

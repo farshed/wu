@@ -1,23 +1,34 @@
 use super::{ChatView, ui};
+use crate::chat_style::ink;
 use gpui::{
-    AnyElement, Context, Image, ImageSource, IntoElement, MouseButton, ObjectFit, ParentElement, ScrollWheelEvent,
-    Styled, Window, deferred, div, hsla, img, px, relative,
+    AnyElement, Context, Image, ImageSource, IntoElement, MouseButton, ObjectFit, ParentElement,
+    ScrollWheelEvent, SharedString, Styled, Window, deferred, div, hsla, img, px, relative,
 };
 use std::{path::PathBuf, sync::Arc};
+use theme::ActiveTheme as _;
 use ui::{Icon, IconName, IconSize, prelude::*};
 
 const MIN_ZOOM: f32 = 1.;
 const MAX_ZOOM: f32 = 6.;
+const SCRIM_ALPHA: f32 = 0.7;
+const SCRIM_ALPHA_DARK_DEFAULT: f32 = 0.6;
 
 pub(super) struct Lightbox {
     pub source: ImageSource,
+    pub name: SharedString,
     pub zoom: f32,
 }
 
 impl ChatView {
     pub(super) fn open_image(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let name: SharedString = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default()
+            .into();
         self.lightbox = Some(Lightbox {
             source: path.into(),
+            name,
             zoom: 1.,
         });
         window.focus(&self.lightbox_focus, cx);
@@ -32,6 +43,7 @@ impl ChatView {
     ) {
         self.lightbox = Some(Lightbox {
             source: image.into(),
+            name: "Mermaid diagram".into(),
             zoom: 1.,
         });
         window.focus(&self.lightbox_focus, cx);
@@ -54,6 +66,11 @@ impl ChatView {
     pub(super) fn render_lightbox(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let lightbox = self.lightbox.as_ref()?;
         let zoom = lightbox.zoom;
+        let scrim_alpha = if cx.theme().appearance.is_light() {
+            0.32 * (SCRIM_ALPHA / SCRIM_ALPHA_DARK_DEFAULT)
+        } else {
+            SCRIM_ALPHA
+        };
         let button = |id: &'static str, icon: IconName| {
             div()
                 .id(id)
@@ -77,7 +94,7 @@ impl ChatView {
                     .absolute()
                     .inset_0()
                     .occlude()
-                    .bg(hsla(0., 0., 0., 0.82))
+                    .bg(hsla(0., 0., 0., scrim_alpha))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| this.close_image(cx)),
@@ -95,12 +112,14 @@ impl ChatView {
                             .size_full()
                             .overflow_scroll()
                             .flex()
+                            .flex_col()
                             .items_center()
                             .justify_center()
+                            .gap(px(12.))
                             .child(
                                 div()
                                     .w(relative(0.9 * zoom))
-                                    .h(relative(0.9 * zoom))
+                                    .h(relative(0.85 * zoom))
                                     .flex_none()
                                     .on_mouse_down(MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation()
@@ -108,8 +127,21 @@ impl ChatView {
                                     .child(
                                         img(lightbox.source.clone())
                                             .size_full()
-                                            .object_fit(ObjectFit::Contain),
+                                            .object_fit(if zoom > MIN_ZOOM {
+                                                ObjectFit::Contain
+                                            } else {
+                                                ObjectFit::ScaleDown
+                                            }),
                                     ),
+                            )
+                            .child(
+                                div()
+                                    .max_w(relative(0.9))
+                                    .flex_none()
+                                    .overflow_hidden()
+                                    .text_size(ui(11.))
+                                    .text_color(ink(0.45, cx))
+                                    .child(lightbox.name.clone()),
                             ),
                     )
                     .child(

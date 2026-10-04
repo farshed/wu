@@ -1,30 +1,51 @@
 use crate::{
     AgentChatSettings, AgentKind,
     agent_chat_settings::AgentChatModelPickerLayout,
+    chat_style::{accent, hairline, ink, mix, popover_card, selected_row, ui},
     session::{AgentSession, AgentStore, ChatListPrefs, RunSettings},
 };
-use settings::Settings as _;
 use agent_harness::{Model, ModelOption, ReasoningLevel, view};
 use editor::Editor;
 use gpui::{
-    App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, FontWeight,
-    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div, hsla, px,
-    relative, rgb,
+    AnyElement, App, Background, Bounds, BoxShadow, Context, Corners, DismissEvent, Div, ElementId,
+    Entity, EventEmitter, FocusHandle, Focusable, FontWeight, Hsla, IntoElement, ParentElement,
+    Pixels, Render, SharedString, Stateful, Styled, Subscription, Svg, TextStyleRefinement,
+    Transformation, Window, canvas, div, hsla, linear_color_stop, linear_gradient, point, px,
+    radians, relative, rgb, size, svg,
 };
+use settings::Settings as _;
 use theme::ActiveTheme as _;
-use ui::{Icon, IconButton, IconName, IconSize, Label, LabelSize, Tooltip, prelude::*};
+use ui::{Icon, IconName, Tooltip, prelude::*};
 
-const CARD_WIDTH: f32 = 256.;
-const FULL_CARD_WIDTH: f32 = 320.;
+const COMPACT_WIDTH: f32 = 256.;
+const FULL_WIDTH: f32 = 304.;
 const CARD_RADIUS: f32 = 12.;
 const CARD_INSET: f32 = 4.;
-const ROW_RADIUS: f32 = CARD_RADIUS - 1. - CARD_INSET;
-const ROW_HEIGHT: f32 = 32.;
-const LIST_ROWS: f32 = 7.;
+const MENU_GAP: f32 = 2.;
+const MENU_ITEM_RADIUS: f32 = CARD_RADIUS - 1. - CARD_INSET;
+const COMPACT_ROW_HEIGHT: f32 = 32.;
+const COMPACT_LIST_ROWS: f32 = 7.;
+const LIST_HEADER_HEIGHT: f32 = 40.;
+const HEADER_HEIGHT: f32 = 48.;
+const HEADER_HEIGHT_SINGLE: f32 = 36.;
+const SIDE_BUTTON_WIDTH: f32 = 32.;
 const SLIDER_HEIGHT: f32 = 36.;
 const RAIL_HEIGHT: f32 = 28.;
+const RAIL_TOP: f32 = (SLIDER_HEIGHT - RAIL_HEIGHT) / 2.;
 const THUMB_WIDTH: f32 = 44.;
 const THUMB_HEIGHT: f32 = 32.;
+const THUMB_INSET: f32 = THUMB_WIDTH / 2.;
+const FILL_PAST: f32 = RAIL_HEIGHT / 2.;
+const SLIDER_TOP: f32 = 2.;
+const SLIDER_BOTTOM: f32 = 4.;
+const OPTIONS_GAP: f32 = 4.;
+const OPTIONS_MAX_ROWS: usize = 6;
+const COMPACT_SETTING_HEIGHT: f32 = 26.;
+const FULL_SETTING_HEIGHT: f32 = 30.;
+const FULL_CHROME_HEIGHT: f32 = 82.;
+const FULL_LIST_HEIGHT: f32 = 216.;
+const FULL_TRAY_MAX_HEIGHT: f32 = 236.;
+const SKELETON_WIDTHS: [f32; 4] = [0.42, 0.58, 0.48, 0.66];
 const CLAUDE_BRAND: u32 = 0xD97757;
 const EFFORT_OPTION_IDS: [&str; 3] = ["effort", "reasoning", "reasoning_effort"];
 
@@ -34,6 +55,299 @@ pub(crate) fn agent_icon(kind: AgentKind) -> Icon {
             Icon::new(IconName::AgentClaude).color(Color::Custom(rgb(CLAUDE_BRAND).into()))
         }
         AgentKind::Codex => Icon::new(IconName::AgentCodex),
+    }
+}
+
+fn agent_icon_name(kind: AgentKind) -> IconName {
+    match kind {
+        AgentKind::Claude => IconName::AgentClaude,
+        AgentKind::Codex => IconName::AgentCodex,
+    }
+}
+
+fn brand_tint(kind: AgentKind) -> Option<Hsla> {
+    match kind {
+        AgentKind::Claude => Some(rgb(CLAUDE_BRAND).into()),
+        AgentKind::Codex => None,
+    }
+}
+
+fn glyph(name: IconName, size: f32, color: Hsla) -> Svg {
+    svg()
+        .path(name.path())
+        .size(px(size))
+        .flex_none()
+        .text_color(color)
+}
+
+fn brand_glyph(kind: AgentKind, size: f32, untinted: Hsla) -> Svg {
+    glyph(
+        agent_icon_name(kind),
+        size,
+        brand_tint(kind).unwrap_or(untinted),
+    )
+}
+
+fn back_glyph(size: f32, color: Hsla) -> Svg {
+    glyph(IconName::AgentArrowRight, size, color)
+        .with_transformation(Transformation::rotate(radians(std::f32::consts::PI)))
+}
+
+fn is_dark(cx: &App) -> bool {
+    !cx.theme().appearance.is_light()
+}
+
+fn menu_row(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
+    let text = cx.theme().colors().text;
+    let hover = selected_row(cx);
+    h_flex()
+        .id(id)
+        .gap(px(10.))
+        .px(px(8.))
+        .py(px(6.))
+        .rounded(px(MENU_ITEM_RADIUS))
+        .text_size(ui(13.))
+        .cursor_pointer()
+        .text_color(text.opacity(0.9))
+        .hover(move |style| style.bg(hover).text_color(text))
+}
+
+fn selected_ring(cx: &App) -> Vec<BoxShadow> {
+    let color = if is_dark(cx) {
+        hairline(0.09, cx)
+    } else {
+        hsla(0., 0., 0., 0.07)
+    };
+    vec![BoxShadow {
+        color,
+        offset: point(px(0.), px(0.)),
+        blur_radius: px(0.),
+        spread_radius: px(1.),
+        inset: true,
+    }]
+}
+
+fn empty_list_note(copy: &'static str, cx: &App) -> AnyElement {
+    div()
+        .px(px(8.))
+        .py(px(24.))
+        .text_size(ui(12.))
+        .text_color(cx.theme().colors().text_muted)
+        .text_center()
+        .child(copy)
+        .into_any_element()
+}
+
+fn skeleton_rows(cx: &App) -> AnyElement {
+    let wash = ink(0.05, cx);
+    v_flex()
+        .gap(px(8.))
+        .py(px(6.))
+        .px(px(4.))
+        .children((0..5).map(move |index| {
+            div()
+                .h(px(14.))
+                .w(relative(SKELETON_WIDTHS[index % SKELETON_WIDTHS.len()]))
+                .rounded(px(7.))
+                .bg(wash)
+                .opacity(0.55)
+        }))
+        .into_any_element()
+}
+
+fn compact_list_height(rows: usize) -> f32 {
+    let rows = if rows == 0 {
+        4.
+    } else {
+        (rows as f32).min(COMPACT_LIST_ROWS)
+    };
+    rows * (COMPACT_ROW_HEIGHT + MENU_GAP) + 2. * CARD_INSET
+}
+
+fn full_tray_height(setting_count: usize) -> f32 {
+    if setting_count == 0 {
+        0.
+    } else {
+        (setting_count as f32 * (FULL_SETTING_HEIGHT + MENU_GAP) + 7.).min(FULL_TRAY_MAX_HEIGHT)
+    }
+}
+
+fn compact_options_height(count: usize) -> f32 {
+    CARD_INSET - MENU_GAP + count.min(OPTIONS_MAX_ROWS) as f32 * (COMPACT_SETTING_HEIGHT + MENU_GAP)
+}
+
+fn shadow(color: Hsla, y: f32, blur: f32, spread: f32, inset: bool) -> BoxShadow {
+    BoxShadow {
+        color,
+        offset: point(px(0.), px(y)),
+        blur_radius: px(blur),
+        spread_radius: px(spread),
+        inset,
+    }
+}
+
+fn white(alpha: f32) -> Hsla {
+    hsla(0., 0., 1., alpha)
+}
+
+fn black(alpha: f32) -> Hsla {
+    hsla(0., 0., 0., alpha)
+}
+
+fn vertical(top: Hsla, bottom: Hsla) -> Background {
+    linear_gradient(
+        180.,
+        linear_color_stop(top, 0.),
+        linear_color_stop(bottom, 1.),
+    )
+}
+
+struct Plate {
+    background: Background,
+    rim: Hsla,
+    shadows: Vec<BoxShadow>,
+}
+
+impl Plate {
+    fn light(dark: bool) -> Self {
+        if dark {
+            return Self {
+                background: vertical(white(0.08), white(0.05)),
+                rim: white(0.09),
+                shadows: vec![
+                    shadow(white(0.07), 1., 0., 0., true),
+                    shadow(black(0.16), 1., 2., 0., false),
+                ],
+            };
+        }
+        Self {
+            background: vertical(black(0.075), black(0.04)),
+            rim: black(0.08),
+            shadows: vec![
+                shadow(black(0.08), 1., 2., 0., true),
+                shadow(white(0.55), -1., 0., 0., true),
+            ],
+        }
+    }
+
+    fn accent(base: Hsla, dark: bool, glow: f32) -> Self {
+        let top = mix(base, white(base.a), if dark { 0.06 } else { 0.22 });
+        let rim = if dark {
+            mix(base, white(base.a), 0.35).opacity(0.35)
+        } else {
+            mix(base, black(1.), 0.14)
+        };
+        let highlight = white(if dark { 0.12 } else { 0.32 });
+        let ring = white(if dark { 0. } else { 0.22 });
+        let halo = base.opacity(if dark { 0. } else { 0.14 } + 0.3 * glow);
+        Self {
+            background: vertical(top, base),
+            rim,
+            shadows: vec![
+                shadow(highlight, 1., 0., 0., true),
+                shadow(ring, 0., 0., 1., true),
+                shadow(halo, 2. + 2. * glow, 6. + 14. * glow, 0., false),
+            ],
+        }
+    }
+
+    fn thumb(dark: bool) -> Self {
+        let mut shadows = vec![
+            shadow(white(0.8), 1., 0., 0., true),
+            shadow(black(if dark { 0.22 } else { 0.14 }), 1., 2., 0., false),
+        ];
+        if !dark {
+            shadows.push(shadow(black(0.06), 2., 6., 0., false));
+        }
+        Self {
+            background: vertical(hsla(0., 0., 1., 1.), hsla(0., 0., 0.965, 1.)),
+            rim: black(if dark { 0.12 } else { 0.11 }),
+            shadows,
+        }
+    }
+
+    fn apply<E: Styled>(self, element: E) -> E {
+        element
+            .bg(self.background)
+            .border_1()
+            .border_color(self.rim)
+            .shadow(self.shadows)
+    }
+
+    fn paint(&self, window: &mut Window, bounds: Bounds<Pixels>, radius: f32) {
+        let corners = Corners::all(px(radius));
+        window.paint_drop_shadows(bounds, corners, &self.shadows);
+        window.paint_quad(gpui::quad(
+            bounds,
+            corners,
+            self.background,
+            px(1.),
+            self.rim,
+            gpui::BorderStyle::default(),
+        ));
+        window.paint_inset_shadows(bounds, corners, &self.shadows);
+    }
+}
+
+fn next_choice(option: &ModelOption, current: &str) -> Option<String> {
+    option
+        .choices
+        .iter()
+        .position(|choice| choice.id == current)
+        .and_then(|index| option.choices.get((index + 1) % option.choices.len()))
+        .or_else(|| option.choices.first())
+        .map(|choice| choice.id.clone())
+}
+
+enum SettingAction {
+    Reasoning(ReasoningLevel),
+    Option { id: String, choice: String },
+}
+
+struct SettingRow {
+    id: SharedString,
+    label: SharedString,
+    value: SharedString,
+    action: Option<SettingAction>,
+}
+
+impl SettingRow {
+    fn reasoning(ladder: &[ReasoningLevel], selected: Option<ReasoningLevel>) -> Option<Self> {
+        if ladder.is_empty() {
+            return None;
+        }
+        let index = selected.and_then(|level| ladder.iter().position(|candidate| *candidate == level));
+        let next = index
+            .and_then(|index| ladder.get((index + 1) % ladder.len()))
+            .or_else(|| ladder.first())
+            .copied();
+        Some(Self {
+            id: "reasoning".into(),
+            label: "Reasoning".into(),
+            value: selected
+                .map(|level| view::reasoning_label(level).into())
+                .unwrap_or_default(),
+            action: next.map(SettingAction::Reasoning),
+        })
+    }
+
+    fn option(selection: &Selection, option: &ModelOption) -> Self {
+        let current = selection.choice(option).to_string();
+        let value = option
+            .choices
+            .iter()
+            .find(|choice| choice.id == current)
+            .map(|choice| choice.label.clone())
+            .unwrap_or_else(|| current.clone());
+        Self {
+            id: SharedString::from(format!("option-{}", option.id)),
+            label: option.label.clone().into(),
+            value: value.into(),
+            action: next_choice(option, &current).map(|choice| SettingAction::Option {
+                id: option.id.clone(),
+                choice,
+            }),
+        }
     }
 }
 
@@ -87,6 +401,22 @@ impl Selection {
             Some((option.id.clone(), on.to_string(), off.to_string(), is_on))
         })
     }
+
+    fn ladder(&self) -> Vec<ReasoningLevel> {
+        self.model
+            .as_ref()
+            .map(|model| model.reasoning_levels.clone())
+            .unwrap_or_default()
+    }
+
+    fn option_rows(&self, hidden: impl Fn(&ModelOption) -> bool) -> Vec<SettingRow> {
+        self.model
+            .iter()
+            .flat_map(|model| model.options.iter())
+            .filter(|option| !option.choices.is_empty() && !hidden(option))
+            .map(|option| SettingRow::option(self, option))
+            .collect()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -95,10 +425,17 @@ enum Page {
     Models,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ModelTab {
+    Favorites,
+    Agent,
+}
+
 pub struct ModelPicker {
     session: Entity<AgentSession>,
     store: Entity<AgentStore>,
     page: Page,
+    tab: ModelTab,
     search: Entity<Editor>,
     focus_handle: FocusHandle,
     _subscriptions: Vec<Subscription>,
@@ -114,6 +451,10 @@ impl ModelPicker {
         let search = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_placeholder_text("Search models…", window, cx);
+            editor.set_text_style_refinement(TextStyleRefinement {
+                font_size: Some(ui(13.).into()),
+                ..Default::default()
+            });
             editor
         });
         let kind = session.read(cx).kind();
@@ -127,6 +468,7 @@ impl ModelPicker {
             session,
             store,
             page: Page::Settings,
+            tab: ModelTab::Agent,
             search,
             focus_handle: cx.focus_handle(),
             _subscriptions: subscriptions,
@@ -159,10 +501,51 @@ impl ModelPicker {
         });
     }
 
+    fn apply_setting(&self, action: &SettingAction, cx: &mut Context<Self>) {
+        match action {
+            SettingAction::Reasoning(level) => {
+                let level = *level;
+                self.update_settings(cx, |settings| settings.reasoning = Some(level));
+            }
+            SettingAction::Option { id, choice } => {
+                self.pick_option(id.clone(), choice.clone(), cx)
+            }
+        }
+    }
+
     fn show_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.page = Page::Models;
         window.focus(&self.search.focus_handle(cx), cx);
         cx.notify();
+    }
+
+    fn show_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.page = Page::Settings;
+        window.focus(&self.focus_handle, cx);
+        cx.notify();
+    }
+
+    fn render_setting_row(&self, row: SettingRow, height: f32, cx: &Context<Self>) -> AnyElement {
+        let muted = cx.theme().colors().text_muted;
+        let action = row.action;
+        menu_row(SharedString::from(format!("picker-setting-{}", row.id)), cx)
+            .h(px(height))
+            .py(px(0.))
+            .child(div().flex_1().min_w_0().truncate().child(row.label))
+            .child(
+                div()
+                    .max_w(px(100.))
+                    .truncate()
+                    .text_color(muted)
+                    .child(row.value),
+            )
+            .child(glyph(IconName::AgentArrowRight, 12., muted))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if let Some(action) = action.as_ref() {
+                    this.apply_setting(action, cx);
+                }
+            }))
+            .into_any_element()
     }
 
     fn render_settings(
@@ -173,167 +556,178 @@ impl ModelPicker {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let colors = cx.theme().colors();
-        let model_label = selection.model_label(settings, kind);
-        let ladder = selection
-            .model
-            .as_ref()
-            .map(|model| model.reasoning_levels.clone())
-            .unwrap_or_default();
-        let title: SharedString = selection
+        let ladder = selection.ladder();
+        let selected_index = selection
             .reasoning
-            .map(|level| view::reasoning_label(level).into())
-            .unwrap_or_else(|| model_label.clone());
+            .and_then(|level| ladder.iter().position(|candidate| *candidate == level))
+            .unwrap_or(0);
+        let effort: SharedString = ladder
+            .get(selected_index)
+            .map(|level| view::reasoning_label(*level).into())
+            .unwrap_or_else(|| "Default".into());
+        let model_label = selection.model_label(settings, kind);
         let fast = selection.fast();
         let fast_id = fast.as_ref().map(|(id, ..)| id.clone());
-        let options: Vec<ModelOption> = selection
-            .model
-            .as_ref()
-            .map(|model| {
-                model
-                    .options
-                    .iter()
-                    .filter(|option| {
-                        Some(&option.id) != fast_id.as_ref()
-                            && !EFFORT_OPTION_IDS.contains(&option.id.as_str())
-                    })
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
+        let options = selection.option_rows(|option| {
+            Some(&option.id) == fast_id.as_ref() || EFFORT_OPTION_IDS.contains(&option.id.as_str())
+        });
+        let has_ladder = !ladder.is_empty();
 
-        let header = h_flex()
-            .h(px(if ladder.is_empty() { 36. } else { 48. }))
-            .gap_1()
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .px_2()
-                    .justify_center()
-                    .child(Label::new(title).weight(FontWeight::SEMIBOLD))
-                    .when(!ladder.is_empty(), |this| {
-                        this.child(
-                            h_flex()
-                                .id("picker-model-name")
-                                .gap_0p5()
-                                .cursor_pointer()
-                                .child(
-                                    Label::new(model_label.clone())
-                                        .size(LabelSize::Small)
-                                        .color(Color::Muted)
-                                        .truncate(),
-                                )
-                                .child(
-                                    Icon::new(IconName::ChevronRight)
-                                        .size(IconSize::XSmall)
-                                        .color(Color::Muted),
-                                )
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.show_models(window, cx)),
-                                ),
-                        )
-                    }),
-            )
-            .when(ladder.is_empty(), |this| {
-                this.child(
-                    IconButton::new("picker-models", IconName::ChevronRight)
-                        .icon_size(IconSize::Small)
-                        .tooltip(Tooltip::text("Models"))
-                        .on_click(cx.listener(|this, _, window, cx| this.show_models(window, cx))),
-                )
-            })
-            .when_some(fast, |this, (option_id, on, off, is_on)| {
+        let provider = div()
+            .id("picker-provider")
+            .w(px(SIDE_BUTTON_WIDTH))
+            .h_full()
+            .flex_none()
+            .rounded(px(MENU_ITEM_RADIUS))
+            .flex()
+            .items_center()
+            .justify_center()
+            .tooltip(Tooltip::text(kind.label()))
+            .child(brand_glyph(kind, 16., colors.text_muted));
+
+        let title_group = "picker-title";
+        let title = div()
+            .id("picker-title")
+            .group(title_group)
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .px(px(8.))
+            .rounded(px(MENU_ITEM_RADIUS))
+            .hover(|style| style.bg(ink(0.05, cx)))
+            .flex()
+            .flex_col()
+            .items_start()
+            .justify_center()
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _, window, cx| this.show_models(window, cx)))
+            .when(has_ladder, |this| {
                 this.child(
                     div()
-                        .id("picker-fast")
-                        .w(px(32.))
-                        .h_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(ROW_RADIUS))
-                        .cursor_pointer()
-                        .when(is_on, |this| this.bg(colors.element_selected))
-                        .hover(|style| style.bg(colors.element_hover))
-                        .tooltip(Tooltip::text(if is_on {
-                            "Fast mode on"
-                        } else {
-                            "Fast mode off"
-                        }))
-                        .child(
-                            Icon::new(if is_on {
-                                IconName::AgentFastFilled
-                            } else {
-                                IconName::AgentFast
-                            })
-                            .size(IconSize::Small)
-                            .color(if is_on {
-                                Color::Accent
-                            } else {
-                                Color::Muted
-                            }),
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            let choice = if is_on { off.clone() } else { on.clone() };
-                            this.pick_option(option_id.clone(), choice, cx);
-                        })),
+                        .text_size(ui(14.))
+                        .line_height(px(17.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(colors.text)
+                        .child(effort),
                 )
-            });
-
-        v_flex()
-            .gap(px(2.))
-            .child(header)
-            .when(!ladder.is_empty(), |this| {
-                this.child(self.render_slider(&ladder, selection.reasoning, cx))
             })
-            .when(!options.is_empty(), |this| {
+            .child(
+                h_flex()
+                    .max_w_full()
+                    .min_w_0()
+                    .gap(px(3.))
+                    .map(|this| {
+                        if has_ladder {
+                            this.text_size(ui(12.))
+                                .line_height(px(15.))
+                                .text_color(colors.text_muted)
+                                .group_hover(title_group, |style| style.text_color(colors.text))
+                        } else {
+                            this.text_size(ui(14.))
+                                .line_height(px(17.))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(colors.text)
+                        }
+                    })
+                    .child(div().min_w_0().truncate().child(model_label))
+                    .child(
+                        div()
+                            .flex_none()
+                            .relative()
+                            .opacity(0.55)
+                            .group_hover(title_group, |style| style.left(px(3.)).opacity(1.))
+                            .child(
+                                glyph(IconName::AgentArrowRight, 10., colors.text_muted)
+                                    .group_hover(title_group, |style| {
+                                        style.text_color(colors.text)
+                                    }),
+                            ),
+                    ),
+            );
+
+        let fast_button = fast.as_ref().map(|(option_id, on, off, is_on)| {
+            let is_on = *is_on;
+            let option_id = option_id.clone();
+            let next = if is_on { off.clone() } else { on.clone() };
+            let fast_group = "picker-fast";
+            let resting = if is_on { accent(cx) } else { colors.text_muted };
+            let hovered = if is_on { accent(cx) } else { colors.text };
+            div()
+                .id("picker-fast")
+                .group(fast_group)
+                .w(px(SIDE_BUTTON_WIDTH))
+                .h_full()
+                .flex_none()
+                .rounded(px(MENU_ITEM_RADIUS))
+                .flex()
+                .items_center()
+                .justify_center()
+                .cursor_pointer()
+                .hover(|style| style.bg(ink(0.05, cx)))
+                .tooltip(Tooltip::text(if is_on {
+                    "Fast mode on · Turn off"
+                } else {
+                    "Fast mode off · Turn on"
+                }))
+                .child(
+                    glyph(
+                        if is_on {
+                            IconName::AgentFastFilled
+                        } else {
+                            IconName::AgentFast
+                        },
+                        15.,
+                        resting,
+                    )
+                    .group_hover(fast_group, |style| style.text_color(hovered)),
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.pick_option(option_id.clone(), next.clone(), cx);
+                }))
+        });
+
+        let header = div()
+            .h(px(if has_ladder {
+                HEADER_HEIGHT
+            } else {
+                HEADER_HEIGHT_SINGLE
+            }))
+            .flex_none()
+            .flex()
+            .gap(px(CARD_INSET))
+            .child(provider)
+            .child(title)
+            .children(fast_button);
+
+        let option_count = options.len();
+        v_flex()
+            .p(px(CARD_INSET))
+            .child(header)
+            .when(has_ladder, |this| {
+                this.child(
+                    div()
+                        .px(px(8.))
+                        .pt(px(SLIDER_TOP))
+                        .pb(px(SLIDER_BOTTOM))
+                        .child(self.render_slider(
+                            &ladder,
+                            selected_index,
+                            selection.fast_on(),
+                            cx,
+                        )),
+                )
+            })
+            .when(option_count > 0, |this| {
                 this.child(
                     v_flex()
-                        .pt_1()
-                        .gap(px(2.))
-                        .children(options.into_iter().map(|option| {
-                            let current = selection.choice(&option).to_string();
-                            let current_label = option
-                                .choices
-                                .iter()
-                                .find(|choice| choice.id == current)
-                                .map(|choice| choice.label.clone())
-                                .unwrap_or_else(|| current.clone());
-                            let next = option
-                                .choices
-                                .iter()
-                                .position(|choice| choice.id == current)
-                                .and_then(|index| {
-                                    option.choices.get((index + 1) % option.choices.len())
-                                })
-                                .or_else(|| option.choices.first())
-                                .map(|choice| choice.id.clone());
-                            let option_id = option.id.clone();
-                            h_flex()
-                                .id(SharedString::from(format!("picker-option-{}", option.id)))
-                                .h(px(26.))
-                                .px_2()
-                                .gap_1()
-                                .rounded(px(ROW_RADIUS))
-                                .cursor_pointer()
-                                .hover(|style| style.bg(colors.element_hover))
-                                .child(Label::new(option.label).size(LabelSize::Small))
-                                .child(div().flex_1())
-                                .child(
-                                    Label::new(current_label)
-                                        .size(LabelSize::Small)
-                                        .color(Color::Muted),
-                                )
-                                .child(
-                                    Icon::new(IconName::ChevronRight)
-                                        .size(IconSize::XSmall)
-                                        .color(Color::Muted),
-                                )
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    if let Some(next) = next.clone() {
-                                        this.pick_option(option_id.clone(), next, cx);
-                                    }
-                                }))
+                        .id("picker-options")
+                        .mt(px(OPTIONS_GAP))
+                        .pt(px(CARD_INSET))
+                        .gap(px(MENU_GAP))
+                        .max_h(px(compact_options_height(option_count)))
+                        .overflow_y_scroll()
+                        .children(options.into_iter().map(|row| {
+                            self.render_setting_row(row, COMPACT_SETTING_HEIGHT, cx)
                         })),
                 )
             })
@@ -342,81 +736,122 @@ impl ModelPicker {
     fn render_slider(
         &self,
         ladder: &[ReasoningLevel],
-        selected: Option<ReasoningLevel>,
+        selected_index: usize,
+        fast: bool,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let colors = cx.theme().colors();
+        let dark = is_dark(cx);
         let count = ladder.len();
-        let selected_index = selected
-            .and_then(|level| ladder.iter().position(|candidate| *candidate == level))
-            .unwrap_or(0);
-        let fill_fraction = (selected_index as f32 + 0.5) / count as f32;
-        let rail_top = (SLIDER_HEIGHT - RAIL_HEIGHT) / 2.;
+        let fraction = if count > 1 {
+            selected_index as f32 / (count - 1) as f32
+        } else {
+            0.
+        };
+        let intensity = if fast { 1. } else { 0. };
+        let breath = 0.5;
+        let base = accent(cx);
+        let fill = Plate::accent(base, dark, intensity * (0.2 + 0.25 * breath));
+        let filled_stop = white(0.4);
+        let open_stop = cx.theme().colors().text_muted.opacity(0.28);
+        let halo = base.opacity(0.35 * intensity * (0.55 + 0.45 * breath));
+        let place = |element: Div| {
+            element
+                .absolute()
+                .left(relative(fraction))
+                .ml(px(-THUMB_WIDTH / 2.))
+                .w(px(THUMB_WIDTH))
+                .h(px(THUMB_HEIGHT))
+                .rounded_full()
+        };
+        let span = (count.max(2) - 1) as f32;
         div()
             .relative()
             .h(px(SLIDER_HEIGHT))
-            .mx_2()
+            .cursor_pointer()
+            .child(Plate::light(dark).apply(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(RAIL_TOP))
+                    .h(px(RAIL_HEIGHT))
+                    .rounded_full(),
+            ))
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |bounds, _, window, _| {
+                        let width = f32::from(bounds.size.width);
+                        let run = (width - 2. * THUMB_INSET).max(0.);
+                        let center = THUMB_INSET + fraction * run;
+                        let rect = |x: f32, y: f32, w: f32, h: f32| {
+                            Bounds::new(bounds.origin + point(px(x), px(y)), size(px(w), px(h)))
+                        };
+                        fill.paint(
+                            window,
+                            rect(0., RAIL_TOP, (center + FILL_PAST).min(width), RAIL_HEIGHT),
+                            RAIL_HEIGHT / 2.,
+                        );
+                        for index in 0..count {
+                            let stop = if count > 1 {
+                                index as f32 / (count - 1) as f32
+                            } else {
+                                0.
+                            };
+                            let x = THUMB_INSET + stop * run;
+                            window.paint_quad(gpui::quad(
+                                rect(x - 2., SLIDER_HEIGHT / 2. - 2., 4., 4.),
+                                px(2.),
+                                if stop <= fraction {
+                                    filled_stop
+                                } else {
+                                    open_stop
+                                },
+                                px(0.),
+                                gpui::transparent_black(),
+                                gpui::BorderStyle::default(),
+                            ));
+                        }
+                    },
+                )
+                .absolute()
+                .inset_0(),
+            )
             .child(
                 div()
                     .absolute()
-                    .top(px(rail_top))
-                    .left_0()
-                    .right_0()
-                    .h(px(RAIL_HEIGHT))
-                    .rounded_full()
-                    .bg(colors.element_background)
-                    .border_1()
-                    .border_color(colors.border_variant)
-                    .child(
+                    .left(px(THUMB_INSET))
+                    .right(px(THUMB_INSET))
+                    .top(px((SLIDER_HEIGHT - THUMB_HEIGHT) / 2.))
+                    .h(px(THUMB_HEIGHT))
+                    .when(fast, |this| {
+                        this.child(place(div()).shadow(vec![shadow(halo, 1., 10., 0., false)]))
+                    })
+                    .child(Plate::thumb(dark).apply(place(div()))),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .left(px(THUMB_INSET))
+                    .right(px(THUMB_INSET))
+                    .children(ladder.iter().enumerate().map(|(index, level)| {
+                        let level = *level;
                         div()
+                            .id(("effort-stop", index))
                             .absolute()
                             .top_0()
                             .bottom_0()
-                            .left_0()
-                            .w(relative(fill_fraction))
-                            .rounded_full()
-                            .bg(colors.text_accent),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .absolute()
-                    .inset_0()
-                    .children(ladder.iter().enumerate().map(|(index, level)| {
-                        let level = *level;
-                        let is_selected = index == selected_index;
-                        div()
-                            .id(("effort-stop", index))
-                            .flex_1()
-                            .h_full()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .tooltip(Tooltip::text(view::reasoning_label(level)))
                             .map(|this| {
-                                if is_selected {
-                                    this.child(
-                                        div()
-                                            .flex_none()
-                                            .w(px(THUMB_WIDTH))
-                                            .h(px(THUMB_HEIGHT))
-                                            .rounded_full()
-                                            .bg(hsla(0., 0., 1., 1.))
-                                            .border_1()
-                                            .border_color(colors.border)
-                                            .shadow_sm(),
-                                    )
+                                if count > 1 {
+                                    this.left(relative((index as f32 - 0.5) / span))
+                                        .w(relative(1. / span))
                                 } else {
-                                    this.child(div().size(px(4.)).rounded_full().bg(
-                                        if index < selected_index {
-                                            hsla(0., 0., 1., 0.6)
-                                        } else {
-                                            colors.text_muted.opacity(0.5)
-                                        },
-                                    ))
+                                    this.left_0().right_0()
                                 }
                             })
+                            .tooltip(Tooltip::text(view::reasoning_label(level)))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.update_settings(cx, |settings| {
                                     settings.reasoning = Some(level);
@@ -442,289 +877,245 @@ impl ModelPicker {
         });
     }
 
-    fn render_full(
+    fn visible_models(
         &self,
         kind: AgentKind,
         models: &[Model],
-        selection: &Selection,
+        favorites_only: bool,
         cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let colors = cx.theme().colors();
-        let prefs = self.store.read(cx).list_prefs().clone();
-        let favorites: Vec<Model> = models
-            .iter()
-            .filter(|model| prefs.is_favorite(kind, &model.id))
-            .cloned()
-            .collect();
-        let selected_id = selection.model.as_ref().map(|model| model.id.clone());
-        let ladder = selection
-            .model
-            .as_ref()
-            .map(|model| model.reasoning_levels.clone())
-            .unwrap_or_default();
-        v_flex()
-            .gap(px(4.))
-            .child(
-                h_flex()
-                    .px_2()
-                    .h(px(32.))
-                    .gap_2()
-                    .child(
-                        Icon::new(IconName::MagnifyingGlass)
-                            .size(IconSize::Small)
-                            .color(Color::Muted),
-                    )
-                    .child(div().flex_1().child(self.search.clone())),
-            )
-            .when(!favorites.is_empty(), |this| {
-                this.child(
-                    h_flex()
-                        .px_1()
-                        .gap_1()
-                        .flex_wrap()
-                        .children(favorites.into_iter().map(|model| {
-                            let is_selected = selected_id.as_deref() == Some(model.id.as_str());
-                            h_flex()
-                                .id(SharedString::from(format!("picker-favorite-{}", model.id)))
-                                .h(px(24.))
-                                .px_2()
-                                .gap_1()
-                                .rounded(px(ROW_RADIUS))
-                                .border_1()
-                                .border_color(colors.border_variant)
-                                .cursor_pointer()
-                                .when(is_selected, |this| this.bg(colors.element_selected))
-                                .hover(|style| style.bg(colors.element_hover))
-                                .child(
-                                    Icon::new(IconName::AgentStarFilled)
-                                        .size(IconSize::XSmall)
-                                        .color(Color::Warning),
-                                )
-                                .child(Label::new(model.label.clone()).size(LabelSize::XSmall))
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.pick_model(model.clone(), window, cx)
-                                }))
-                        })),
-                )
-            })
-            .child(self.render_model_rows(kind, models, selection, true, cx))
-            .when(!ladder.is_empty(), |this| {
-                this.child(
-                    v_flex()
-                        .pt_1()
-                        .border_t_1()
-                        .border_color(colors.border_variant)
-                        .child(
-                            div()
-                                .px_2()
-                                .pt_1()
-                                .child(
-                                    Label::new("Reasoning")
-                                        .size(LabelSize::XSmall)
-                                        .color(Color::Muted),
-                                ),
-                        )
-                        .child(
-                            h_flex()
-                                .px_1()
-                                .py_1()
-                                .gap_1()
-                                .flex_wrap()
-                                .children(ladder.into_iter().map(|level| {
-                                    let is_selected = selection.reasoning == Some(level);
-                                    div()
-                                        .id(SharedString::from(format!("picker-level-{level:?}")))
-                                        .h(px(24.))
-                                        .px_2()
-                                        .flex()
-                                        .items_center()
-                                        .rounded(px(ROW_RADIUS))
-                                        .cursor_pointer()
-                                        .when(is_selected, |this| this.bg(colors.element_selected))
-                                        .hover(|style| style.bg(colors.element_hover))
-                                        .child(
-                                            Label::new(view::reasoning_label(level))
-                                                .size(LabelSize::Small)
-                                                .color(if is_selected {
-                                                    Color::Default
-                                                } else {
-                                                    Color::Muted
-                                                }),
-                                        )
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.update_settings(cx, |settings| {
-                                                settings.reasoning = Some(level)
-                                            })
-                                        }))
-                                })),
-                        ),
-                )
-            })
-            .child(self.render_option_rows(selection, cx))
-    }
-
-    fn render_option_rows(&self, selection: &Selection, cx: &Context<Self>) -> impl IntoElement {
-        let colors = cx.theme().colors();
-        let options: Vec<ModelOption> = selection
-            .model
-            .as_ref()
-            .map(|model| {
-                model
-                    .options
-                    .iter()
-                    .filter(|option| !EFFORT_OPTION_IDS.contains(&option.id.as_str()))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-        v_flex().gap(px(2.)).children(options.into_iter().map(|option| {
-            let current = selection.choice(&option).to_string();
-            let current_label = option
-                .choices
-                .iter()
-                .find(|choice| choice.id == current)
-                .map(|choice| choice.label.clone())
-                .unwrap_or_else(|| current.clone());
-            let next = option
-                .choices
-                .iter()
-                .position(|choice| choice.id == current)
-                .and_then(|index| option.choices.get((index + 1) % option.choices.len()))
-                .or_else(|| option.choices.first())
-                .map(|choice| choice.id.clone());
-            let option_id = option.id.clone();
-            h_flex()
-                .id(SharedString::from(format!("picker-full-option-{}", option.id)))
-                .h(px(26.))
-                .px_2()
-                .gap_1()
-                .rounded(px(ROW_RADIUS))
-                .cursor_pointer()
-                .hover(|style| style.bg(colors.element_hover))
-                .child(Label::new(option.label).size(LabelSize::Small))
-                .child(div().flex_1())
-                .child(
-                    Label::new(current_label)
-                        .size(LabelSize::Small)
-                        .color(Color::Muted),
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if let Some(next) = next.clone() {
-                        this.pick_option(option_id.clone(), next, cx);
-                    }
-                }))
-        }))
-    }
-
-    fn render_model_rows(
-        &self,
-        kind: AgentKind,
-        models: &[Model],
-        selection: &Selection,
-        stars: bool,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let colors = cx.theme().colors();
+    ) -> Vec<Model> {
         let prefs = self.store.read(cx).list_prefs().clone();
         let query = self.search.read(cx).text(cx).trim().to_lowercase();
-        let selected_id = selection.model.as_ref().map(|model| model.id.clone());
-        let rows: Vec<Model> = models
+        models
             .iter()
+            .filter(|model| !favorites_only || prefs.is_favorite(kind, &model.id))
             .filter(|model| {
                 query.is_empty()
                     || model.label.to_lowercase().contains(&query)
                     || model.id.to_lowercase().contains(&query)
             })
             .cloned()
-            .collect();
-        let list_height = (rows.len().max(1) as f32).min(LIST_ROWS) * (ROW_HEIGHT + 2.);
-        v_flex()
-            .id("picker-model-rows")
-            .pt_1()
-            .gap(px(2.))
-            .h(px(list_height))
-            .overflow_y_scroll()
-            .when(rows.is_empty(), |this| {
-                this.child(
-                    div().px_2().py_1().child(
-                        Label::new("No matching models")
-                            .size(LabelSize::Small)
-                            .color(Color::Muted),
-                    ),
-                )
-            })
-            .children(rows.into_iter().map(|model| {
-                let is_selected = selected_id.as_deref() == Some(model.id.as_str());
-                let is_favorite = prefs.is_favorite(kind, &model.id);
-                let tooltip = model.description.clone();
-                let group: SharedString = format!("picker-row-{}", model.id).into();
-                let star_id = model.id.clone();
-                h_flex()
-                    .id(group.clone())
-                    .group(group.clone())
-                    .flex_none()
-                    .h(px(ROW_HEIGHT))
-                    .px_2()
-                    .gap_2()
-                    .rounded(px(ROW_RADIUS))
-                    .cursor_pointer()
-                    .when(is_selected, |this| this.bg(colors.element_selected))
-                    .hover(|style| style.bg(colors.element_hover))
-                    .when_some(tooltip, |this, tooltip| this.tooltip(Tooltip::text(tooltip)))
-                    .child(agent_icon(kind).size(IconSize::Small))
-                    .child(
-                        div().flex_1().min_w_0().child(
-                            Label::new(model.label.clone())
-                                .size(LabelSize::Small)
-                                .truncate(),
-                        ),
-                    )
-                    .when(stars, |this| {
-                        this.child(
-                            div()
-                                .id(SharedString::from(format!("picker-star-{}", model.id)))
-                                .size(px(20.))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(5.))
-                                .when(!is_favorite, |this| this.visible_on_hover(group.clone()))
-                                .hover(|style| style.bg(colors.element_hover))
-                                .tooltip(Tooltip::text(if is_favorite {
-                                    "Remove from favorites"
-                                } else {
-                                    "Add to favorites"
-                                }))
-                                .child(
-                                    Icon::new(if is_favorite {
-                                        IconName::AgentStarFilled
-                                    } else {
-                                        IconName::AgentStar
-                                    })
-                                    .size(IconSize::XSmall)
-                                    .color(if is_favorite {
-                                        Color::Warning
-                                    } else {
-                                        Color::Muted
-                                    }),
-                                )
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.toggle_favorite(kind, &star_id, cx)
-                                })),
-                        )
-                    })
-                    .when(is_selected, |this| {
-                        this.child(
-                            Icon::new(IconName::Check)
-                                .size(IconSize::Small)
-                                .color(Color::Accent),
-                        )
-                    })
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.pick_model(model.clone(), window, cx)
-                    }))
+            .collect()
+    }
+
+    fn empty_rows(&self, models: &[Model], favorites_only: bool, cx: &Context<Self>) -> AnyElement {
+        let searching = !self.search.read(cx).text(cx).trim().is_empty();
+        if searching {
+            empty_list_note("No models found", cx)
+        } else if favorites_only {
+            empty_list_note("No starred models yet – hit a row's star", cx)
+        } else if models.is_empty() {
+            skeleton_rows(cx)
+        } else {
+            empty_list_note("No models found", cx)
+        }
+    }
+
+    fn render_star(
+        &self,
+        kind: AgentKind,
+        model_id: &str,
+        is_favorite: bool,
+        side: f32,
+        radius: f32,
+        cx: &Context<Self>,
+    ) -> Stateful<Div> {
+        let star_id = model_id.to_string();
+        div()
+            .id(SharedString::from(format!("picker-star-{model_id}")))
+            .flex_none()
+            .size(px(side))
+            .rounded(px(radius))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .hover(|style| style.bg(ink(0.08, cx)))
+            .tooltip(Tooltip::text(if is_favorite {
+                "Remove from favorites"
+            } else {
+                "Add to favorites"
             }))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.toggle_favorite(kind, &star_id, cx)
+            }))
+    }
+
+    fn render_compact_row(
+        &self,
+        kind: AgentKind,
+        model: Model,
+        is_selected: bool,
+        is_favorite: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let colors = cx.theme().colors();
+        let group: SharedString = format!("picker-row-{}", model.id).into();
+        let star_color = if is_favorite {
+            accent(cx)
+        } else {
+            colors.text_muted
+        };
+        let star = self
+            .render_star(kind, &model.id, is_favorite, 24., 6., cx)
+            .when(!is_favorite, |this| this.visible_on_hover(group.clone()))
+            .child(glyph(
+                if is_favorite {
+                    IconName::AgentStarFilled
+                } else {
+                    IconName::AgentStar
+                },
+                13.,
+                star_color,
+            ));
+        let tooltip = model.description.clone();
+        let row = h_flex()
+            .id(group.clone())
+            .group(group)
+            .h(px(COMPACT_ROW_HEIGHT))
+            .pl(px(8.))
+            .pr(px(4.))
+            .rounded(px(MENU_ITEM_RADIUS))
+            .gap(px(8.))
+            .cursor_pointer()
+            .text_color(colors.text)
+            .border_1()
+            .border_color(gpui::transparent_black())
+            .map(|this| {
+                if is_selected {
+                    Plate::light(is_dark(cx)).apply(this)
+                } else {
+                    this.hover(|style| style.bg(ink(0.05, cx)))
+                }
+            })
+            .when_some(tooltip, |this, tooltip| this.tooltip(Tooltip::text(tooltip)))
+            .child(brand_glyph(kind, 14., colors.text_muted))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(ui(12.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(model.label.clone()),
+            )
+            .child(star)
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.pick_model(model.clone(), window, cx)
+            }));
+        div().pb(px(MENU_GAP)).child(row).into_any_element()
+    }
+
+    fn render_full_row(
+        &self,
+        kind: AgentKind,
+        model: Model,
+        is_selected: bool,
+        is_favorite: bool,
+        two_line: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let colors = cx.theme().colors();
+        let warning = cx.theme().status().warning;
+        let star = self
+            .render_star(
+                kind,
+                &model.id,
+                is_favorite,
+                22.,
+                MENU_ITEM_RADIUS,
+                cx,
+            )
+            .child(glyph(
+                if is_favorite {
+                    IconName::AgentStarFilled
+                } else {
+                    IconName::AgentStar
+                },
+                13.,
+                if is_favorite {
+                    warning
+                } else {
+                    colors.text_muted
+                },
+            ));
+        let label = div()
+            .truncate()
+            .text_size(ui(12.5))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(colors.text)
+            .child(model.label.clone());
+        let body = if two_line {
+            v_flex()
+                .flex_1()
+                .min_w_0()
+                .gap(px(2.))
+                .child(label.w_full())
+                .child(
+                    h_flex()
+                        .gap(px(6.))
+                        .child(brand_glyph(kind, 11., colors.text_muted))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_size(ui(11.))
+                                .text_color(colors.text_muted)
+                                .child(kind.label()),
+                        ),
+                )
+        } else {
+            h_flex()
+                .flex_1()
+                .min_w_0()
+                .gap(px(6.))
+                .child(label.flex_none().max_w_full())
+        };
+        let tooltip = model.description.clone();
+        let row = h_flex()
+            .id(SharedString::from(format!("picker-row-{}", model.id)))
+            .px(px(8.))
+            .py(px(if two_line { 6. } else { 5. }))
+            .rounded(px(MENU_ITEM_RADIUS))
+            .gap(px(10.))
+            .cursor_pointer()
+            .map(|this| {
+                if is_selected {
+                    this.bg(selected_row(cx)).shadow(selected_ring(cx))
+                } else {
+                    this.hover(|style| style.bg(ink(0.05, cx)))
+                }
+            })
+            .when_some(tooltip, |this, tooltip| this.tooltip(Tooltip::text(tooltip)))
+            .child(body)
+            .child(star)
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.pick_model(model.clone(), window, cx)
+            }));
+        div().pb(px(MENU_GAP)).child(row).into_any_element()
+    }
+
+    fn render_list_host(
+        &self,
+        id: &'static str,
+        height: f32,
+        rows: Vec<AnyElement>,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .relative()
+            .flex_none()
+            .h(px(height))
+            .py(px(CARD_INSET))
+            .bg(ink(0.02, cx))
+            .child(
+                v_flex()
+                    .id(id)
+                    .size_full()
+                    .px(px(CARD_INSET))
+                    .overflow_y_scroll()
+                    .children(rows),
+            )
     }
 
     fn render_models(
@@ -734,38 +1125,174 @@ impl ModelPicker {
         selection: &Selection,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let colors = cx.theme().colors();
+        let muted = cx.theme().colors().text_muted;
+        let prefs = self.store.read(cx).list_prefs().clone();
+        let selected_id = selection.model.as_ref().map(|model| model.id.clone());
+        let visible = self.visible_models(kind, models, false, cx);
+        let list_height = compact_list_height(visible.len());
+        let rows: Vec<AnyElement> = if visible.is_empty() {
+            vec![self.empty_rows(models, false, cx)]
+        } else {
+            visible
+                .into_iter()
+                .map(|model| {
+                    let is_selected = selected_id.as_deref() == Some(model.id.as_str());
+                    let is_favorite = prefs.is_favorite(kind, &model.id);
+                    self.render_compact_row(kind, model, is_selected, is_favorite, cx)
+                })
+                .collect()
+        };
         v_flex()
             .child(
                 h_flex()
-                    .h(px(36.))
-                    .gap_1()
-                    .child(
-                        IconButton::new("picker-back", IconName::ChevronLeft)
-                            .icon_size(IconSize::Small)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.page = Page::Settings;
-                                window.focus(&this.focus_handle, cx);
-                                cx.notify();
-                            })),
-                    )
-                    .child(Label::new("Models").weight(FontWeight::MEDIUM)),
-            )
-            .child(
-                h_flex()
-                    .px_2()
-                    .pb_2()
-                    .gap_2()
+                    .h(px(LIST_HEADER_HEIGHT))
+                    .flex_none()
+                    .px(px(CARD_INSET))
                     .border_b_1()
-                    .border_color(colors.border_variant)
+                    .border_color(hairline(0.08, cx))
+                    .gap(px(4.))
                     .child(
-                        Icon::new(IconName::MagnifyingGlass)
-                            .size(IconSize::Small)
-                            .color(Color::Muted),
+                        menu_row("picker-back", cx)
+                            .flex_none()
+                            .tooltip(Tooltip::text("Back"))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.show_settings(window, cx)),
+                            )
+                            .child(back_glyph(14., muted)),
                     )
-                    .child(div().flex_1().child(self.search.clone())),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(ui(13.))
+                            .child(self.search.clone()),
+                    ),
             )
-            .child(self.render_model_rows(kind, models, selection, true, cx))
+            .child(self.render_list_host("picker-model-rows", list_height, rows, cx))
+    }
+
+    fn render_tab(
+        &self,
+        id: &'static str,
+        tab: ModelTab,
+        icon: Svg,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let is_viewed = self.tab == tab;
+        div()
+            .id(id)
+            .relative()
+            .size(px(32.))
+            .rounded(px(MENU_ITEM_RADIUS))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .when(!is_viewed, |this| this.hover(|style| style.bg(ink(0.06, cx))))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.tab = tab;
+                cx.notify();
+            }))
+            .child(icon)
+            .when(is_viewed, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .bottom(px(-4.))
+                        .left(px(6.))
+                        .right(px(6.))
+                        .h(px(2.))
+                        .rounded(px(1.))
+                        .bg(accent(cx)),
+                )
+            })
+    }
+
+    fn render_full(
+        &self,
+        kind: AgentKind,
+        models: &[Model],
+        selection: &Selection,
+        settings_rows: Vec<SettingRow>,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let colors = cx.theme().colors();
+        let prefs = self.store.read(cx).list_prefs().clone();
+        let selected_id = selection.model.as_ref().map(|model| model.id.clone());
+        let favorites_only = self.tab == ModelTab::Favorites;
+        let viewed_color = |viewed: bool| if viewed { colors.text } else { colors.text_muted };
+        let tabs = h_flex()
+            .flex_none()
+            .h(px(LIST_HEADER_HEIGHT))
+            .px(px(CARD_INSET))
+            .border_b_1()
+            .border_color(hairline(0.08, cx))
+            .gap(px(2.))
+            .child(self.render_tab(
+                "picker-tab-favorites",
+                ModelTab::Favorites,
+                glyph(IconName::AgentStarFilled, 15., viewed_color(favorites_only)),
+                cx,
+            ))
+            .child(self.render_tab(
+                "picker-tab-agent",
+                ModelTab::Agent,
+                brand_glyph(kind, 16., viewed_color(!favorites_only)),
+                cx,
+            ));
+        let search_row = h_flex()
+            .flex_none()
+            .h(px(LIST_HEADER_HEIGHT))
+            .px(px(10.))
+            .border_b_1()
+            .border_color(hairline(0.08, cx))
+            .gap(px(8.))
+            .child(glyph(IconName::AgentMagnifer, 14., colors.text_muted))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(ui(13.))
+                    .child(self.search.clone()),
+            );
+        let visible = self.visible_models(kind, models, favorites_only, cx);
+        let rows: Vec<AnyElement> = if visible.is_empty() {
+            vec![self.empty_rows(models, favorites_only, cx)]
+        } else {
+            visible
+                .into_iter()
+                .map(|model| {
+                    let is_selected = selected_id.as_deref() == Some(model.id.as_str());
+                    let is_favorite = prefs.is_favorite(kind, &model.id);
+                    self.render_full_row(kind, model, is_selected, is_favorite, favorites_only, cx)
+                })
+                .collect()
+        };
+        let tray_height = full_tray_height(settings_rows.len());
+        v_flex()
+            .child(tabs)
+            .child(search_row)
+            .child(self.render_list_host("picker-model-rows", FULL_LIST_HEIGHT, rows, cx))
+            .when(!settings_rows.is_empty(), |this| {
+                this.child(
+                    v_flex()
+                        .id("picker-traits-tray")
+                        .flex_none()
+                        .border_t_1()
+                        .border_color(hairline(0.08, cx))
+                        .h(px(tray_height))
+                        .overflow_y_scroll()
+                        .px(px(CARD_INSET))
+                        .child(
+                            v_flex()
+                                .gap(px(MENU_GAP))
+                                .py(px(CARD_INSET))
+                                .children(settings_rows.into_iter().map(|row| {
+                                    self.render_setting_row(row, FULL_SETTING_HEIGHT, cx)
+                                })),
+                        ),
+                )
+            })
     }
 }
 
@@ -784,28 +1311,54 @@ impl Render for ModelPicker {
         let settings = session.settings().clone();
         let models = self.store.read(cx).models(kind).to_vec();
         let selection = Selection::resolve(&models, &settings);
-        let colors = cx.theme().colors();
         let full = AgentChatSettings::get_global(cx).model_picker == AgentChatModelPickerLayout::Full;
-        v_flex()
+        let card = popover_card(cx)
             .key_context("menu")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|_, _: &menu::Cancel, _, cx| cx.emit(DismissEvent)))
-            .w(px(if full { FULL_CARD_WIDTH } else { CARD_WIDTH }))
-            .p(px(CARD_INSET))
-            .rounded(px(CARD_RADIUS))
-            .border_1()
-            .border_color(colors.border)
-            .bg(colors.elevated_surface_background)
-            .shadow_lg()
-            .overflow_hidden()
-            .map(|this| match (full, self.page) {
-                (true, _) => this.child(self.render_full(kind, &models, &selection, cx)),
-                (false, Page::Settings) => {
+            .p(px(0.));
+        if full {
+            let settings_rows: Vec<SettingRow> =
+                SettingRow::reasoning(&selection.ladder(), selection.reasoning)
+                    .into_iter()
+                    .chain(selection.option_rows(|option| {
+                        EFFORT_OPTION_IDS.contains(&option.id.as_str())
+                    }))
+                    .collect();
+            let height =
+                FULL_CHROME_HEIGHT + FULL_LIST_HEIGHT + full_tray_height(settings_rows.len());
+            return card
+                .w(px(FULL_WIDTH))
+                .h(px(height))
+                .child(self.render_full(kind, &models, &selection, settings_rows, cx))
+                .into_any_element();
+        }
+        card.w(px(COMPACT_WIDTH))
+            .map(|this| match self.page {
+                Page::Settings => {
                     this.child(self.render_settings(kind, &selection, &settings, cx))
                 }
-                (false, Page::Models) => {
-                    this.child(self.render_models(kind, &models, &selection, cx))
-                }
+                Page::Models => this.child(self.render_models(kind, &models, &selection, cx)),
             })
+            .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_list_fits_rows_up_to_seven() {
+        assert_eq!(compact_list_height(0), 4. * 34. + 8.);
+        assert_eq!(compact_list_height(3), 3. * 34. + 8.);
+        assert_eq!(compact_list_height(20), 7. * 34. + 8.);
+    }
+
+    #[test]
+    fn full_tray_grows_with_settings_then_caps() {
+        assert_eq!(full_tray_height(0), 0.);
+        assert_eq!(full_tray_height(2), 71.);
+        assert_eq!(full_tray_height(12), FULL_TRAY_MAX_HEIGHT);
     }
 }

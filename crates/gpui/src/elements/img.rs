@@ -347,7 +347,10 @@ impl Element for Img {
 
                             let image_size = data.render_size(frame_index);
 
-                            if style.aspect_ratio.is_none() {
+                            if style.aspect_ratio.is_none()
+                                && (matches!(style.size.width, Length::Auto)
+                                    || matches!(style.size.height, Length::Auto))
+                            {
                                 style.aspect_ratio = Some(image_size.width / image_size.height);
                             }
 
@@ -487,7 +490,7 @@ impl Element for Img {
                     if data.frame_count() == 0 {
                         return;
                     }
-                    let new_bounds = self
+                    let fitted = self
                         .style
                         .object_fit
                         .get_bounds(bounds, data.size(layout_state.frame_index));
@@ -495,7 +498,7 @@ impl Element for Img {
                     window
                         .paint_image(
                             bounds,
-                            new_bounds,
+                            fitted,
                             corner_radii,
                             data,
                             layout_state.frame_index,
@@ -592,6 +595,25 @@ impl ImageSource {
             ImageSource::Resource(resource) => cx.has_asset::<ImgResourceLoader>(resource),
             ImageSource::Custom(_) | ImageSource::Render(_) => false,
             ImageSource::Image(data) => cx.has_asset::<AssetLogger<ImageDecoder>>(data),
+        }
+    }
+
+    /// Removes this image from the asset cache and frees its atlas tiles in every window.
+    /// Pass the window being updated, if any, since it is missing from `App::windows` then.
+    pub fn evict(&self, window: Option<&mut Window>, cx: &mut App) {
+        let render_image = match self {
+            ImageSource::Resource(resource) => cx
+                .peek_asset::<ImgResourceLoader>(resource)
+                .and_then(Result::ok),
+            ImageSource::Image(data) => cx
+                .peek_asset::<AssetLogger<ImageDecoder>>(data)
+                .and_then(Result::ok),
+            ImageSource::Render(data) => Some(data.clone()),
+            ImageSource::Custom(_) => None,
+        };
+        self.remove_asset(cx);
+        if let Some(image) = render_image {
+            cx.drop_image(image, window);
         }
     }
 }

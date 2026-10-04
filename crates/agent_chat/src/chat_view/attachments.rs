@@ -1,11 +1,12 @@
-use super::ChatView;
+use super::{ChatView, ui};
+use crate::chat_style::{hairline, icon, page};
 use anyhow::{Context as _, Result, bail};
 use gpui::{
     ClipboardEntry, Context, ExternalPaths, Image, ImageFormat, IntoElement, ObjectFit,
     ParentElement, PathPromptOptions, SharedString, Styled, Window, div, img, px,
 };
 use std::path::{Path, PathBuf};
-use ui::{Icon, IconName, IconSize, prelude::*};
+use ui::{IconName, Tooltip, prelude::*};
 use util::ResultExt as _;
 
 const MAX_IMAGE_BYTES: u64 = 24 * 1024 * 1024;
@@ -13,6 +14,12 @@ const MAX_IMAGE_BYTES: u64 = 24 * 1024 * 1024;
 const MAX_SENT_IMAGE_BYTES: u64 = 3_700_000;
 const MAX_IMAGE_SIDE: u32 = 2048;
 const THUMBNAIL_SIZE: f32 = 56.;
+const STRIP_GAP: f32 = 8.;
+const STRIP_PAD_TOP: f32 = 12.;
+const STRIP_PAD_X: f32 = 16.;
+const CLOSE_CIRCLE_DIAMETER: f32 = 11.5;
+const CLOSE_CIRCLE_GLYPH: f32 = 7.;
+const REMOVE_OVERHANG: f32 = 6.;
 
 pub(crate) fn is_image_path(path: &Path) -> bool {
     path.extension()
@@ -270,56 +277,81 @@ impl ChatView {
             return None;
         }
         let colors = cx.theme().colors();
+        let frame = hairline(0.10, cx);
+        let plate = page(cx);
+        let muted = colors.text_muted;
         Some(
             v_flex()
-                .px(px(16.))
-                .pt(px(12.))
+                .w_full()
+                .flex_none()
+                .px(px(STRIP_PAD_X))
+                .pt(px(STRIP_PAD_TOP))
                 .gap(px(6.))
                 .child(
                     h_flex()
                         .flex_wrap()
-                        .gap(px(8.))
+                        .gap(px(STRIP_GAP))
                         .children(self.attachments.iter().enumerate().map(|(index, path)| {
                             let group: SharedString = format!("agent-attachment-{index}").into();
                             div()
-                                .id(("agent-attachment", index))
                                 .group(group.clone())
-                                .relative()
-                                .size(px(THUMBNAIL_SIZE))
                                 .flex_none()
-                                .rounded(px(10.))
-                                .overflow_hidden()
-                                .border_1()
-                                .border_color(colors.border)
-                                .cursor_pointer()
+                                .relative()
+                                .p(px(REMOVE_OVERHANG))
+                                .m(px(-REMOVE_OVERHANG))
                                 .child(
-                                    img(path.clone())
-                                        .size_full()
-                                        .object_fit(ObjectFit::Cover),
+                                    div()
+                                        .id(("agent-attachment", index))
+                                        .size(px(THUMBNAIL_SIZE))
+                                        .rounded(px(8.))
+                                        .overflow_hidden()
+                                        .border_1()
+                                        .border_color(frame)
+                                        .cursor_pointer()
+                                        .child(
+                                            img(path.clone())
+                                                .w(px(THUMBNAIL_SIZE - 2.))
+                                                .h(px(THUMBNAIL_SIZE - 2.))
+                                                .rounded(px(7.))
+                                                .object_fit(ObjectFit::Cover),
+                                        )
+                                        .on_click({
+                                            let path = path.clone();
+                                            cx.listener(move |this, _, window, cx| {
+                                                this.open_image(path.clone(), window, cx)
+                                            })
+                                        }),
                                 )
-                                .on_click({
-                                    let path = path.clone();
-                                    cx.listener(move |this, _, window, cx| {
-                                        this.open_image(path.clone(), window, cx)
-                                    })
-                                })
                                 .child(
                                     div()
                                         .id(("agent-attachment-remove", index))
                                         .absolute()
-                                        .top(px(3.))
-                                        .right(px(3.))
+                                        .top_0()
+                                        .right_0()
                                         .size(px(18.))
                                         .flex()
                                         .items_center()
                                         .justify_center()
                                         .rounded_full()
-                                        .bg(colors.elevated_surface_background)
+                                        .bg(plate)
+                                        .shadow_sm()
+                                        .cursor_pointer()
                                         .visible_on_hover(group)
+                                        .tooltip(Tooltip::text("Remove"))
                                         .child(
-                                            Icon::new(IconName::AgentClose)
-                                                .size(IconSize::XSmall)
-                                                .color(Color::Muted),
+                                            div()
+                                                .size(px(CLOSE_CIRCLE_DIAMETER))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .rounded_full()
+                                                .border_1()
+                                                .border_color(muted)
+                                                .child(icon(
+                                                    IconName::AgentClose,
+                                                    px(CLOSE_CIRCLE_GLYPH),
+                                                    muted,
+                                                )),
                                         )
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             cx.stop_propagation();
@@ -334,15 +366,15 @@ impl ChatView {
                 .when(self.staging_count > 0, |this| {
                     this.child(
                         div()
-                            .text_size(super::ui(12.))
-                            .text_color(cx.theme().colors().text_muted)
+                            .text_size(ui(12.))
+                            .text_color(colors.text_muted)
                             .child("Preparing image…"),
                     )
                 })
                 .when_some(self.attachment_error.clone(), |this, error| {
                     this.child(
                         div()
-                            .text_size(super::ui(12.))
+                            .text_size(ui(12.))
                             .text_color(cx.theme().status().error)
                             .child(error),
                     )

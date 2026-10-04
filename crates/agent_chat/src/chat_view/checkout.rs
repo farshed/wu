@@ -1,5 +1,11 @@
 use super::{ChatView, ui};
-use crate::{chat_style::Chip, session::AgentSession};
+use crate::{
+    chat_style::{
+        Chip, icon, menu_heading, menu_row, menu_section, popover_card, search_input_frame,
+        text_faint,
+    },
+    session::AgentSession,
+};
 use editor::Editor;
 use git::repository::{Branch, CreateWorktreeTarget, Worktree};
 use gpui::{
@@ -8,7 +14,7 @@ use gpui::{
 };
 use project::Project;
 use std::path::PathBuf;
-use ui::{Icon, IconName, IconSize, Label, LabelSize, PopoverMenu, prelude::*};
+use ui::{IconName, PopoverMenu, prelude::*};
 use settings::Settings as _;
 use util::ResultExt as _;
 
@@ -178,20 +184,23 @@ impl Render for CheckoutPicker {
         let colors = cx.theme().colors();
         let metadata = self.session.read(cx).metadata().clone();
         let query = self.search.read(cx).text(cx).trim().to_lowercase();
-        let row = |id: SharedString, icon: IconName, label: SharedString, detail: Option<SharedString>, selected: bool| {
-            h_flex()
+        let row = |id: SharedString,
+                   icon_name: IconName,
+                   label: SharedString,
+                   detail: Option<SharedString>,
+                   selected: bool| {
+            menu_row(selected, cx)
                 .id(id)
-                .h(px(28.))
-                .px_2()
-                .gap_2()
-                .rounded(px(7.))
-                .cursor_pointer()
-                .when(selected, |this| this.bg(colors.element_selected))
-                .hover(|style| style.bg(colors.element_hover))
-                .child(Icon::new(icon).size(IconSize::Small).color(Color::Muted))
-                .child(div().flex_1().min_w_0().truncate().text_size(ui(13.)).child(label))
+                .child(icon(icon_name, px(14.), colors.text_muted))
+                .child(div().flex_1().min_w_0().truncate().child(label))
                 .when_some(detail, |this, detail| {
-                    this.child(div().text_size(ui(11.5)).text_color(colors.text_muted).truncate().child(detail))
+                    this.child(
+                        div()
+                            .flex_none()
+                            .text_size(ui(10.))
+                            .text_color(colors.text_muted)
+                            .child(detail),
+                    )
                 })
         };
         let main_root = self
@@ -212,30 +221,36 @@ impl Render for CheckoutPicker {
             .filter(|branch| query.is_empty() || branch.name().to_lowercase().contains(&query))
             .cloned()
             .collect();
-        v_flex()
+        popover_card(cx)
             .key_context("menu")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|_, _: &menu::Cancel, _, cx| cx.emit(DismissEvent)))
             .w(px(300.))
-            .p(px(4.))
-            .rounded(px(12.))
-            .border_1()
-            .border_color(colors.border)
-            .bg(colors.elevated_surface_background)
-            .shadow_lg()
-            .child(div().px_2().pt_1().child(Label::new("Checkout").size(LabelSize::XSmall).color(Color::Muted)))
+            .child(menu_heading("Checkout", cx))
             .child(
-                row("checkout-current".into(), IconName::AgentFolder, "Current checkout".into(), None, on_main)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if let Some(root) = main_root.clone() {
-                            let branch = this
-                                .project
-                                .read(cx)
-                                .active_repository(cx)
-                                .and_then(|repository| repository.read(cx).branch.as_ref().map(|branch| branch.name().to_string()));
-                            this.use_checkout(root, branch, cx);
-                        }
-                    })),
+                row(
+                    "checkout-current".into(),
+                    IconName::AgentFolder,
+                    "Current checkout".into(),
+                    None,
+                    on_main,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if let Some(root) = main_root.clone() {
+                        let branch = this
+                            .project
+                            .read(cx)
+                            .active_repository(cx)
+                            .and_then(|repository| {
+                                repository
+                                    .read(cx)
+                                    .branch
+                                    .as_ref()
+                                    .map(|branch| branch.name().to_string())
+                            });
+                        this.use_checkout(root, branch, cx);
+                    }
+                })),
             )
             .children(worktrees.into_iter().map(|worktree| {
                 let label = branch_label(&worktree);
@@ -244,9 +259,12 @@ impl Render for CheckoutPicker {
                 let branch = label.to_string();
                 row(
                     SharedString::from(format!("checkout-worktree-{}", worktree.path.display())),
-                    IconName::AgentGitBranch,
+                    IconName::AgentFolderWithFiles,
                     format!("Worktree · {label}").into(),
-                    worktree.path.file_name().map(|name| SharedString::from(name.to_string_lossy().into_owned())),
+                    worktree
+                        .path
+                        .file_name()
+                        .map(|name| SharedString::from(name.to_string_lossy().into_owned())),
                     selected,
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -254,25 +272,15 @@ impl Render for CheckoutPicker {
                 }))
             }))
             .child(
-                v_flex()
-                    .mt_1()
-                    .pt_1()
-                    .border_t_1()
-                    .border_color(colors.border_variant)
-                    .child(div().px_2().child(Label::new("New worktree from").size(LabelSize::XSmall).color(Color::Muted)))
-                    .child(
-                        h_flex()
-                            .px_2()
-                            .h(px(28.))
-                            .gap_2()
-                            .child(Icon::new(IconName::MagnifyingGlass).size(IconSize::Small).color(Color::Muted))
-                            .child(div().flex_1().child(self.search.clone())),
-                    )
+                menu_section(cx)
+                    .child(menu_heading("New worktree from", cx))
+                    .child(search_input_frame(cx).child(self.search.clone()))
                     .child(
                         v_flex()
                             .id("checkout-branches")
                             .max_h(px(LIST_HEIGHT))
                             .overflow_y_scroll()
+                            .gap(px(2.))
                             .children(branches.into_iter().map(|branch| {
                                 let name = branch.name().to_string();
                                 row(
@@ -291,10 +299,24 @@ impl Render for CheckoutPicker {
                     ),
             )
             .when(self.creating, |this| {
-                this.child(div().px_2().py_1().text_size(ui(12.)).text_color(colors.text_muted).child("Creating worktree…"))
+                this.child(
+                    div()
+                        .px(px(8.))
+                        .py(px(4.))
+                        .text_size(ui(11.))
+                        .text_color(text_faint(cx))
+                        .child("Creating worktree…"),
+                )
             })
             .when_some(self.error.clone(), |this, error| {
-                this.child(div().px_2().py_1().text_size(ui(12.)).text_color(cx.theme().status().error).child(error))
+                this.child(
+                    div()
+                        .px(px(8.))
+                        .py(px(4.))
+                        .text_size(ui(11.))
+                        .text_color(cx.theme().status().error.opacity(0.9))
+                        .child(error),
+                )
             })
     }
 }
@@ -314,25 +336,56 @@ impl ChatView {
         } else {
             "Local checkout".into()
         };
+        let label_color = colors.text_muted.opacity(0.7);
+        let hover_text = colors.text.opacity(0.8);
+        let hover = colors.element_hover;
+        let footer_chip = |id: &'static str, icon_name: IconName, label: SharedString| {
+            h_flex()
+                .id(id)
+                .h(px(20.))
+                .max_w(px(280.))
+                .min_w_0()
+                .px(px(8.))
+                .gap(px(6.))
+                .rounded(px(6.))
+                .text_size(ui(12.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(label_color)
+                .hover(move |style| style.bg(hover).text_color(hover_text))
+                .child(icon(icon_name, px(12.), label_color))
+                .child(div().min_w_0().truncate().child(label))
+                .child(icon(
+                    IconName::AgentArrowDown,
+                    px(12.),
+                    colors.text_muted.opacity(0.5),
+                ))
+        };
         let session = self.session.clone();
         let project = self.project.clone();
         PopoverMenu::new("agent-checkout-picker")
-            .trigger(Chip::new(
-                "agent-checkout-trigger",
-                6.,
-                h_flex()
-                    .h(px(20.))
-                    .px(px(8.))
-                    .gap(px(6.))
-                    .text_size(ui(12.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors.text_muted.opacity(0.75))
-                    .child(Icon::new(IconName::AgentFolder).size(IconSize::XSmall).color(Color::Muted))
-                    .child(label)
-                    .child(Icon::new(IconName::AgentGitBranch).size(IconSize::XSmall).color(Color::Muted))
-                    .child(branch)
-                    .child(Icon::new(IconName::ChevronDown).size(IconSize::XSmall).color(Color::Muted)),
-            ))
+            .trigger(
+                Chip::new(
+                    "agent-checkout-trigger",
+                    6.,
+                    h_flex()
+                        .gap(px(4.))
+                        .child(footer_chip(
+                            "agent-checkout-kind",
+                            if in_worktree {
+                                IconName::AgentFolderWithFiles
+                            } else {
+                                IconName::AgentFolder
+                            },
+                            label,
+                        ))
+                        .child(footer_chip(
+                            "agent-checkout-branch",
+                            IconName::AgentGitBranch,
+                            branch,
+                        )),
+                )
+                .hover_background(gpui::transparent_black()),
+            )
             .menu(move |window, cx| {
                 let session = session.clone();
                 let project = project.clone();

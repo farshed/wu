@@ -331,8 +331,8 @@ impl Platform for TestPlatform {
         ThermalState::Nominal
     }
 
-    fn run(&self, _on_finish_launching: Box<dyn FnOnce()>) {
-        unimplemented!()
+    fn run(&self, on_finish_launching: Box<dyn FnOnce()>) {
+        on_finish_launching();
     }
 
     fn quit(&self) {}

@@ -2,7 +2,7 @@ use super::{ChatView, ui};
 use crate::{
     AcceptCommand, AgentKind, DismissCommands, NewClaudeChat, NewCodexChat, SelectNextCommand,
     SelectPreviousCommand, Send, ToggleFocus,
-    chat_style::{ink, popover_card, selected_row},
+    chat_style::{MENU_ITEM_RADIUS, icon, ink, popover_card, selected_row},
     slash_commands::{
         AppCommand, CommandItem, CommandTarget, CommandToken, TokenKind, command_items,
         completion_token, filter_commands,
@@ -21,7 +21,7 @@ use std::{
     sync::atomic::AtomicBool,
     time::Duration,
 };
-use ui::{Icon, IconName, IconSize, prelude::*};
+use ui::{IconName, prelude::*};
 use util::ResultExt as _;
 
 const MAX_MENTION_RESULTS: usize = 50;
@@ -511,7 +511,7 @@ impl ChatView {
                     .gap(px(8.))
                     .px(px(8.))
                     .py(px(6.))
-                    .rounded(px(7.))
+                    .rounded(px(MENU_ITEM_RADIUS))
                     .cursor_pointer()
                     .text_size(ui(13.))
                     .map(|this| {
@@ -523,11 +523,10 @@ impl ChatView {
                         }
                     })
                     .child(
-                        div().flex_none().size(px(16.)).child(
-                            Icon::new(row.icon())
-                                .size(IconSize::Medium)
-                                .color(Color::Muted),
-                        ),
+                        div()
+                            .flex_none()
+                            .size(px(16.))
+                            .child(icon(row.icon(), px(16.), colors.text_muted)),
                     )
                     .child(
                         div()

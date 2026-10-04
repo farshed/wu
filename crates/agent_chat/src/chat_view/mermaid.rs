@@ -1,4 +1,5 @@
 use super::ChatView;
+use crate::chat_style::{accent, ink, page, text_faint};
 use gpui::{App, Context, Hsla, Image, ImageFormat, Rgba};
 use mermaid_render::{DiagramTheme, RenderError};
 use std::sync::Arc;
@@ -25,14 +26,23 @@ fn rgba(color: Hsla) -> mermaid_render::Rgba {
 
 pub(super) fn diagram_theme(cx: &App) -> DiagramTheme {
     let colors = cx.theme().colors();
+    let is_light = cx.theme().appearance.is_light();
+    let background = page(cx);
+    let canvas = background.blend(ink(0.035, cx));
+    let node = if is_light {
+        background
+    } else {
+        canvas.blend(ink(0.06, cx))
+    };
+    let border_strong = ink(if is_light { 0.17 } else { 0.14 }, cx);
     DiagramTheme {
         font_family: "Geist".into(),
-        background: rgba(colors.editor_background),
+        background: rgba(canvas),
         text: rgba(colors.text),
-        line: rgba(colors.text_muted),
-        node_fill: rgba(colors.element_background),
-        node_border: rgba(colors.border),
-        accent: rgba(colors.text_accent),
+        line: rgba(text_faint(cx)),
+        node_fill: rgba(node),
+        node_border: rgba(border_strong),
+        accent: rgba(accent(cx)),
     }
 }
 

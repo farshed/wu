@@ -695,6 +695,7 @@ pub struct AgentSession {
     user_stopped: bool,
     queue: Vec<QueuedMessage>,
     next_queue_id: u64,
+    editing_queued: Option<u64>,
     deleted: bool,
     pending_questions: Vec<PendingQuestion>,
     auto_approve: bool,
@@ -756,6 +757,7 @@ impl AgentSession {
                 })
                 .collect(),
             next_queue_id: u64::MAX / 2,
+            editing_queued: None,
             deleted: false,
             pending_questions: Vec::new(),
             auto_approve: false,
@@ -889,13 +891,28 @@ impl AgentSession {
             self.enqueue(prompt, cx);
             return;
         }
-        if !stopping && !self.queue.is_empty() {
+        if !stopping && self.has_sendable_queued() {
             self.enqueue(prompt, cx);
-            let next = self.queue.remove(0);
-            self.deliver(next.prompt, cx);
+            if let Some(next) = self.take_next_queued() {
+                self.deliver(next.prompt, cx);
+            }
             return;
         }
         self.deliver(prompt, cx);
+    }
+
+    fn has_sendable_queued(&self) -> bool {
+        self.queue
+            .iter()
+            .any(|queued| Some(queued.id) != self.editing_queued)
+    }
+
+    fn take_next_queued(&mut self) -> Option<QueuedMessage> {
+        let index = self
+            .queue
+            .iter()
+            .position(|queued| Some(queued.id) != self.editing_queued)?;
+        Some(self.queue.remove(index))
     }
 
     fn enqueue(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
@@ -910,6 +927,9 @@ impl AgentSession {
 
     fn take_queued(&mut self, id: u64) -> Option<(usize, Prompt)> {
         let index = self.queue.iter().position(|queued| queued.id == id)?;
+        if self.editing_queued == Some(id) {
+            self.editing_queued = None;
+        }
         Some((index, self.queue.remove(index).prompt))
     }
 
@@ -949,29 +969,34 @@ impl AgentSession {
         cx.notify();
     }
 
-    pub fn take_queued_for_edit(&mut self, id: u64, cx: &mut Context<Self>) -> Option<(usize, Prompt)> {
-        let taken = self.take_queued(id);
-        if taken.is_some() {
-            self.save_entries(cx);
-            cx.notify();
-        }
-        taken
+    pub fn editing_queued(&self) -> Option<u64> {
+        self.editing_queued
     }
 
-    pub fn restore_queued(&mut self, index: usize, prompt: Prompt, cx: &mut Context<Self>) {
-        if prompt.is_empty() {
-            return;
+    pub fn begin_queued_edit(&mut self, id: u64, cx: &mut Context<Self>) -> Option<Prompt> {
+        let queued = self.queue.iter().find(|queued| queued.id == id)?;
+        let prompt = queued.prompt.clone();
+        self.editing_queued = Some(id);
+        cx.notify();
+        Some(prompt)
+    }
+
+    pub fn finish_queued_edit(
+        &mut self,
+        id: u64,
+        edited: Option<Prompt>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.editing_queued == Some(id) {
+            self.editing_queued = None;
         }
-        self.next_queue_id += 1;
-        let index = index.min(self.queue.len());
-        self.queue.insert(
-            index,
-            QueuedMessage {
-                id: self.next_queue_id,
-                prompt,
-            },
-        );
-        self.save_entries(cx);
+        if let Some(prompt) = edited.filter(|prompt| !prompt.is_empty()) {
+            match self.queue.iter_mut().find(|queued| queued.id == id) {
+                Some(queued) => queued.prompt = prompt,
+                None => self.enqueue(prompt, cx),
+            }
+            self.save_entries(cx);
+        }
         cx.notify();
     }
 
@@ -1246,11 +1271,12 @@ impl AgentSession {
     }
 
     fn send_next_queued(&mut self, cx: &mut Context<Self>) {
-        if self.working || self.deleted || self.queue.is_empty() {
+        if self.working || self.deleted {
             return;
         }
-        let next = self.queue.remove(0);
-        self.deliver(next.prompt, cx);
+        if let Some(next) = self.take_next_queued() {
+            self.deliver(next.prompt, cx);
+        }
     }
 
     fn close_for_deletion(&mut self, cx: &mut Context<Self>) -> Vec<Task<()>> {
@@ -3263,12 +3289,15 @@ done
             session.move_queued(ids[2], 0, cx);
             session.remove_queued(ids[1], cx);
         });
-        let (index, prompt) = session
-            .update(cx, |session, cx| session.take_queued_for_edit(ids[0], cx))
+        let prompt = session
+            .update(cx, |session, cx| session.begin_queued_edit(ids[0], cx))
             .expect("queued message");
-        assert_eq!(index, 1);
         session.update(cx, |session, cx| {
-            session.restore_queued(index, Prompt::text(format!("{} edited", prompt.text)), cx)
+            session.finish_queued_edit(
+                ids[0],
+                Some(Prompt::text(format!("{} edited", prompt.text))),
+                cx,
+            )
         });
         let queued: Vec<String> = session.read_with(cx, |session, _| {
             session.queue().iter().map(|queued| queued.prompt.text.clone()).collect()
@@ -3357,6 +3386,57 @@ done
             session.run_ended(cx);
         });
         session.read_with(cx, |session, _| assert_eq!(session.queue().len(), 1));
+    }
+
+    pub(crate) fn enqueue(session: &Entity<AgentSession>, text: &str, cx: &mut TestAppContext) {
+        session.update(cx, |session, cx| session.enqueue(Prompt::text(text), cx));
+    }
+
+    fn saved_queue(session: &Entity<AgentSession>, cx: &mut TestAppContext) -> Vec<String> {
+        session.read_with(cx, |session, cx| match session.saved_transcript(cx) {
+            SavedTranscript::Current { queue, .. } => {
+                queue.into_iter().map(|prompt| prompt.text).collect()
+            }
+            SavedTranscript::EntriesOnly(_) => Vec::new(),
+        })
+    }
+
+    #[gpui::test]
+    async fn a_queued_message_being_edited_stays_saved_and_is_not_sent(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        enqueue(&session, "being edited", cx);
+        enqueue(&session, "next up", cx);
+        let edited_id = session.read_with(cx, |session, _| session.queue()[0].id);
+        let prompt = session
+            .update(cx, |session, cx| session.begin_queued_edit(edited_id, cx))
+            .expect("queued message");
+        assert_eq!(prompt.text, "being edited");
+        assert_eq!(saved_queue(&session, cx), ["being edited", "next up"]);
+
+        session.update(cx, |session, cx| {
+            session.working = true;
+            session.apply_event(
+                AgentEvent::Done {
+                    status: DoneStatus::Completed,
+                    result: None,
+                    error: None,
+                    session_id: None,
+                },
+                cx,
+            );
+        });
+        assert_eq!(user_texts(&session, cx).last().map(String::as_str), Some("next up"));
+        assert_eq!(saved_queue(&session, cx), ["being edited"]);
+
+        session.update(cx, |session, cx| {
+            session.finish_queued_edit(edited_id, Some(Prompt::text("  ")), cx)
+        });
+        session.read_with(cx, |session, _| assert_eq!(session.editing_queued(), None));
+        assert_eq!(saved_queue(&session, cx), ["being edited"]);
     }
 
     #[gpui::test]

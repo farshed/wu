@@ -865,6 +865,36 @@ mod tests {
     }
 
     #[test]
+    fn test_wrap_line_keeps_closing_punctuation_attached() {
+        let mut wrapper = build_wrapper();
+
+        assert_eq!(
+            wrapper
+                .wrap_line(&[LineFragment::text("aaa aa.\"")], px(72.))
+                .collect::<Vec<_>>(),
+            &[Boundary::new(4, 0)],
+        );
+        assert_eq!(
+            wrapper
+                .wrap_line(&[LineFragment::text("aaa aaa!")], px(72.))
+                .collect::<Vec<_>>(),
+            &[Boundary::new(4, 0)],
+        );
+        assert_eq!(
+            wrapper
+                .wrap_line(&[LineFragment::text("aaa (aa)")], px(72.))
+                .collect::<Vec<_>>(),
+            &[Boundary::new(4, 0)],
+        );
+        assert_eq!(
+            wrapper
+                .wrap_line(&[LineFragment::text("aaaa bbb \"cc\"")], px(72.))
+                .collect::<Vec<_>>(),
+            &[Boundary::new(5, 0), Boundary::new(9, 0)],
+        );
+    }
+
+    #[test]
     fn test_truncate_line_end() {
         let mut wrapper = build_wrapper();
 

@@ -12,9 +12,10 @@ use cocoa::{
     appkit::{
         NSApplication, NSBackingStoreBuffered, NSColor, NSEvent, NSEventModifierFlags, NSEventType,
         NSFilenamesPboardType, NSPasteboard, NSRequestUserAttentionType, NSScreen, NSView,
-        NSViewHeightSizable, NSViewWidthSizable, NSVisualEffectMaterial, NSVisualEffectState,
-        NSVisualEffectView, NSWindow, NSWindowCollectionBehavior, NSWindowOcclusionState,
-        NSWindowOrderingMode, NSWindowStyleMask, NSWindowTitleVisibility,
+        NSViewHeightSizable, NSViewWidthSizable, NSVisualEffectBlendingMode,
+        NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow,
+        NSWindowCollectionBehavior, NSWindowOcclusionState, NSWindowOrderingMode,
+        NSWindowStyleMask, NSWindowTitleVisibility,
     },
     base::{id, nil},
     foundation::{
@@ -29,7 +30,7 @@ use gpui::{
     ExternalPaths, FileDropEvent, ForegroundExecutor, KeyDownEvent, Keystroke, Modifiers,
     ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
     PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
-    PromptButton, PromptLevel, RequestFrameOptions, SharedString, Size, SystemWindowTab,
+    PromptButton, PromptLevel, RequestFrameOptions, SharedString, Size, SystemWindowTab, Task,
     WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowKind,
     WindowParams, point, px, size,
 };
@@ -597,6 +598,9 @@ struct MacWindowState {
     cursor_style: CursorStyle,
     cursor_visible: Arc<AtomicBool>,
     frame_source: Option<WindowFrameSource>,
+    frame_requested: Arc<AtomicBool>,
+    frame_requests_paused: bool,
+    idle_trim_task: Option<Task<()>>,
     renderer: renderer::Renderer,
     request_frame_callback: Option<Box<dyn FnMut(RequestFrameOptions)>>,
     event_callback: Option<Box<dyn FnMut(PlatformInput) -> gpui::DispatchEventResult>>,
@@ -759,12 +763,15 @@ impl MacWindowState {
 
     fn start_display_link(&mut self) {
         self.stop_display_link();
+        self.frame_requests_paused = false;
         unsafe {
             if !self
                 .native_window
                 .occlusionState()
                 .contains(NSWindowOcclusionState::NSWindowOcclusionStateVisible)
             {
+                // The occlusion handler restarts the link, so invalidations need not retry.
+                self.frame_requested.store(true, Ordering::Release);
                 return;
             }
         }
@@ -774,12 +781,14 @@ impl MacWindowState {
         };
         let data = self.native_view.as_ptr() as *mut c_void;
         self.frame_source
-            .get_or_insert_with(|| WindowFrameSource::new(data, step))
+            .get_or_insert_with(|| WindowFrameSource::new(data, step, self.frame_requested.clone()))
             .start(display_id)
             .log_err();
     }
 
     fn stop_display_link(&mut self) {
+        // Cleared even without a source so a start without a screen stays retryable.
+        self.frame_requested.store(false, Ordering::Release);
         if let Some(frame_source) = self.frame_source.as_mut() {
             frame_source.stop();
         }
@@ -1025,6 +1034,9 @@ impl MacWindow {
                 cursor_style: CursorStyle::Arrow,
                 cursor_visible,
                 frame_source: None,
+                frame_requested: Arc::new(AtomicBool::new(true)),
+                frame_requests_paused: false,
+                idle_trim_task: None,
                 renderer: renderer::new_renderer(
                     renderer_context,
                     native_window as *mut _,
@@ -1270,6 +1282,32 @@ impl MacWindow {
             }
 
             window_handles
+        }
+    }
+
+    pub(crate) fn restart_frame_sources() {
+        // Stop every subscriber before restarting any: windows share one CVDisplayLink per display.
+        let windows = unsafe {
+            let app = NSApplication::sharedApplication(nil);
+            let native_windows: id = msg_send![app, windows];
+            let count: NSUInteger = msg_send![native_windows, count];
+            let mut windows = Vec::new();
+            for i in 0..count {
+                let window: id = msg_send![native_windows, objectAtIndex: i];
+                if is_gpui_window(window) {
+                    windows.push(get_window_state(&*window));
+                }
+            }
+            windows
+        };
+        for window in &windows {
+            window.lock().stop_display_link();
+        }
+        for window in windows {
+            let mut state = window.lock();
+            if !state.closed.load(Ordering::Acquire) {
+                state.start_display_link();
+            }
         }
     }
 
@@ -1827,6 +1865,55 @@ impl PlatformWindow for MacWindow {
 
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>) {
         self.0.as_ref().lock().request_frame_callback = Some(callback);
+    }
+
+    fn frame_waker(&self) -> Option<Rc<dyn Fn()>> {
+        let state = self.0.lock();
+        let requested = state.frame_requested.clone();
+        let executor = state.foreground_executor.clone();
+        let window = Arc::downgrade(&self.0);
+        Some(Rc::new(move || {
+            if !requested.swap(true, Ordering::AcqRel) {
+                // Deferred because invalidation can happen while WindowState is locked.
+                let window = window.clone();
+                executor
+                    .spawn(async move {
+                        if let Some(window) = window.upgrade() {
+                            let mut state = window.lock();
+                            if !state.closed.load(Ordering::Acquire)
+                                && state.frame_requested.load(Ordering::Acquire)
+                                && !state
+                                    .frame_source
+                                    .as_ref()
+                                    .is_some_and(WindowFrameSource::is_running)
+                            {
+                                state.start_display_link();
+                            }
+                        }
+                    })
+                    .detach();
+            }
+        }))
+    }
+
+    fn pause_frame_requests(&self) {
+        let mut state = self.0.lock();
+        state.frame_requested.store(false, Ordering::Release);
+        state.stop_display_link();
+        state.frame_requests_paused = true;
+        state.idle_trim_task = state.renderer.trim_idle_resources().map(|delay| {
+            let timer = state.background_executor.timer(delay);
+            let window = Arc::downgrade(&self.0);
+            state.foreground_executor.spawn(async move {
+                timer.await;
+                if let Some(window) = window.upgrade() {
+                    let mut state = window.lock();
+                    if state.frame_requests_paused {
+                        state.renderer.trim_idle_resources();
+                    }
+                }
+            })
+        });
     }
 
     fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> gpui::DispatchEventResult>) {
@@ -2876,13 +2963,16 @@ extern "C" fn window_did_change_key_status(this: &Object, selector: Sel, _: id) 
             if let Some(mut callback) = lock.request_frame_callback.take() {
                 lock.renderer.set_presents_with_transaction(true);
                 lock.stop_display_link();
+                lock.frame_requests_paused = false;
                 drop(lock);
                 callback(Default::default());
 
                 let mut lock = window_state.lock();
                 lock.request_frame_callback = Some(callback);
                 lock.renderer.set_presents_with_transaction(false);
-                lock.start_display_link();
+                if !lock.frame_requests_paused {
+                    lock.start_display_link();
+                }
             }
         } else {
             lock.activated_least_once = true;
@@ -2997,13 +3087,16 @@ extern "C" fn display_layer(this: &Object, _: Sel, _: id) {
     if let Some(mut callback) = lock.request_frame_callback.take() {
         lock.renderer.set_presents_with_transaction(true);
         lock.stop_display_link();
+        lock.frame_requests_paused = false;
         drop(lock);
         callback(Default::default());
 
         let mut lock = window_state.lock();
         lock.request_frame_callback = Some(callback);
         lock.renderer.set_presents_with_transaction(false);
-        lock.start_display_link();
+        if !lock.frame_requests_paused {
+            lock.start_display_link();
+        }
     }
 }
 
@@ -3443,9 +3536,9 @@ fn display_id_for_screen(screen: id) -> Option<CGDirectDisplayID> {
 extern "C" fn blurred_view_init_with_frame(this: &Object, _: Sel, frame: NSRect) -> id {
     unsafe {
         let view = msg_send![super(this, class!(NSVisualEffectView)), initWithFrame: frame];
-        // Use a colorless semantic material. The default value `AppearanceBased`, though not
-        // manually set, is deprecated.
-        NSVisualEffectView::setMaterial_(view, NSVisualEffectMaterial::Selection);
+        // On macOS 26+, `Selection` no longer vends the `CABackdropLayer` this view relies on.
+        NSVisualEffectView::setMaterial_(view, NSVisualEffectMaterial::UnderWindowBackground);
+        NSVisualEffectView::setBlendingMode_(view, NSVisualEffectBlendingMode::BehindWindow);
         NSVisualEffectView::setState_(view, NSVisualEffectState::Active);
         view
     }
@@ -3457,6 +3550,10 @@ extern "C" fn blurred_view_update_layer(this: &Object, _: Sel) {
         let layer: id = msg_send![this, layer];
         if !layer.is_null() {
             remove_layer_background(layer);
+            // Mission Control snapshots omit backdrop layers; keep them reading as a dark surface.
+            let black: id = msg_send![class!(NSColor), blackColor];
+            let black_cg: id = msg_send![black, CGColor];
+            let _: () = msg_send![layer, setBackgroundColor: black_cg];
         }
     }
 }
@@ -3474,6 +3571,20 @@ unsafe fn remove_layer_background(layer: id) {
 
         let filters: id = msg_send![layer, filters];
         if !filters.is_null() {
+            let blur_test: id = ns_string("Blur");
+            let count = NSArray::count(filters);
+            for i in 0..count {
+                let filter = filters.objectAtIndex(i);
+                let description: id = msg_send![filter, description];
+                let hit: BOOL = msg_send![description, containsString: blur_test];
+                if hit == YES {
+                    let radius: id = msg_send![class!(NSNumber), numberWithDouble: 60.0f64];
+                    let _: () =
+                        msg_send![filter, setValue: radius forKey: ns_string("inputRadius")];
+                    let _: () = msg_send![layer, setFilters: filters];
+                    break;
+                }
+            }
             // Remove the increased saturation.
             // The effect of a `CAFilter` or `CIFilter` is determined by its name, and the
             // `description` reflects its name and some parameters. Currently `NSVisualEffectView`

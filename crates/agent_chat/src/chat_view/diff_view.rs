@@ -1,8 +1,9 @@
 use super::{CODE_FONT, ChatView};
+use crate::chat_style::text_faint;
 use agent_harness::ToolDiff;
 use gpui::{
-    AnyElement, App, Context, HighlightStyle, IntoElement, ParentElement, SharedString, Styled,
-    StyledText, div, px,
+    AnyElement, App, Context, HighlightStyle, Hsla, IntoElement, ParentElement, SharedString,
+    Styled, StyledText, div, hsla, px,
 };
 use language::{HighlightId, Rope};
 use std::{ops::Range, path::Path, sync::Arc};
@@ -12,6 +13,15 @@ use util::ResultExt as _;
 
 const CONTEXT_LINES: u32 = 3;
 const MAX_DIFF_LINES: usize = 600;
+const HUNK_HEADER_HEIGHT: f32 = 28.;
+const DIFF_LINE_HEIGHT: f32 = 21.;
+const DIFF_TEXT_SIZE: f32 = 12.;
+const NOTICE_HEIGHT: f32 = 24.;
+const BODY_BOTTOM_PAD: f32 = 8.;
+const GUTTER_WIDTH: f32 = 36.;
+const MARKER_WIDTH: f32 = 28.;
+const ACCENT_BAR_WIDTH: f32 = 3.;
+const CODE_PADDING_LEFT: f32 = 12.;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LineKind {
@@ -35,6 +45,7 @@ pub(super) struct FileDiffView {
     pub additions: u32,
     pub deletions: u32,
     hidden: usize,
+    new_file: bool,
     highlighted: bool,
 }
 
@@ -90,13 +101,28 @@ fn build(diff: &ToolDiff) -> FileDiffView {
         }
         old_position = trailing_end.max(before.end);
     }
-    let hidden = lines.len().saturating_sub(MAX_DIFF_LINES);
-    lines.truncate(MAX_DIFF_LINES);
+    let mut diff_line_indices = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.kind != LineKind::Gap)
+        .map(|(index, _)| index);
+    let hidden = match diff_line_indices.nth(MAX_DIFF_LINES) {
+        Some(cut) => {
+            let hidden = 1 + diff_line_indices.count();
+            lines.truncate(cut);
+            while lines.last().is_some_and(|line| line.kind == LineKind::Gap) {
+                lines.pop();
+            }
+            hidden
+        }
+        None => 0,
+    };
     FileDiffView {
         lines,
         additions,
         deletions,
         hidden,
+        new_file: diff.old_text.is_none(),
         highlighted: false,
     }
 }
@@ -185,41 +211,93 @@ impl ChatView {
         let colors = cx.theme().colors();
         let status = cx.theme().status();
         let syntax = cx.theme().syntax().clone();
-        let number_width = view
+        let faint = text_faint(cx);
+        let hunk_background = if cx.theme().appearance.is_light() {
+            hsla(0.6, 0.35, 0.35, 0.07)
+        } else {
+            hsla(0.6, 0.35, 0.6, 0.05)
+        };
+        let max_line = view
             .lines
             .iter()
             .filter_map(|line| line.old_number.max(line.new_number))
             .max()
             .unwrap_or(1)
-            .to_string()
-            .len()
-            .max(2) as f32
-            * 7.5
-            + 8.;
-        let faint = colors.text_muted.opacity(0.6);
-        v_flex()
-            .my(px(6.))
-            .rounded(px(8.))
-            .border_1()
-            .border_color(colors.border_variant)
-            .overflow_hidden()
-            .font_family(CODE_FONT)
-            .text_size(px(12.))
-            .line_height(px(18.))
-            .children(view.lines.iter().map(|line| {
-                if line.kind == LineKind::Gap {
-                    return div()
-                        .h(px(18.))
-                        .px(px(8.))
-                        .text_color(faint)
-                        .bg(colors.editor_background.opacity(0.5))
-                        .child("⋯")
-                        .into_any_element();
-                }
-                let (background, sign, sign_color) = match line.kind {
-                    LineKind::Added => (Some(status.created.opacity(0.12)), "+", status.created),
-                    LineKind::Removed => (Some(status.deleted.opacity(0.12)), "-", status.deleted),
-                    _ => (None, " ", faint),
+            .max(1);
+        let gutter_width = ((max_line.ilog10() + 1) as f32 * 6.6 + 8. + 6.).max(GUTTER_WIDTH);
+        let mut notices: Vec<String> = Vec::new();
+        if view.new_file {
+            notices.push("New file".to_string());
+        }
+        if view.hidden > 0 {
+            notices.push(format!(
+                "Diff truncated – showing first {MAX_DIFF_LINES} of {} lines",
+                MAX_DIFF_LINES + view.hidden
+            ));
+        }
+        let mut rows: Vec<AnyElement> = notices
+            .into_iter()
+            .map(|notice| {
+                div()
+                    .h(px(NOTICE_HEIGHT))
+                    .w_full()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .px(px(16.))
+                    .text_size(px(11.))
+                    .text_color(faint)
+                    .child(notice)
+                    .into_any_element()
+            })
+            .collect();
+        for hunk in hunks(&view.lines) {
+            rows.push(
+                div()
+                    .h(px(HUNK_HEADER_HEIGHT))
+                    .w_full()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .px(px(16.))
+                    .bg(hunk_background)
+                    .font_family(CODE_FONT)
+                    .text_size(px(11.))
+                    .text_color(faint)
+                    .child(hunk_header(hunk))
+                    .into_any_element(),
+            );
+            for line in hunk {
+                let (marker, marker_color, row_background, accent, number_color) = match line.kind
+                {
+                    LineKind::Added => (
+                        "+",
+                        status.created,
+                        Some(status.created.opacity(0.055)),
+                        Some(status.created.opacity(0.55)),
+                        status.created.opacity(0.9),
+                    ),
+                    LineKind::Removed => (
+                        "−",
+                        status.deleted,
+                        Some(status.deleted.opacity(0.055)),
+                        Some(status.deleted.opacity(0.55)),
+                        status.deleted.opacity(0.9),
+                    ),
+                    _ => ("·", faint.opacity(0.5), None, None, faint.opacity(0.8)),
+                };
+                let gutter = |number: Option<u32>, color: Hsla| {
+                    div()
+                        .w(px(gutter_width))
+                        .flex_none()
+                        .font_family(CODE_FONT)
+                        .text_size(px(11.))
+                        .line_height(px(DIFF_LINE_HEIGHT))
+                        .text_color(color)
+                        .flex()
+                        .justify_end()
+                        .pr(px(8.))
+                        .child(number.map(|number| number.to_string()).unwrap_or_default())
                 };
                 let highlights: Vec<(Range<usize>, HighlightStyle)> = line
                     .highlights
@@ -229,49 +307,100 @@ impl ChatView {
                         (range.end <= line.text.len()).then(|| (range.clone(), style))
                     })
                     .collect();
-                h_flex()
-                    .w_full()
-                    .when_some(background, |this, background| this.bg(background))
-                    .child(
-                        div()
-                            .flex_none()
-                            .w(px(number_width))
-                            .pr(px(6.))
-                            .text_right()
-                            .text_color(faint)
-                            .child(line.old_number.map(|number| number.to_string()).unwrap_or_default()),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .w(px(number_width))
-                            .pr(px(6.))
-                            .text_right()
-                            .text_color(faint)
-                            .child(line.new_number.map(|number| number.to_string()).unwrap_or_default()),
-                    )
-                    .child(div().flex_none().w(px(14.)).text_color(sign_color).child(sign))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_color(colors.text)
-                            .child(StyledText::new(line.text.clone()).with_highlights(highlights)),
-                    )
-                    .into_any_element()
-            }))
-            .when(view.hidden > 0, |this| {
-                this.child(
+                rows.push(
                     div()
-                        .px(px(8.))
-                        .text_color(faint)
-                        .child(format!("… {} more lines", view.hidden)),
-                )
-            })
+                        .h(px(DIFF_LINE_HEIGHT))
+                        .w_full()
+                        .flex_none()
+                        .flex()
+                        .flex_row()
+                        .items_start()
+                        .when_some(row_background, |this, background| this.bg(background))
+                        .child(
+                            div()
+                                .w(px(ACCENT_BAR_WIDTH))
+                                .self_stretch()
+                                .flex_none()
+                                .when_some(accent, |this, accent| this.bg(accent)),
+                        )
+                        .child(gutter(
+                            line.old_number,
+                            if line.kind == LineKind::Removed {
+                                number_color
+                            } else {
+                                faint.opacity(0.8)
+                            },
+                        ))
+                        .child(gutter(
+                            line.new_number,
+                            if line.kind == LineKind::Added {
+                                number_color
+                            } else {
+                                faint.opacity(0.8)
+                            },
+                        ))
+                        .child(
+                            div()
+                                .w(px(MARKER_WIDTH))
+                                .flex_none()
+                                .flex()
+                                .justify_center()
+                                .font_family(CODE_FONT)
+                                .text_size(px(DIFF_TEXT_SIZE))
+                                .line_height(px(DIFF_LINE_HEIGHT))
+                                .text_color(marker_color)
+                                .child(marker),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .min_h(px(DIFF_LINE_HEIGHT))
+                                .overflow_hidden()
+                                .child(
+                                    div()
+                                        .pl(px(CODE_PADDING_LEFT))
+                                        .font_family(CODE_FONT)
+                                        .text_size(px(DIFF_TEXT_SIZE))
+                                        .line_height(px(DIFF_LINE_HEIGHT))
+                                        .whitespace_nowrap()
+                                        .text_color(colors.text.opacity(0.92))
+                                        .child(
+                                            StyledText::new(line.text.clone())
+                                                .with_highlights(highlights),
+                                        ),
+                                ),
+                        )
+                        .into_any_element(),
+                );
+            }
+        }
+        v_flex()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
+            .pb(px(BODY_BOTTOM_PAD))
+            .children(rows)
             .into_any_element()
     }
+}
+
+fn hunks(lines: &[DiffLine]) -> impl Iterator<Item = &[DiffLine]> {
+    lines
+        .split(|line| line.kind == LineKind::Gap)
+        .filter(|hunk| !hunk.is_empty())
+}
+
+fn hunk_header(hunk: &[DiffLine]) -> String {
+    let old_numbers = hunk.iter().filter_map(|line| line.old_number);
+    let new_numbers = hunk.iter().filter_map(|line| line.new_number);
+    let old_start = old_numbers.clone().min().unwrap_or(0);
+    let new_start = new_numbers.clone().min().unwrap_or(0);
+    format!(
+        "@@ -{old_start},{} +{new_start},{} @@",
+        old_numbers.count(),
+        new_numbers.count()
+    )
 }
 
 #[cfg(test)]
@@ -314,5 +443,43 @@ mod tests {
         });
         assert_eq!(kinds(&view), "++");
         assert_eq!((view.additions, view.deletions), (2, 0));
+        assert_eq!(hunk_header(&view.lines), "@@ -0,0 +1,2 @@");
+    }
+
+    #[test]
+    fn emptied_files_start_the_new_side_at_zero() {
+        let view = build(&ToolDiff {
+            path: "gone.rs".into(),
+            old_text: Some("a\n".into()),
+            new_text: String::new(),
+        });
+        assert_eq!(hunk_header(&view.lines), "@@ -1,1 +0,0 @@");
+    }
+
+    #[test]
+    fn the_line_cap_counts_only_diff_lines() {
+        let old: String = (0..1000).map(|line| format!("line {line}\n")).collect();
+        let new: String = (0..1000)
+            .map(|line| {
+                if line % 10 == 5 {
+                    format!("changed {line}\n")
+                } else {
+                    format!("line {line}\n")
+                }
+            })
+            .collect();
+        let view = build(&ToolDiff {
+            path: "a.rs".into(),
+            old_text: Some(old),
+            new_text: new,
+        });
+        let shown = view
+            .lines
+            .iter()
+            .filter(|line| line.kind != LineKind::Gap)
+            .count();
+        assert_eq!(shown, MAX_DIFF_LINES);
+        assert_eq!(view.hidden, 800 - MAX_DIFF_LINES);
+        assert!(view.lines.last().is_some_and(|line| line.kind != LineKind::Gap));
     }
 }

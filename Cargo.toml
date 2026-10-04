@@ -17,6 +17,7 @@ members = [
     "crates/client",
     "crates/clock",
     "crates/cloud_api_types",
+    "crates/collections",
     "crates/command_palette",
     "crates/command_palette_hooks",
     "crates/component",
@@ -51,8 +52,21 @@ members = [
     "crates/git_ui",
     "crates/git_ui_core",
     "crates/go_to_line",
+    "crates/gpui",
     "crates/gpui_apple",
+    "crates/gpui_linux",
+    "crates/gpui_macos",
+    "crates/gpui_macros",
+    "crates/gpui_platform",
+    "crates/gpui_shared_string",
+    "crates/gpui_tokio",
+    "crates/gpui_util",
+    "crates/gpui_web",
+    "crates/gpui_wgpu",
+    "crates/gpui_windows",
     "crates/grammars",
+    "crates/http_client",
+    "crates/http_client_tls",
     "crates/icons",
     "crates/image_viewer",
     "crates/inspector_ui",
@@ -83,6 +97,7 @@ members = [
     "crates/outline",
     "crates/outline_panel",
     "crates/panel",
+    "crates/path",
     "crates/paths",
     "crates/picker",
     "crates/picker_preview",
@@ -94,13 +109,16 @@ members = [
     "crates/project_symbols",
     "crates/proto",
     "crates/recent_projects",
+    "crates/refineable",
     "crates/refineable/derive_refineable",
     "crates/release_channel",
     "crates/remote",
     "crates/remote_connection",
     "crates/remote_server",
+    "crates/reqwest_client",
     "crates/rope",
     "crates/rpc",
+    "crates/scheduler",
     "crates/schema_generator",
     "crates/search",
     "crates/session",
@@ -115,6 +133,7 @@ members = [
     "crates/snippets_ui",
     "crates/sqlez",
     "crates/sqlez_macros",
+    "crates/sum_tree",
     "crates/svg_preview",
     "crates/syntax_theme",
     "crates/system_specs",
@@ -137,6 +156,8 @@ members = [
     "crates/ui_input",
     "crates/ui_macros",
     "crates/ui_prompt",
+    "crates/util",
+    "crates/util_macros",
     "crates/watch",
     "crates/windows_resources",
     "crates/workspace",
@@ -192,7 +213,7 @@ cli = { path = "crates/cli" }
 client = { path = "crates/client" }
 clock = { path = "crates/clock" }
 cloud_api_types = { path = "crates/cloud_api_types" }
-collections = { path = "/tmp/zui/crates/collections", version = "0.1.0" }
+collections = { path = "crates/collections", version = "0.1.0" }
 command_palette = { path = "crates/command_palette" }
 command_palette_hooks = { path = "crates/command_palette_hooks" }
 component = { path = "crates/component" }
@@ -223,21 +244,21 @@ git_hosting_providers = { path = "crates/git_hosting_providers" }
 git_ui = { path = "crates/git_ui" }
 git_ui_core = { path = "crates/git_ui_core" }
 go_to_line = { path = "crates/go_to_line" }
-gpui = { path = "/tmp/zui/crates/gpui", default-features = false }
+gpui = { path = "crates/gpui", default-features = false }
 gpui_apple = { path = "crates/gpui_apple" }
-gpui_linux = { path = "/tmp/zui/crates/gpui_linux", default-features = false }
-gpui_macos = { path = "/tmp/zui/crates/gpui_macos", default-features = false }
-gpui_macros = { path = "/tmp/zui/crates/gpui_macros" }
-gpui_platform = { path = "/tmp/zui/crates/gpui_platform", default-features = false }
-gpui_shared_string = { path = "/tmp/zui/crates/gpui_shared_string" }
-gpui_tokio = { path = "/tmp/zui/crates/gpui_tokio" }
-gpui_util = { path = "/tmp/zui/crates/gpui_util" }
-gpui_web = { path = "/tmp/zui/crates/gpui_web" }
-gpui_wgpu = { path = "/tmp/zui/crates/gpui_wgpu" }
-gpui_windows = { path = "/tmp/zui/crates/gpui_windows", default-features = false }
+gpui_linux = { path = "crates/gpui_linux", default-features = false }
+gpui_macos = { path = "crates/gpui_macos", default-features = false }
+gpui_macros = { path = "crates/gpui_macros" }
+gpui_platform = { path = "crates/gpui_platform", default-features = false }
+gpui_shared_string = { path = "crates/gpui_shared_string" }
+gpui_tokio = { path = "crates/gpui_tokio" }
+gpui_util = { path = "crates/gpui_util" }
+gpui_web = { path = "crates/gpui_web" }
+gpui_wgpu = { path = "crates/gpui_wgpu" }
+gpui_windows = { path = "crates/gpui_windows", default-features = false }
 grammars = { path = "crates/grammars" }
-http_client = { path = "/tmp/zui/crates/http_client" }
-http_client_tls = { path = "/tmp/zui/crates/http_client_tls" }
+http_client = { path = "crates/http_client" }
+http_client_tls = { path = "crates/http_client_tls" }
 icons = { path = "crates/icons" }
 image_viewer = { path = "crates/image_viewer" }
 inspector_ui = { path = "crates/inspector_ui" }
@@ -268,7 +289,7 @@ open_path_prompt = { path = "crates/open_path_prompt" }
 outline = { path = "crates/outline" }
 outline_panel = { path = "crates/outline_panel" }
 panel = { path = "crates/panel" }
-path = { path = "/tmp/zui/crates/path" }
+path = { path = "crates/path" }
 paths = { path = "crates/paths" }
 perf = { path = "tooling/perf" }
 picker = { path = "crates/picker" }
@@ -280,16 +301,16 @@ project_panel = { path = "crates/project_panel" }
 project_symbols = { path = "crates/project_symbols" }
 proto = { path = "crates/proto" }
 recent_projects = { path = "crates/recent_projects" }
-refineable = { path = "/tmp/zui/crates/refineable" }
+refineable = { path = "crates/refineable" }
 release_channel = { path = "crates/release_channel" }
 remote = { path = "crates/remote" }
 remote_connection = { path = "crates/remote_connection" }
 remote_server = { path = "crates/remote_server" }
-reqwest_client = { path = "/tmp/zui/crates/reqwest_client" }
+reqwest_client = { path = "crates/reqwest_client" }
 rodio = { git = "https://github.com/RustAudio/rodio", rev = "e50e726ddd0292f6ef9de0dda6b90af4ed1fb66a", features = ["wav", "playback", "wav_output", "recording"] }
 rope = { path = "crates/rope" }
 rpc = { path = "crates/rpc" }
-scheduler = { path = "/tmp/zui/crates/scheduler" }
+scheduler = { path = "crates/scheduler" }
 search = { path = "crates/search" }
 session = { path = "crates/session" }
 settings = { path = "crates/settings" }
@@ -303,7 +324,7 @@ snippet_provider = { path = "crates/snippet_provider" }
 snippets_ui = { path = "crates/snippets_ui" }
 sqlez = { path = "crates/sqlez" }
 sqlez_macros = { path = "crates/sqlez_macros" }
-sum_tree = { path = "/tmp/zui/crates/sum_tree" }
+sum_tree = { path = "crates/sum_tree" }
 svg_preview = { path = "crates/svg_preview" }
 syntax_theme = { path = "crates/syntax_theme" }
 system_specs = { path = "crates/system_specs" }
@@ -325,8 +346,8 @@ ui = { path = "crates/ui" }
 ui_input = { path = "crates/ui_input" }
 ui_macros = { path = "crates/ui_macros" }
 ui_prompt = { path = "crates/ui_prompt" }
-util = { path = "/tmp/zui/crates/util" }
-util_macros = { path = "/tmp/zui/crates/util_macros" }
+util = { path = "crates/util" }
+util_macros = { path = "crates/util_macros" }
 watch = { path = "crates/watch" }
 workspace = { path = "crates/workspace" }
 worktree = { path = "crates/worktree" }

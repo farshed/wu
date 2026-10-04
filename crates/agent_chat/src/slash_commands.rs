@@ -35,6 +35,7 @@ impl TokenKind {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn command_token(text: &str, cursor: usize) -> Option<CommandToken> {
     token_of_kind(text, cursor, TokenKind::Command)
 }

@@ -165,6 +165,10 @@ unsafe fn build_classes() {
                 sel!(onSystemWake:),
                 on_system_wake as extern "C" fn(&mut Object, Sel, id),
             );
+            decl.add_method(
+                sel!(onFrameSourceWake:),
+                on_frame_source_wake as extern "C" fn(&mut Object, Sel, id),
+            );
 
             decl.register()
         }
@@ -1325,7 +1329,7 @@ extern "C" fn did_finish_launching(this: &mut Object, _: Sel, _: id) {
         let platform = get_mac_platform(this);
         let callback = {
             let mut state = platform.0.lock();
-            if state.on_system_wake.is_some() && !state.system_wake_observer_registered {
+            if !state.system_wake_observer_registered {
                 register_system_wake_observer(observer);
                 state.system_wake_observer_registered = true;
             }
@@ -1348,6 +1352,19 @@ unsafe fn register_system_wake_observer(observer: id) {
             name: wake_name
             object: nil
         ];
+        // Display sleep and user switching can stop CVDisplayLink without a window event.
+        for name in [
+            "NSWorkspaceDidWakeNotification",
+            "NSWorkspaceScreensDidWakeNotification",
+            "NSWorkspaceSessionDidBecomeActiveNotification",
+        ] {
+            let name = ns_string(name);
+            let _: () = msg_send![workspace_center, addObserver: observer
+                selector: sel!(onFrameSourceWake:)
+                name: name
+                object: nil
+            ];
+        }
     }
 }
 
@@ -1426,6 +1443,16 @@ extern "C" fn on_thermal_state_change(this: &mut Object, _: Sel, _: id) {
                 .on_thermal_state_change
                 .get_or_insert(callback);
         }
+    }
+}
+
+extern "C" fn on_frame_source_wake(_: &mut Object, _: Sel, _: id) {
+    // Do not restart links inside an AppKit callback holding a window lock.
+    unsafe {
+        DispatchQueue::main().exec_async_f(std::ptr::null_mut(), restart);
+    }
+    extern "C" fn restart(_: *mut c_void) {
+        MacWindow::restart_frame_sources();
     }
 }
 
