@@ -62,7 +62,7 @@ fn toggle(id: &str, label: &str) -> ModelOption {
 
 pub(crate) fn context_window() -> ModelOption {
     ModelOption {
-        id: "contextWindow".into(),
+        id: CONTEXT_WINDOW_OPTION.into(),
         label: "Context Window".into(),
         choices: vec![
             ModelOptionChoice {
@@ -74,7 +74,7 @@ pub(crate) fn context_window() -> ModelOption {
                 label: "1M".into(),
             },
         ],
-        default_choice: "200k".into(),
+        default_choice: "1m".into(),
     }
 }
 
@@ -197,6 +197,7 @@ pub(super) fn with_discovered_models(
         })?;
     let mut default = None;
     let mut valid = false;
+    let mut sizes: Vec<(String, Vec<String>)> = Vec::new();
     for entry in entries {
         let text = |key: &str| {
             entry
@@ -205,19 +206,25 @@ pub(super) fn with_discovered_models(
                 .map(str::trim)
                 .filter(|v| !v.is_empty())
         };
-        let Some(id) = text("resolvedModel").or_else(|| text("value")) else {
+        let Some(full_id) = text("resolvedModel").or_else(|| text("value")) else {
             continue;
         };
+        let (id, size) = split_context_size(full_id);
+        let size = size.or_else(|| text("value").and_then(|value| split_context_size(value).1));
         // Bare aliases cannot be persisted as selections.
-        if matches!(
-            id.strip_suffix("[1m]").unwrap_or(id),
-            "default" | "opus" | "sonnet" | "haiku" | "fable"
-        ) {
+        if matches!(id, "default" | "opus" | "sonnet" | "haiku" | "fable") {
             continue;
         }
         valid = true;
         if text("value") == Some("default") {
             default = Some(id.to_owned());
+        }
+        if let Some(size) = size {
+            match sizes.iter_mut().find(|(base, _)| base == id) {
+                Some((_, found)) if !found.contains(&size) => found.push(size),
+                Some(_) => {}
+                None => sizes.push((id.to_owned(), vec![size])),
+            }
         }
         if models.iter().any(|model| model.id == id) {
             continue;
@@ -258,20 +265,118 @@ pub(super) fn with_discovered_models(
             "Claude returned an empty model catalog".into(),
         ));
     }
-    if let Some(default) = default {
-        // The picker folds `[1m]` rows into their base, so the base must follow the default.
-        if let Some(base) = default.strip_suffix("[1m]")
-            && let Some(index) = models.iter().position(|m| m.id == base)
-        {
-            let model = models.remove(index);
-            models.insert(0, model);
-        }
-        if let Some(index) = models.iter().position(|m| m.id == default) {
-            let model = models.remove(index);
-            models.insert(0, model);
+    for (base, found) in sizes {
+        if let Some(model) = models.iter_mut().find(|model| model.id == base) {
+            model
+                .options
+                .retain(|option| option.id != CONTEXT_WINDOW_OPTION);
+            model.options.insert(0, discovered_context_window(found));
         }
     }
+    if let Some(default) = default
+        && let Some(index) = models.iter().position(|m| m.id == default)
+    {
+        let model = models.remove(index);
+        models.insert(0, model);
+    }
     Ok(models)
+}
+
+pub(crate) const CONTEXT_WINDOW_OPTION: &str = "contextWindow";
+const STANDARD_CONTEXT: (&str, &str) = ("200k", "200K");
+
+pub(crate) fn split_context_size(id: &str) -> (&str, Option<String>) {
+    let parsed = id
+        .strip_suffix(']')
+        .and_then(|rest| rest.rsplit_once('['))
+        .filter(|(base, size)| !base.is_empty() && context_tokens(size).is_some());
+    match parsed {
+        Some((base, size)) => (base, Some(size.to_ascii_lowercase())),
+        None => (id, None),
+    }
+}
+
+fn context_tokens(size: &str) -> Option<u64> {
+    let size = size.to_ascii_lowercase();
+    let (digits, scale) = match size.strip_suffix('m') {
+        Some(digits) => (digits, 1_000_000),
+        None => (size.strip_suffix('k')?, 1_000),
+    };
+    digits
+        .parse::<u64>()
+        .ok()
+        .filter(|count| *count > 0)
+        .map(|count| count * scale)
+}
+
+fn discovered_context_window(mut sizes: Vec<String>) -> ModelOption {
+    sizes.sort_by_key(|size| context_tokens(size));
+    let largest = sizes.last().cloned();
+    let mut choices = vec![ModelOptionChoice {
+        id: STANDARD_CONTEXT.0.into(),
+        label: STANDARD_CONTEXT.1.into(),
+    }];
+    choices.extend(
+        sizes
+            .into_iter()
+            .filter(|size| size != STANDARD_CONTEXT.0)
+            .map(|size| ModelOptionChoice {
+                label: size.to_ascii_uppercase(),
+                id: size,
+            }),
+    );
+    ModelOption {
+        id: CONTEXT_WINDOW_OPTION.into(),
+        label: "Context Window".into(),
+        choices,
+        default_choice: largest.unwrap_or_else(|| STANDARD_CONTEXT.0.into()),
+    }
+}
+
+pub(crate) fn model_argument(
+    model: &str,
+    choice: Option<&str>,
+    discovered: Option<&[Model]>,
+) -> String {
+    let (base, saved_size) = split_context_size(model);
+    let known = discovered
+        .and_then(|models| models.iter().find(|candidate| candidate.id == base))
+        .cloned()
+        .or_else(|| {
+            configured_models()
+                .into_iter()
+                .find(|candidate| candidate.id == base)
+        });
+    let option = known.as_ref().and_then(|candidate| {
+        candidate
+            .options
+            .iter()
+            .find(|option| option.id == CONTEXT_WINDOW_OPTION)
+            .cloned()
+    });
+    let offered = |size: &str| {
+        option
+            .as_ref()
+            .is_some_and(|option| option.choices.iter().any(|offered| offered.id == size))
+    };
+    let size = match &option {
+        Some(option) => choice
+            .filter(|choice| offered(choice))
+            .or(saved_size.as_deref().filter(|size| offered(size)))
+            .unwrap_or(&option.default_choice)
+            .to_owned(),
+        // A model Wu knows to have a single size must not get a stale size from another model.
+        None if known.is_some() => return base.to_owned(),
+        None => match choice.map(str::to_ascii_lowercase).or(saved_size) {
+            Some(size) => size,
+            None => return base.to_owned(),
+        },
+    };
+    if size == STANDARD_CONTEXT.0 || context_tokens(&size).is_none() {
+        base.to_owned()
+    } else {
+        format!("{base}[{size}]")
+    }
 }
 
 pub fn static_models() -> Vec<Model> {
@@ -353,6 +458,68 @@ mod tests {
             Some("max")
         );
         assert_eq!(to_effort(Some(ReasoningLevel::XHigh), None), Some("max"));
+    }
+
+    #[test]
+    fn context_sizes_come_from_model_suffixes() {
+        assert_eq!(
+            split_context_size("claude-opus-5-5[1m]"),
+            ("claude-opus-5-5", Some("1m".into()))
+        );
+        assert_eq!(
+            split_context_size("claude-x[2M]"),
+            ("claude-x", Some("2m".into()))
+        );
+        assert_eq!(
+            split_context_size("claude-x[500k]"),
+            ("claude-x", Some("500k".into()))
+        );
+        assert_eq!(
+            split_context_size("gateway/model[beta]"),
+            ("gateway/model[beta]", None)
+        );
+        assert_eq!(split_context_size("[1m]"), ("[1m]", None));
+
+        let option = discovered_context_window(vec!["2m".into(), "1m".into()]);
+        let ids: Vec<&str> = option
+            .choices
+            .iter()
+            .map(|choice| choice.id.as_str())
+            .collect();
+        assert_eq!(ids, ["200k", "1m", "2m"]);
+        assert_eq!(option.default_choice, "2m");
+        assert_eq!(option.choices[2].label, "2M");
+
+        let models = static_models();
+        let selected = crate::view::selected_catalog_model(&models, Some("claude-opus-5-5[1m]"));
+        assert_eq!(
+            selected.map(|model| model.id.as_str()),
+            Some("claude-opus-5-5")
+        );
+    }
+
+    #[test]
+    fn model_argument_uses_the_choice_or_the_largest_size() {
+        let discovered = vec![Model {
+            id: "claude-new".into(),
+            label: "New".into(),
+            description: None,
+            reasoning_levels: Vec::new(),
+            options: vec![discovered_context_window(vec!["1m".into(), "2m".into()])],
+        }];
+        let argument =
+            |model: &str, choice: Option<&str>| model_argument(model, choice, Some(&discovered));
+        assert_eq!(argument("claude-new", None), "claude-new[2m]");
+        assert_eq!(argument("claude-new", Some("1m")), "claude-new[1m]");
+        assert_eq!(argument("claude-new", Some("200k")), "claude-new");
+        assert_eq!(argument("claude-new", Some("9m")), "claude-new[2m]");
+        assert_eq!(argument("claude-new[1m]", None), "claude-new[1m]");
+        assert_eq!(argument("claude-new[1m]", Some("200k")), "claude-new");
+        assert_eq!(argument("claude-opus-5-5", None), "claude-opus-5-5[1m]");
+        assert_eq!(argument("claude-haiku-4-5", Some("1m")), "claude-haiku-4-5");
+        assert_eq!(argument("claude-haiku-4-5[1m]", None), "claude-haiku-4-5");
+        assert_eq!(argument("gateway/model", Some("1m")), "gateway/model[1m]");
+        assert_eq!(argument("gateway/model", None), "gateway/model");
     }
 
     #[test]

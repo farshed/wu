@@ -128,7 +128,12 @@ impl ClaudeHarness {
         })
     }
 
-    fn build_command(&self, exe: &PathBuf, request: &RunRequest) -> Command {
+    fn build_command(
+        &self,
+        exe: &PathBuf,
+        request: &RunRequest,
+        discovered: Option<&[crate::Model]>,
+    ) -> Command {
         let mut cmd = Command::new(exe);
         crate::compose_child_path(&mut cmd, exe);
         cmd.args([
@@ -149,17 +154,12 @@ impl ClaudeHarness {
             "stdio",
         ]);
         if let Some(model) = &request.model {
-            let one_m = request
+            let choice = request
                 .model_options
-                .get("contextWindow")
-                .and_then(Value::as_str)
-                == Some("1m");
+                .get(catalog::CONTEXT_WINDOW_OPTION)
+                .and_then(Value::as_str);
             cmd.arg("--model");
-            cmd.arg(if one_m {
-                format!("{model}[1m]")
-            } else {
-                model.clone()
-            });
+            cmd.arg(catalog::model_argument(model, choice, discovered));
         }
         if let Some(effort) = to_effort(request.reasoning, request.model.as_deref()) {
             cmd.args(["--effort", effort]);
@@ -402,7 +402,8 @@ impl ClaudeHarness {
         controls: RunControls,
     ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
         let exe = self.resolve_executable()?;
-        let mut cmd = self.build_command(&exe, &request);
+        let discovered = self.models_cache.peek();
+        let mut cmd = self.build_command(&exe, &request, discovered.as_deref());
         let normalizer = if let Some(session_id) = &request.resume {
             let config = std::env::var_os("CLAUDE_CONFIG_DIR")
                 .filter(|dir| !dir.is_empty())

@@ -8,6 +8,8 @@ use std::{
 #[derive(Default)]
 pub(crate) struct Catalog {
     pub(crate) state: tokio::sync::Mutex<State>,
+    // Refreshes hold `state` across the discovery request, so readers that must not wait use this copy.
+    snapshot: std::sync::Mutex<Option<Vec<Model>>>,
 }
 
 #[derive(Default)]
@@ -20,6 +22,21 @@ pub(crate) struct State {
 }
 
 impl Catalog {
+    pub(crate) fn peek(&self) -> Option<Vec<Model>> {
+        match self.snapshot.lock() {
+            Ok(snapshot) => snapshot.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    fn publish(&self, state: &State) {
+        let models = state.models.clone();
+        match self.snapshot.lock() {
+            Ok(mut snapshot) => *snapshot = models,
+            Err(poisoned) => *poisoned.into_inner() = models,
+        }
+    }
+
     #[cfg(test)]
     pub(crate) async fn get<F, Fut, K>(
         &self,
@@ -71,6 +88,7 @@ impl Catalog {
                 context: Some(key),
                 ..State::default()
             };
+            self.publish(&state);
         }
         if state.completed_at.is_some_and(|at| at >= requested_at)
             || (!force && state.retry_at.is_some_and(|at| Instant::now() < at))
@@ -117,6 +135,7 @@ impl Catalog {
         // Never publish a response from a login that changed during the request.
         if context()? != key {
             *state = State::default();
+            self.publish(&state);
             return Err(HarnessError::Protocol(
                 "Harness credentials changed during model discovery; retry".into(),
             ));
@@ -143,6 +162,7 @@ impl Catalog {
                 state.retry_at = Some(Instant::now() + Duration::from_secs(cooldown));
             }
         }
+        self.publish(&state);
         cached(&state).map(|models| ModelCatalog { models, source })
     }
 }
@@ -196,6 +216,46 @@ mod tests {
     }
     async fn expire(catalog: &Catalog) {
         catalog.state.lock().await.retry_at = None;
+    }
+
+    #[tokio::test]
+    async fn peek_reads_the_last_list_while_a_refresh_is_running() {
+        let cache = Arc::new(Catalog::default());
+        assert_eq!(cache.peek(), None);
+        cache
+            .get_with(true, || Ok([1; 32]), || async { Ok(models("good")) })
+            .await
+            .unwrap();
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        let released = Arc::new(tokio::sync::Mutex::new(Some(released)));
+        let refreshing = tokio::spawn({
+            let cache = cache.clone();
+            async move {
+                cache
+                    .get_with(true, || Ok([1; 32]), || {
+                        let released = released.clone();
+                        async move {
+                            if let Some(released) = released.lock().await.take() {
+                                released.await.ok();
+                            }
+                            Ok(models("newer"))
+                        }
+                    })
+                    .await
+            }
+        });
+        while cache.state.try_lock().is_ok() {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(cache.peek(), Some(models("good")));
+        release.send(()).unwrap();
+        refreshing.await.unwrap().unwrap();
+        assert_eq!(cache.peek(), Some(models("newer")));
+        cache
+            .get_with(true, || Ok([2; 32]), || async { Err(HarnessError::Protocol("logged out".into())) })
+            .await
+            .ok();
+        assert_eq!(cache.peek(), None, "another account never sees the old list");
     }
 
     #[tokio::test]

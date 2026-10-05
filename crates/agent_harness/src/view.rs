@@ -184,7 +184,10 @@ pub fn selected_catalog_model<'a>(
     selected: Option<&str>,
 ) -> Option<&'a crate::Model> {
     match selected {
-        Some(id) => models.iter().find(|model| model.id == id),
+        Some(id) => models.iter().find(|model| model.id == id).or_else(|| {
+            let (base, size) = crate::claude::catalog::split_context_size(id);
+            size.and_then(|_| models.iter().find(|model| model.id == base))
+        }),
         None => default_model(models),
     }
 }

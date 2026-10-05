@@ -99,6 +99,8 @@ const CHIP_HEADER_HEIGHT: f32 = CHIP_CARD_HEIGHT - 2.;
 const CHIPS_TOP_PAD: f32 = 2.;
 const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.;
 const TOOL_TEXT_SIZE: f32 = 12.;
+const THOUGHT_BODY_SIZE: f32 = 15.;
+const THOUGHT_CODE_SIZE: f32 = 14.;
 const TOOL_LINE_HEIGHT: f32 = 18.;
 const TOOL_SHIMMER_HALF_WIDTH: f32 = 0.36;
 const TOOL_SHIMMER_STRIP_WIDTH: f32 = 2.;
@@ -691,8 +693,10 @@ impl ChatView {
     fn thought_style(window: &Window, cx: &App) -> MarkdownStyle {
         let faint = text_faint(cx);
         let mut style = Self::message_style(window, cx);
-        style.base_text_style.font_size = px(TOOL_TEXT_SIZE).into();
+        style.base_text_style.font_size = ui(THOUGHT_BODY_SIZE).into();
         style.base_text_style.line_height = px(OUTPUT_LINE_HEIGHT).into();
+        // Markdown body text inherits its size from the container, not from base_text_style.
+        style.container_style.text.font_size = Some(ui(THOUGHT_BODY_SIZE).into());
         style.base_text_style.color = faint;
         style.paragraph_spacing = px(OUTPUT_LINE_HEIGHT);
         style.list_spacing = px(OUTPUT_LINE_HEIGHT);
@@ -714,7 +718,7 @@ impl ChatView {
         let mut code_block = StyleRefinement::default();
         code_block.margin.bottom = Some(px(OUTPUT_LINE_HEIGHT).into());
         code_block.text = TextStyleRefinement {
-            font_size: Some(px(TOOL_TEXT_SIZE).into()),
+            font_size: Some(ui(THOUGHT_CODE_SIZE).into()),
             line_height: Some(px(OUTPUT_LINE_HEIGHT).into()),
             color: Some(faint),
             ..code_text_style(cx)
@@ -722,7 +726,7 @@ impl ChatView {
         style.code_block = code_block;
         let heading = || {
             Some(TextStyleRefinement {
-                font_size: Some(px(TOOL_TEXT_SIZE).into()),
+                font_size: Some(ui(THOUGHT_BODY_SIZE).into()),
                 line_height: Some(px(OUTPUT_LINE_HEIGHT).into()),
                 font_weight: Some(FontWeight::SEMIBOLD),
                 color: Some(faint),
@@ -3191,6 +3195,31 @@ mod tests {
             chat.read(cx).composer.focus_handle(cx).is_focused(window)
         });
         assert!(composer_focused, "focus falls back to the composer");
+    }
+
+    #[gpui::test]
+    async fn model_picker_closes_on_a_click_elsewhere(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            workspace::AppState::test(cx);
+            editor::init(cx);
+        });
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        store.update(cx, |store, _| store.skip_plan_usage());
+        let project = project::Project::test(FakeFs::new(cx.executor()), [], cx).await;
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            ChatView::new(session.clone(), store.clone(), project, WeakEntity::new_invalid(), window, cx)
+        });
+        cx.run_until_parked();
+        view.update_in(cx, |view, window, cx| view.model_picker.show(window, cx));
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |view, _| view.model_picker.is_deployed()));
+        cx.simulate_click(point(px(4.), px(4.)), gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(!view.read_with(cx, |view, _| view.model_picker.is_deployed()));
     }
 
     #[gpui::test]

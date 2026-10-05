@@ -7,13 +7,15 @@ use crate::{
 use agent_harness::{Model, ModelOption, ReasoningLevel, view};
 use editor::Editor;
 use gpui::{
-    AnyElement, App, Background, Bounds, BoxShadow, Context, Corners, DismissEvent, Div, ElementId,
-    Entity, EventEmitter, FocusHandle, Focusable, FontWeight, Hsla, IntoElement, ParentElement,
-    Pixels, Render, SharedString, Stateful, Styled, Subscription, Svg, TextStyleRefinement,
+    AnyElement, App, Background, Bounds, BoxShadow, Context, Corners, DismissEvent, DispatchPhase,
+    Div, ElementId, Entity, EventEmitter, FocusHandle, Focusable, FontWeight, Hsla, IntoElement,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render,
+    SharedString, Stateful, Styled, Subscription, Svg, TextStyleRefinement,
     Transformation, Window, canvas, div, hsla, linear_color_stop, linear_gradient, point, px,
     radians, relative, rgb, size, svg,
 };
 use settings::Settings as _;
+use std::{cell::Cell, rc::Rc};
 use theme::ActiveTheme as _;
 use ui::{Icon, IconName, Tooltip, prelude::*};
 
@@ -40,6 +42,9 @@ const SLIDER_TOP: f32 = 2.;
 const SLIDER_BOTTOM: f32 = 4.;
 const OPTIONS_GAP: f32 = 4.;
 const OPTIONS_MAX_ROWS: usize = 6;
+const MAX_SEGMENTED_CHOICES: usize = 3;
+const SEGMENT_INSET: f32 = 2.;
+const FULL_SLIDER_LABEL_HEIGHT: f32 = 24.;
 const COMPACT_SETTING_HEIGHT: f32 = 26.;
 const FULL_SETTING_HEIGHT: f32 = 30.;
 const FULL_CHROME_HEIGHT: f32 = 82.;
@@ -164,12 +169,16 @@ fn compact_list_height(rows: usize) -> f32 {
     rows * (COMPACT_ROW_HEIGHT + MENU_GAP) + 2. * CARD_INSET
 }
 
-fn full_tray_height(setting_count: usize) -> f32 {
-    if setting_count == 0 {
-        0.
-    } else {
-        (setting_count as f32 * (FULL_SETTING_HEIGHT + MENU_GAP) + 7.).min(FULL_TRAY_MAX_HEIGHT)
+fn full_tray_height(setting_count: usize, has_slider: bool) -> f32 {
+    if setting_count == 0 && !has_slider {
+        return 0.;
     }
+    let slider = if has_slider {
+        FULL_SLIDER_LABEL_HEIGHT + SLIDER_HEIGHT + MENU_GAP
+    } else {
+        0.
+    };
+    (setting_count as f32 * (FULL_SETTING_HEIGHT + MENU_GAP) + slider + 7.).min(FULL_TRAY_MAX_HEIGHT)
 }
 
 fn compact_options_height(count: usize) -> f32 {
@@ -300,7 +309,6 @@ fn next_choice(option: &ModelOption, current: &str) -> Option<String> {
 }
 
 enum SettingAction {
-    Reasoning(ReasoningLevel),
     Option { id: String, choice: String },
 }
 
@@ -309,28 +317,16 @@ struct SettingRow {
     label: SharedString,
     value: SharedString,
     action: Option<SettingAction>,
+    choices: Option<OptionChoices>,
+}
+
+struct OptionChoices {
+    option_id: String,
+    current: String,
+    choices: Vec<(String, SharedString)>,
 }
 
 impl SettingRow {
-    fn reasoning(ladder: &[ReasoningLevel], selected: Option<ReasoningLevel>) -> Option<Self> {
-        if ladder.is_empty() {
-            return None;
-        }
-        let index = selected.and_then(|level| ladder.iter().position(|candidate| *candidate == level));
-        let next = index
-            .and_then(|index| ladder.get((index + 1) % ladder.len()))
-            .or_else(|| ladder.first())
-            .copied();
-        Some(Self {
-            id: "reasoning".into(),
-            label: "Reasoning".into(),
-            value: selected
-                .map(|level| view::reasoning_label(level).into())
-                .unwrap_or_default(),
-            action: next.map(SettingAction::Reasoning),
-        })
-    }
-
     fn option(selection: &Selection, option: &ModelOption) -> Self {
         let current = selection.choice(option).to_string();
         let value = option
@@ -346,6 +342,15 @@ impl SettingRow {
             action: next_choice(option, &current).map(|choice| SettingAction::Option {
                 id: option.id.clone(),
                 choice,
+            }),
+            choices: (option.choices.len() <= MAX_SEGMENTED_CHOICES).then(|| OptionChoices {
+                option_id: option.id.clone(),
+                current,
+                choices: option
+                    .choices
+                    .iter()
+                    .map(|choice| (choice.id.clone(), choice.label.clone().into()))
+                    .collect(),
             }),
         }
     }
@@ -438,6 +443,8 @@ pub struct ModelPicker {
     tab: ModelTab,
     search: Entity<Editor>,
     focus_handle: FocusHandle,
+    slider_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    dragging_slider: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -459,10 +466,12 @@ impl ModelPicker {
         });
         let kind = session.read(cx).kind();
         store.update(cx, |store, cx| store.ensure_models(kind, cx));
+        let focus_handle = cx.focus_handle();
         let subscriptions = vec![
             cx.observe(&session, |_, _, cx| cx.notify()),
             cx.observe(&store, |_, _, cx| cx.notify()),
             cx.observe(&search, |_, _, cx| cx.notify()),
+            cx.on_focus_out(&focus_handle, window, |_, _, _, cx| cx.emit(DismissEvent)),
         ];
         Self {
             session,
@@ -470,7 +479,9 @@ impl ModelPicker {
             page: Page::Settings,
             tab: ModelTab::Agent,
             search,
-            focus_handle: cx.focus_handle(),
+            focus_handle,
+            slider_bounds: Rc::default(),
+            dragging_slider: false,
             _subscriptions: subscriptions,
         }
     }
@@ -502,15 +513,8 @@ impl ModelPicker {
     }
 
     fn apply_setting(&self, action: &SettingAction, cx: &mut Context<Self>) {
-        match action {
-            SettingAction::Reasoning(level) => {
-                let level = *level;
-                self.update_settings(cx, |settings| settings.reasoning = Some(level));
-            }
-            SettingAction::Option { id, choice } => {
-                self.pick_option(id.clone(), choice.clone(), cx)
-            }
-        }
+        let SettingAction::Option { id, choice } = action;
+        self.pick_option(id.clone(), choice.clone(), cx)
     }
 
     fn show_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -526,6 +530,9 @@ impl ModelPicker {
     }
 
     fn render_setting_row(&self, row: SettingRow, height: f32, cx: &Context<Self>) -> AnyElement {
+        if let Some(choices) = row.choices {
+            return self.render_choice_row(&row.id, row.label, choices, height, cx);
+        }
         let muted = cx.theme().colors().text_muted;
         let action = row.action;
         menu_row(SharedString::from(format!("picker-setting-{}", row.id)), cx)
@@ -546,6 +553,91 @@ impl ModelPicker {
                 }
             }))
             .into_any_element()
+    }
+
+    fn render_choice_row(
+        &self,
+        id: &str,
+        label: SharedString,
+        choices: OptionChoices,
+        height: f32,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let colors = cx.theme().colors();
+        let text = colors.text;
+        let muted = colors.text_muted;
+        let wash = selected_row(cx);
+        let ring = selected_ring(cx);
+        let segment_height = height - 4. * SEGMENT_INSET;
+        let OptionChoices {
+            option_id,
+            current,
+            choices,
+        } = choices;
+        h_flex()
+            .id(SharedString::from(format!("picker-setting-{id}")))
+            .h(px(height))
+            .gap(px(10.))
+            .pl(px(8.))
+            .pr(px(SEGMENT_INSET))
+            .text_size(ui(13.))
+            .text_color(text.opacity(0.9))
+            .child(div().flex_1().min_w_0().truncate().child(label))
+            .child(
+                h_flex()
+                    .flex_none()
+                    .p(px(SEGMENT_INSET))
+                    .gap(px(SEGMENT_INSET))
+                    .rounded(px(MENU_ITEM_RADIUS))
+                    .bg(ink(0.05, cx))
+                    .children(choices.into_iter().map(|(choice_id, choice_label)| {
+                        let selected = choice_id == current;
+                        let option_id = option_id.clone();
+                        div()
+                            .id(SharedString::from(format!("picker-choice-{option_id}-{choice_id}")))
+                            .h(px(segment_height))
+                            .px(px(8.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(MENU_ITEM_RADIUS - SEGMENT_INSET))
+                            .text_size(ui(12.))
+                            .cursor_pointer()
+                            .map(|this| {
+                                if selected {
+                                    this.bg(wash).text_color(text).shadow(ring.clone())
+                                } else {
+                                    this.text_color(muted).hover(|style| style.text_color(text))
+                                }
+                            })
+                            .child(choice_label)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.pick_option(option_id.clone(), choice_id.clone(), cx)
+                            }))
+                    })),
+            )
+            .into_any_element()
+    }
+
+    fn stop_dragging(&mut self, cx: &mut Context<Self>) {
+        if self.dragging_slider {
+            self.dragging_slider = false;
+            cx.notify();
+        }
+    }
+
+    fn set_effort_at(&mut self, x: Pixels, ladder: &[ReasoningLevel], cx: &mut Context<Self>) {
+        let (Some(bounds), Some(last)) = (self.slider_bounds.get(), ladder.len().checked_sub(1))
+        else {
+            return;
+        };
+        let run = (f32::from(bounds.size.width) - 2. * THUMB_INSET).max(1.);
+        let fraction = ((f32::from(x - bounds.origin.x) - THUMB_INSET) / run).clamp(0., 1.);
+        let Some(level) = ladder.get((fraction * last as f32).round() as usize).copied() else {
+            return;
+        };
+        if self.session.read(cx).settings().reasoning != Some(level) {
+            self.update_settings(cx, |settings| settings.reasoning = Some(level));
+        }
     }
 
     fn render_settings(
@@ -764,10 +856,31 @@ impl ModelPicker {
                 .rounded_full()
         };
         let span = (count.max(2) - 1) as f32;
+        let bounds_store = self.slider_bounds.clone();
+        let dragging = self.dragging_slider;
+        let picker = cx.entity().downgrade();
+        let drag_ladder = ladder.to_vec();
+        let press_ladder = ladder.to_vec();
         div()
             .relative()
             .h(px(SLIDER_HEIGHT))
             .cursor_pointer()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    this.dragging_slider = true;
+                    this.set_effort_at(event.position.x, &press_ladder, cx);
+                    cx.notify();
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.stop_dragging(cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.stop_dragging(cx)),
+            )
             .child(Plate::light(dark).apply(
                 div()
                     .absolute()
@@ -779,8 +892,26 @@ impl ModelPicker {
             ))
             .child(
                 canvas(
-                    |_, _, _| (),
+                    move |bounds, _, _| bounds_store.set(Some(bounds)),
                     move |bounds, _, window, _| {
+                        // Drags continue past the slider's edges, so follow the pointer window-wide.
+                        if dragging {
+                            let moving = picker.clone();
+                            window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+                                if phase != DispatchPhase::Bubble {
+                                    return;
+                                }
+                                moving
+                                    .update(cx, |this, cx| {
+                                        if event.pressed_button == Some(MouseButton::Left) {
+                                            this.set_effort_at(event.position.x, &drag_ladder, cx);
+                                        } else {
+                                            this.stop_dragging(cx);
+                                        }
+                                    })
+                                    .ok();
+                            });
+                        }
                         let width = f32::from(bounds.size.width);
                         let run = (width - 2. * THUMB_INSET).max(0.);
                         let center = THUMB_INSET + fraction * run;
@@ -852,11 +983,6 @@ impl ModelPicker {
                                 }
                             })
                             .tooltip(Tooltip::text(view::reasoning_label(level)))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.update_settings(cx, |settings| {
-                                    settings.reasoning = Some(level);
-                                });
-                            }))
                     })),
             )
     }
@@ -1268,12 +1394,34 @@ impl ModelPicker {
                 })
                 .collect()
         };
-        let tray_height = full_tray_height(settings_rows.len());
+        let ladder = selection.ladder();
+        let selected_index = selection
+            .reasoning
+            .and_then(|level| ladder.iter().position(|candidate| *candidate == level))
+            .unwrap_or(0);
+        let slider = (!ladder.is_empty()).then(|| {
+            let effort: SharedString = ladder
+                .get(selected_index)
+                .map(|level| view::reasoning_label(*level).into())
+                .unwrap_or_default();
+            v_flex()
+                .px(px(8.))
+                .child(
+                    h_flex()
+                        .h(px(FULL_SLIDER_LABEL_HEIGHT))
+                        .text_size(ui(13.))
+                        .text_color(colors.text.opacity(0.9))
+                        .child(div().flex_1().child("Reasoning"))
+                        .child(div().text_color(colors.text_muted).child(effort)),
+                )
+                .child(self.render_slider(&ladder, selected_index, selection.fast_on(), cx))
+        });
+        let tray_height = full_tray_height(settings_rows.len(), slider.is_some());
         v_flex()
             .child(tabs)
             .child(search_row)
             .child(self.render_list_host("picker-model-rows", FULL_LIST_HEIGHT, rows, cx))
-            .when(!settings_rows.is_empty(), |this| {
+            .when(tray_height > 0., |this| {
                 this.child(
                     v_flex()
                         .id("picker-traits-tray")
@@ -1287,6 +1435,7 @@ impl ModelPicker {
                             v_flex()
                                 .gap(px(MENU_GAP))
                                 .py(px(CARD_INSET))
+                                .children(slider)
                                 .children(settings_rows.into_iter().map(|row| {
                                     self.render_setting_row(row, FULL_SETTING_HEIGHT, cx)
                                 })),
@@ -1316,17 +1465,15 @@ impl Render for ModelPicker {
             .key_context("menu")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|_, _: &menu::Cancel, _, cx| cx.emit(DismissEvent)))
+            .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(DismissEvent)))
             .p(px(0.));
         if full {
-            let settings_rows: Vec<SettingRow> =
-                SettingRow::reasoning(&selection.ladder(), selection.reasoning)
-                    .into_iter()
-                    .chain(selection.option_rows(|option| {
-                        EFFORT_OPTION_IDS.contains(&option.id.as_str())
-                    }))
-                    .collect();
-            let height =
-                FULL_CHROME_HEIGHT + FULL_LIST_HEIGHT + full_tray_height(settings_rows.len());
+            let settings_rows: Vec<SettingRow> = selection
+                .option_rows(|option| EFFORT_OPTION_IDS.contains(&option.id.as_str()));
+            let has_slider = !selection.ladder().is_empty();
+            let height = FULL_CHROME_HEIGHT
+                + FULL_LIST_HEIGHT
+                + full_tray_height(settings_rows.len(), has_slider);
             return card
                 .w(px(FULL_WIDTH))
                 .h(px(height))
@@ -1348,6 +1495,71 @@ impl Render for ModelPicker {
 mod tests {
     use super::*;
 
+    #[gpui::test]
+    async fn slider_position_picks_the_nearest_effort(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            workspace::AppState::test(cx);
+            editor::init(cx);
+        });
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = crate::session::tests::new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let (picker, cx) = cx.add_window_view(|window, cx| {
+            ModelPicker::new(session.clone(), store.clone(), window, cx)
+        });
+        let ladder = [
+            ReasoningLevel::Low,
+            ReasoningLevel::Medium,
+            ReasoningLevel::High,
+            ReasoningLevel::Max,
+        ];
+        let reasoning_at = |x: f32, cx: &mut gpui::VisualTestContext| {
+            picker.update(cx, |picker, cx| {
+                picker.slider_bounds.set(Some(Bounds::new(
+                    point(px(100.), px(0.)),
+                    size(px(2. * THUMB_INSET + 300.), px(SLIDER_HEIGHT)),
+                )));
+                picker.set_effort_at(px(x), &ladder, cx);
+            });
+            session.read_with(cx, |session, _| session.settings().reasoning)
+        };
+        assert_eq!(reasoning_at(0., cx), Some(ReasoningLevel::Low));
+        assert_eq!(reasoning_at(100. + THUMB_INSET + 95., cx), Some(ReasoningLevel::Medium));
+        assert_eq!(reasoning_at(100. + THUMB_INSET + 210., cx), Some(ReasoningLevel::High));
+        assert_eq!(reasoning_at(2000., cx), Some(ReasoningLevel::Max));
+    }
+
+    #[gpui::test]
+    async fn a_quick_click_on_the_slider_does_not_leave_it_dragging(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(|cx| {
+            workspace::AppState::test(cx);
+            editor::init(cx);
+        });
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = crate::session::tests::new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let (picker, cx) = cx.add_window_view(|window, cx| {
+            ModelPicker::new(session.clone(), store.clone(), window, cx)
+        });
+        crate::session::tests::run_until(cx, |cx| {
+            picker.read_with(cx, |picker, _| picker.slider_bounds.get().is_some())
+        });
+        let bounds = picker
+            .read_with(cx, |picker, _| picker.slider_bounds.get())
+            .expect("slider was drawn");
+        let position = bounds.center();
+        cx.simulate_mouse_down(position, MouseButton::Left, gpui::Modifiers::none());
+        assert!(picker.read_with(cx, |picker, _| picker.dragging_slider));
+        cx.simulate_mouse_up(position, MouseButton::Left, gpui::Modifiers::none());
+        assert!(!picker.read_with(cx, |picker, _| picker.dragging_slider));
+    }
+
     #[test]
     fn compact_list_fits_rows_up_to_seven() {
         assert_eq!(compact_list_height(0), 4. * 34. + 8.);
@@ -1357,8 +1569,9 @@ mod tests {
 
     #[test]
     fn full_tray_grows_with_settings_then_caps() {
-        assert_eq!(full_tray_height(0), 0.);
-        assert_eq!(full_tray_height(2), 71.);
-        assert_eq!(full_tray_height(12), FULL_TRAY_MAX_HEIGHT);
+        assert_eq!(full_tray_height(0, false), 0.);
+        assert_eq!(full_tray_height(2, false), 71.);
+        assert_eq!(full_tray_height(1, true), 32. + 24. + 36. + 2. + 7.);
+        assert_eq!(full_tray_height(12, true), FULL_TRAY_MAX_HEIGHT);
     }
 }

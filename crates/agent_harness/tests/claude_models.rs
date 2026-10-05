@@ -27,8 +27,17 @@ async fn initialize_is_shared_and_curated_metadata_survives_the_live_union() {
     }}));
     let catalog = harness.model_catalog(true).await.unwrap();
     assert_eq!(catalog.source, "live");
-    assert_eq!(catalog.models[0].id, "claude-opus-5-5[1m]");
-    assert_eq!(catalog.models[1].id, "claude-opus-5-5");
+    assert_eq!(catalog.models[0].id, "claude-opus-5-5");
+    assert!(
+        catalog.models.iter().all(|m| !m.id.ends_with("[1m]")),
+        "context sizes fold into their base model"
+    );
+    let opus_context = catalog.models[0]
+        .options
+        .iter()
+        .find(|option| option.id == "contextWindow")
+        .expect("discovered context window");
+    assert_eq!(opus_context.default_choice, "1m");
     for curated in agent_harness::claude::catalog::static_models() {
         assert_eq!(
             catalog.models.iter().find(|m| m.id == curated.id),

@@ -393,6 +393,9 @@ impl Transcript {
         Self {
             entries: entries
                 .into_iter()
+                .filter(|entry| {
+                    !matches!(entry, SerializedEntry::Thinking { text } if text.trim().is_empty())
+                })
                 .map(|entry| deserialize_entry(entry, languages, cx))
                 .collect(),
             text_block_open: false,
@@ -406,6 +409,9 @@ impl Transcript {
         languages: &Arc<LanguageRegistry>,
         cx: &mut App,
     ) {
+        if text.is_empty() {
+            return;
+        }
         let extends_last = self.text_block_open
             && matches!(
                 (self.entries.last(), thinking),
@@ -800,6 +806,7 @@ impl AgentSession {
         if self.metadata.unseen {
             self.metadata.unseen = false;
             self.save_metadata(cx);
+            cx.dismiss_system_notification(&self.metadata.id);
         }
     }
 
@@ -1125,6 +1132,7 @@ impl AgentSession {
             return;
         };
         let mut pending = self.pending_questions.remove(index);
+        cx.dismiss_system_notification(&self.metadata.id);
         if let Some(responder) = pending.responder.take()
             && responder.send(answers).is_err()
         {
@@ -3314,6 +3322,35 @@ done
         store.update(cx, |store, cx| store.delete_session(&id, cx));
         assert!(opening.await.is_err());
         store.read_with(cx, |store, _| assert!(!store.live.contains_key(&id)));
+    }
+
+    #[gpui::test]
+    async fn empty_reasoning_never_adds_a_thought(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        feed_events(
+            &session,
+            vec![
+                AgentEvent::ReasoningDelta {
+                    text: String::new(),
+                },
+                AgentEvent::TextDelta {
+                    text: "one ".into(),
+                },
+                AgentEvent::ReasoningDelta {
+                    text: String::new(),
+                },
+                AgentEvent::TextDelta { text: "two".into() },
+            ],
+            cx,
+        );
+        assert_eq!(last_reply(&session, cx), "one two");
+        session.read_with(cx, |session, _| {
+            assert_eq!(session.entries().len(), 1);
+        });
     }
 
     pub(crate) fn feed_user(session: &Entity<AgentSession>, text: &str, cx: &mut TestAppContext) {
