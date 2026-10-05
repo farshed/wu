@@ -116,9 +116,7 @@ impl CodexHarness {
         let exe = self.resolve_executable()?;
         let mut cmd = Command::new(&exe);
         cmd.arg("app-server");
-        if let Some(cwd) = cwd {
-            cmd.current_dir(cwd);
-        }
+        cmd.current_dir(cwd.map_or_else(crate::executable::scratch_dir, std::path::Path::to_path_buf));
         crate::compose_child_path(&mut cmd, &exe);
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -513,7 +511,9 @@ impl CodexHarness {
         let mut cmd = Command::new(&exe);
         cmd.arg("app-server");
         crate::compose_child_path(&mut cmd, &exe);
-        if !request.cwd.is_empty() {
+        if request.cwd.is_empty() {
+            cmd.current_dir(crate::executable::scratch_dir());
+        } else {
             cmd.current_dir(&request.cwd);
         }
         cmd.stdin(Stdio::piped())

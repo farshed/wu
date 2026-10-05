@@ -190,7 +190,9 @@ impl ClaudeHarness {
             cmd.arg("--settings");
             cmd.arg(Value::Object(settings).to_string());
         }
-        if !request.cwd.is_empty() {
+        if request.cwd.is_empty() {
+            cmd.current_dir(crate::executable::scratch_dir());
+        } else {
             cmd.current_dir(&request.cwd);
         }
         cmd.stdin(Stdio::piped())
@@ -216,9 +218,7 @@ impl ClaudeHarness {
     async fn probe_initialize(&self, cwd: Option<&std::path::Path>) -> Result<Value, HarnessError> {
         let exe = self.resolve_executable()?;
         let mut cmd = Command::new(&exe);
-        if let Some(cwd) = cwd {
-            cmd.current_dir(cwd);
-        }
+        cmd.current_dir(cwd.map_or_else(crate::executable::scratch_dir, std::path::Path::to_path_buf));
         crate::compose_child_path(&mut cmd, &exe);
         cmd.args([
             "--print",

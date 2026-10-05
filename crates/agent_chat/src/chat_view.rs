@@ -42,6 +42,8 @@ use markdown::{
 };
 use project::Project;
 use gpui::{FollowMode, ListAlignment, ListState, list};
+#[cfg(test)]
+use gpui::ListOffset;
 use std::{
     cell::Cell,
     rc::Rc,
@@ -3086,6 +3088,109 @@ mod tests {
             }
             assert!(lost.is_empty(), "pane lost focus ({name} focused) at steps {lost:?}");
         }
+    }
+
+    #[gpui::test]
+    async fn focus_left_on_a_message_scrolled_out_of_view_moves_to_the_composer(
+        cx: &mut TestAppContext,
+    ) {
+        use agent_harness::AgentEvent;
+        cx.update(|cx| {
+            workspace::AppState::test(cx);
+            editor::init(cx);
+        });
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        store.update(cx, |store, _| store.skip_plan_usage());
+        let project = project::Project::test(FakeFs::new(cx.executor()), [], cx).await;
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let (multi_workspace, cx) = cx.add_window_view(|window, cx| {
+            workspace::MultiWorkspace::test_new(project.clone(), window, cx)
+        });
+        let workspace = multi_workspace.read_with(cx, |multi, _| multi.workspace().clone());
+        let chat = workspace.update_in(cx, |workspace, window, cx| {
+            let weak = cx.entity().downgrade();
+            let chat = cx.new(|cx| {
+                ChatView::new(session.clone(), store.clone(), project.clone(), weak, window, cx)
+            });
+            workspace.add_item_to_active_pane(Box::new(chat.clone()), None, true, window, cx);
+            chat
+        });
+        let pane = workspace.read_with(cx, |workspace, _| workspace.active_pane().clone());
+        for turn in 0..60 {
+            crate::session::tests::feed_user(&session, &format!("question {turn}"), cx);
+            crate::session::tests::feed_events(
+                &session,
+                vec![AgentEvent::TextDelta {
+                    text: format!("Answer {turn}.\n\nSecond paragraph.\n\nThird paragraph."),
+                }],
+                cx,
+            );
+        }
+        let draw = |cx: &mut VisualTestContext| {
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                let _ = window.draw(cx);
+            });
+        };
+        chat.update(cx, |chat, cx| {
+            chat.list.scroll_to(ListOffset {
+                item_ix: 0,
+                offset_in_item: px(0.),
+            });
+            cx.notify();
+        });
+        draw(cx);
+        let first_reply = chat.read_with(cx, |chat, cx| {
+            chat.entries(cx).iter().find_map(|entry| match entry {
+                Entry::Assistant { markdown, .. } => Some(markdown.focus_handle(cx)),
+                _ => None,
+            })
+        });
+        let first_reply = first_reply.expect("an assistant reply");
+        let other_session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let other_chat = workspace.update_in(cx, |workspace, window, cx| {
+            let weak = cx.entity().downgrade();
+            let other = cx.new(|cx| {
+                ChatView::new(other_session, store.clone(), project.clone(), weak, window, cx)
+            });
+            workspace.split_item(
+                workspace::SplitDirection::Right,
+                Box::new(other.clone()),
+                window,
+                cx,
+            );
+            other
+        });
+        draw(cx);
+        cx.update(|window, cx| window.focus(&other_chat.read(cx).composer.focus_handle(cx), cx));
+        draw(cx);
+        cx.update(|window, cx| window.focus(&first_reply, cx));
+        draw(cx);
+        assert!(cx.update(|window, cx| pane.read(cx).has_focus(window, cx)));
+
+        chat.update(cx, |chat, cx| {
+            chat.list.set_follow_mode(FollowMode::Tail);
+            cx.notify();
+        });
+        let mut frames = String::new();
+        for _ in 0..8 {
+            draw(cx);
+            frames.push(if cx.update(|window, cx| pane.read(cx).has_focus(window, cx)) {
+                '+'
+            } else {
+                '-'
+            });
+        }
+        assert_eq!(frames, "++++++++", "pane focus per frame");
+        let composer_focused = cx.update(|window, cx| {
+            chat.read(cx).composer.focus_handle(cx).is_focused(window)
+        });
+        assert!(composer_focused, "focus falls back to the composer");
     }
 
     #[gpui::test]

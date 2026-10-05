@@ -699,9 +699,11 @@ impl Pane {
 
                 // Pane was focused directly. We need to either focus a view inside the active item,
                 // or focus the active item itself
+                // Restoring a handle that is no longer drawn loses focus again, bouncing back here every frame.
                 if let Some(weak_last_focus_handle) =
                     self.last_focus_handle_by_item.get(&active_item.item_id())
                     && let Some(focus_handle) = weak_last_focus_handle.upgrade()
+                    && self.focus_handle.contains(&focus_handle, window)
                 {
                     focus_handle.focus(window, cx);
                     return;

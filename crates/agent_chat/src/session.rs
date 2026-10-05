@@ -3316,6 +3316,13 @@ done
         store.read_with(cx, |store, _| assert!(!store.live.contains_key(&id)));
     }
 
+    pub(crate) fn feed_user(session: &Entity<AgentSession>, text: &str, cx: &mut TestAppContext) {
+        session.update(cx, |session, cx| {
+            session.transcript.push_user(text.to_string(), Vec::new());
+            cx.notify();
+        });
+    }
+
     pub(crate) fn feed_events(
         session: &Entity<AgentSession>,
         events: Vec<AgentEvent>,

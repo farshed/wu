@@ -14,6 +14,8 @@ release body.
 - Long agent chats scroll smoothly and typing in the chat box feels instant, since only the messages on screen are drawn.
 - Fixed a black bar at the top of the file tree when scrolling with the Wu themes.
 - Fixed text in the chat box being hard to read after switching between Wu Dark and Wu Light.
+- Fixed macOS asking Wu for access to Desktop, Documents and Photos when agent chat looked up the available models.
+- Fixed the tab and the split and zoom buttons flickering after clicking into a chat message and scrolling away from it.
 
 ## 1.1.0 - 2026-10-04
 

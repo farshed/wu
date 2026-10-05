@@ -21,6 +21,18 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
     home_dir_with(&|key| std::env::var_os(key), Platform::current())
 }
 
+// The CLIs walk their working folder on startup; from Wu's `/` that reaches Desktop, Photos and friends.
+pub(crate) fn scratch_dir() -> PathBuf {
+    let dir = std::env::temp_dir().join("wu-agent");
+    match std::fs::create_dir_all(&dir) {
+        Ok(()) => dir,
+        Err(error) => {
+            tracing::warn!("couldn't create {}: {error}", dir.display());
+            std::env::temp_dir()
+        }
+    }
+}
+
 pub(crate) fn home_or_current_dir() -> PathBuf {
     home_or_current_dir_with(
         &|key| std::env::var_os(key),
@@ -180,6 +192,7 @@ pub fn binary_version(path: &Path) -> Option<semver::Version> {
         use std::process::{Command, Stdio};
         let mut command = Command::new(path);
         command
+            .current_dir(scratch_dir())
             .arg("--version")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -250,6 +263,7 @@ pub fn binary_version(path: &Path) -> Option<semver::Version> {
                 .block_on(async {
                     let mut command = crate::process::Command::new(&path);
                     command
+                        .current_dir(scratch_dir())
                         .arg("--version")
                         .stdin(crate::process::Stdio::null())
                         .stdout(crate::process::Stdio::piped())
