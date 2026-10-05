@@ -7,11 +7,6 @@ release body.
 
 ## Unreleased
 
-- Fixed the context window and plan usage popups in agent chats staying open when clicking elsewhere.
-- Removed the options menu from the top of the agent chat sidebar.
-- Agent chats in the sidebar no longer repeat the project name on every row, so the list is shorter and easier to scan.
-- The agent chat sidebar now uses the same background as the other panels in every theme.
-
 ## 1.1.2 - 2026-10-05
 
 - Fixed images dropped onto an agent chat opening in a preview instead of being attached.
@@ -26,6 +21,10 @@ release body.
 - In the model picker, effort is set with a slider and context window show every choice as a button.
 - Fixed the dark bar that showed at the top of the file tree when scrolling in Wu themes.
 - The sidebar, activity bar and tab bar in Wu Light now have solid colors.
+- Fixed the context window and plan usage popups in agent chats staying open when clicking elsewhere.
+- Removed the options menu from the top of the agent chat sidebar.
+- Agent chats in the sidebar no longer repeat the project name on every row, so the list is shorter and easier to scan.
+- The agent chat sidebar now uses the same background as the other panels in every theme.
 
 ## 1.1.1 - 2026-10-05
 
