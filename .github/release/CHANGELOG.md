@@ -7,18 +7,18 @@ release body.
 
 ## Unreleased
 
-- Fixed the dark bar that still showed at the top of the file tree when scrolling in Wu Dark.
-- The sidebar, activity bar and tab bar in Wu Light now have solid colors, so your desktop no longer shows through and makes them look muddy.
-- Fixed images dropped onto an agent chat opening in a preview instead of being attached. Images dragged from the file tree attach too.
-- When an agent is waiting on a background command or subagent, the bar under the chat box shows what's running and for how long. Click it to see the command, or to open the subagent.
-- Search inside an open agent chat with the Find bar (Cmd-F, or Ctrl-F on Windows and Linux). It searches your messages and the agent's replies.
+- Fixed images dropped onto an agent chat opening in a preview instead of being attached.
+- When an agent is waiting on a background command or subagent, the bar under the chat box shows what's running and for how long.
+- Search inside an open agent chat with the Find bar (Cmd-F, or Ctrl-F on Windows and Linux).
 - Fixed macOS asking Wu for access to Desktop, Documents and Photos when agent chat looked up the available models.
 - Fixed the tab and the split and zoom buttons flickering after clicking into a chat message and scrolling away from it.
-- Fixed empty thought blocks in agent chats, including ones saved in older chats.
-- Thoughts in agent chats stay collapsed until you open them, including while they stream in.
-- Claude models now use their largest context window by default, and Wu picks up the available sizes from Claude Code, so new sizes appear without an update.
-- Agent notifications now use the system's own notifications on macOS, Windows and Linux, so they show up in Notification Center and respect Focus and Do Not Disturb. Clicking one opens the chat.
-- In the model picker, effort is set with a slider you can click or drag, and short settings like the context window show every choice as a button.
+- Fixed empty thought blocks in agent chats.
+- Thoughts in agent chats stay collapsed until you open them.
+- Claude models now use their largest context window by default, and Wu picks up the available sizes from Claude Code.
+- Agent notifications now use the system's native notifications.
+- In the model picker, effort is set with a slider and context window show every choice as a button.
+- Fixed the dark bar that showed at the top of the file tree when scrolling in Wu themes.
+- The sidebar, activity bar and tab bar in Wu Light now have solid colors.
 
 ## 1.1.1 - 2026-10-05
 
