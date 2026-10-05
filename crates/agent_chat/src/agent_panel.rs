@@ -2,7 +2,7 @@ use crate::{
     AgentKind, NewClaudeChat, NewCodexChat, ToggleFocus,
     chat_style::{accent, ink, selected_row, text_faint, ui, wash},
     chat_view::ChatView,
-    session::{AgentSession, AgentStore, ChatListPrefs, ChatOutcome, ChatSort, SessionSummary},
+    session::{AgentSession, AgentStore, ChatListPrefs, ChatOutcome, SessionSummary},
 };
 use anyhow::Result;
 use collections::HashSet;
@@ -401,13 +401,6 @@ impl AgentPanel {
         cx.notify();
     }
 
-    fn new_section(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.store.update(cx, |store, cx| {
-            store.create_section("New section".into(), cx)
-        });
-        self.start_rename(Renaming::Section(id), "New section".into(), window, cx);
-    }
-
     fn show_row_menu(
         &mut self,
         session: &SessionSummary,
@@ -602,79 +595,6 @@ impl AgentPanel {
             })
     }
 
-    fn options_menu(&self, cx: &Context<Self>) -> impl IntoElement {
-        let prefs = self.store.read(cx).list_prefs().clone();
-        let panel = cx.entity().downgrade();
-        PopoverMenu::new("agent-panel-options")
-            .trigger(HeaderButton::new(
-                "agent-panel-options-trigger",
-                IconName::Ellipsis,
-                "Chat List Options",
-            ))
-            .anchor(gpui::Anchor::TopRight)
-            .menu(move |window, cx| {
-                let prefs = prefs.clone();
-                let panel = panel.clone();
-                Some(ContextMenu::build(window, cx, move |menu, _, _| {
-                    let toggle =
-                        |label: &'static str,
-                         on: bool,
-                         change: fn(&mut crate::session::ChatListPrefs)| {
-                            let panel = panel.clone();
-                            (label, on, move |_: &mut Window, cx: &mut App| {
-                                panel
-                                    .update(cx, |panel, cx| {
-                                        panel.store.update(cx, |store, cx| {
-                                            store.update_list_prefs(change, cx)
-                                        })
-                                    })
-                                    .log_err();
-                            })
-                        };
-                    let items = [
-                        toggle(
-                            "Show Chats from All Projects",
-                            prefs.all_projects,
-                            |prefs| prefs.all_projects = !prefs.all_projects,
-                        ),
-                        toggle("Group by Project", prefs.group_by_project, |prefs| {
-                            prefs.group_by_project = !prefs.group_by_project
-                        }),
-                        toggle("Compact Rows", prefs.compact_rows, |prefs| {
-                            prefs.compact_rows = !prefs.compact_rows
-                        }),
-                    ];
-                    let mut menu = menu.header("Show");
-                    for (label, on, handler) in items {
-                        menu = menu.toggleable_entry(label, on, IconPosition::Start, None, handler);
-                    }
-                    let sorts = [
-                        toggle(
-                            "Sort by Last Updated",
-                            prefs.sort == ChatSort::Updated,
-                            |prefs| prefs.sort = ChatSort::Updated,
-                        ),
-                        toggle(
-                            "Sort by Created",
-                            prefs.sort == ChatSort::Created,
-                            |prefs| prefs.sort = ChatSort::Created,
-                        ),
-                    ];
-                    menu = menu.separator();
-                    for (label, on, handler) in sorts {
-                        menu = menu.toggleable_entry(label, on, IconPosition::Start, None, handler);
-                    }
-                    let panel = panel.clone();
-                    menu.separator()
-                        .entry("New Section", None, move |window, cx| {
-                            panel
-                                .update(cx, |panel, cx| panel.new_section(window, cx))
-                                .log_err();
-                        })
-                }))
-            })
-    }
-
     fn render_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = cx.theme().colors();
         v_flex()
@@ -697,7 +617,6 @@ impl AgentPanel {
                             .text_color(colors.text.opacity(0.8))
                             .child(faded_label("agent-panel-title", false, "Chats")),
                     )
-                    .child(self.options_menu(cx))
                     .child(self.new_chat_menu()),
             )
             .child(
@@ -894,7 +813,7 @@ impl AgentPanel {
         let status_color = status.color(cx);
         let time_ago: SharedString = format_time_ago(session.updated_at, now).into();
         let branch = session.branch.clone().map(SharedString::from);
-        let row_height = row_height(compact, true, branch.is_some());
+        let row_height = row_height(compact, branch.is_some());
         let renaming = self.renaming.as_ref().filter(
             |field| matches!(&field.target, Renaming::Chat(renaming_id) if *renaming_id == id),
         );
@@ -1042,28 +961,11 @@ impl AgentPanel {
                 DraggedChat {
                     id: id.clone(),
                     title,
-                    project_root: session.project_root.clone(),
+                    project_root: session.project_root,
                     archived,
                 },
                 |dragged, _, _, cx| cx.new(|_| dragged.clone()),
             )
-            .when(!compact, |this| {
-                this.child(
-                    h_flex()
-                        .w_full()
-                        .gap(px(SPACE_SM))
-                        .child(faded_label(
-                            SharedString::from(format!("agent-session-project-{id}")),
-                            true,
-                            div()
-                                .text_size(ui(11.))
-                                .line_height(px(14.))
-                                .text_color(subline)
-                                .child(project_name(&session.project_root)),
-                        ))
-                        .children(corner.take()),
-                )
-            })
             .child(
                 h_flex()
                     .w_full()
@@ -1079,7 +981,7 @@ impl AgentPanel {
                         }),
                     ))
                     .child(title_content)
-                    .when(compact && hovered, |this| this.children(corner.take()))
+                    .when(!compact || hovered, |this| this.children(corner.take()))
                     .when(compact, |this| {
                         this.child(
                             div()
@@ -1682,13 +1584,8 @@ fn glyph(icon: IconName, size: f32, color: Hsla) -> Svg {
         .text_color(color)
 }
 
-fn row_height(compact: bool, show_label: bool, shows_branch: bool) -> f32 {
-    if compact {
-        29.
-    } else {
-        let full = if shows_branch { 47. + 14. } else { 45. };
-        if show_label { full } else { full - 16. }
-    }
+fn row_height(compact: bool, shows_branch: bool) -> f32 {
+    if shows_branch && !compact { 45. } else { 29. }
 }
 
 fn format_time_ago(then: i64, now: i64) -> String {
@@ -2124,7 +2021,7 @@ impl Render for AgentPanel {
             .key_context("AgentPanel")
             .track_focus(&self.focus_handle)
             .size_full()
-            .bg(wash(0.05, cx))
+            .bg(cx.theme().colors().panel_background)
             .child(self.render_toolbar(cx))
             .child(div().flex_1().min_h_0().child(body))
             .when_some(self.row_menu.as_ref(), |this, row_menu| {
@@ -2359,9 +2256,8 @@ mod tests {
 
     #[test]
     fn row_height_tracks_visible_lines() {
-        assert_eq!(row_height(true, true, true), 29.);
-        assert_eq!(row_height(false, true, false), 45.);
-        assert_eq!(row_height(false, true, true), 61.);
-        assert_eq!(row_height(false, false, false), 29.);
+        assert_eq!(row_height(true, true), 29.);
+        assert_eq!(row_height(false, false), 29.);
+        assert_eq!(row_height(false, true), 45.);
     }
 }

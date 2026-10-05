@@ -3,12 +3,12 @@ import { useEffect, useState } from 'react';
 import { Faq } from '../components/Faq';
 import { Footer } from '../components/Footer';
 import { Header } from '../components/Header';
-import { Highlights } from '../components/Highlights';
 import { AppIcon, GithubIcon } from '../components/icons';
 import { InkBackground } from '../components/InkBackground';
 import { MemoryChart } from '../components/MemoryChart';
 import { RaycastWindow } from '../components/RaycastWindow';
-import { CenterSection, MediaSection, sectionBody, sectionTitle } from '../components/Section';
+import { CenterSection, MediaSection, mediaFrame, sectionBody, sectionTitle } from '../components/Section';
+import { WuWindowFrame } from '../components/WuWindow';
 import { INSTALL_GUIDE_URL, MEMORY_BENCHMARK_URL, RAYCAST_URL, RELEASES_URL, REPO_URL } from '../consts';
 import { detectPlatform, directDownload, downloads, platformNames, type Platform } from '../data/downloads';
 
@@ -46,7 +46,12 @@ export function Home() {
           </div>
         </section>
 
-        <Highlights />
+        <section className="mx-auto my-28 max-w-[1240px] px-8 max-sm:my-18 max-sm:px-4">
+          <WuWindowFrame className={mediaFrame} />
+          <p className="mt-4 text-center text-sm text-tertiary max-sm:hidden">
+            Click around: open files, search the project or chat with the agent.
+          </p>
+        </section>
 
         <MediaSection
           mediaFirst

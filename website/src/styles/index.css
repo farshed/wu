@@ -18,19 +18,51 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/geist-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/geist-medium-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-italic-latin.woff2") format("woff2");
+}
+
 :root {
-  --primary: #e8e8ea;
-  --secondary: #a9a9ae;
-  --tertiary: #85858a;
+  --primary: #ece7f7;
+  --secondary: #9c92b5;
+  --tertiary: #5d5178;
   --accent: #8b7cf6;
   --accent-hover: #9d90f8;
   --accent-press: #7a6ad9;
-  --on-accent: #060606;
-  --background: #0d0d0d;
-  --elevated: #e8e8ea;
-  --hero-start: #060606;
-  --hero-end: #0a0a0a;
-  --tile: #060606;
+  --on-accent: #06040a;
+  --background: #06040a;
+  --elevated: #ece7f7;
+  --hero-start: #06040a;
+  --hero-end: #0c0913;
+  --tile: #0c0913;
   color-scheme: dark;
 }
 
@@ -38,6 +70,8 @@
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-wu: "Geist", system-ui, -apple-system, sans-serif;
+  --font-wu-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
   --color-primary: var(--primary);
   --color-secondary: var(--secondary);
   --color-tertiary: var(--tertiary);

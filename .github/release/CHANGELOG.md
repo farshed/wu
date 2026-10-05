@@ -7,6 +7,10 @@ release body.
 
 ## Unreleased
 
+- Removed the options menu from the top of the agent chat sidebar.
+- Agent chats in the sidebar no longer repeat the project name on every row, so the list is shorter and easier to scan.
+- The agent chat sidebar now uses the same background as the other panels in every theme.
+
 ## 1.1.2 - 2026-10-05
 
 - Fixed images dropped onto an agent chat opening in a preview instead of being attached.
