@@ -1,4 +1,4 @@
-use std::{ops::Range, rc::Rc};
+use std::{cell::Cell, ops::Range, rc::Rc};
 
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Context, Element, ElementId, Entity, GlobalElementId,
@@ -15,6 +15,7 @@ pub struct StickyItems<T> {
     compute_fn: Rc<dyn Fn(Range<usize>, &mut Window, &mut App) -> SmallVec<[T; 8]>>,
     render_fn: Rc<dyn Fn(T, &mut Window, &mut App) -> SmallVec<[AnyElement; 8]>>,
     decorations: Vec<Box<dyn StickyItemsDecoration>>,
+    covered_bottom: Cell<Option<Pixels>>,
 }
 
 pub fn sticky_items<V, T>(
@@ -45,6 +46,7 @@ where
         compute_fn,
         render_fn,
         decorations: Vec::new(),
+        covered_bottom: Cell::new(None),
     }
 }
 
@@ -146,6 +148,7 @@ where
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
+        self.covered_bottom.set(None);
         let entries = (self.compute_fn)(visible_range.clone(), window, cx);
 
         let Some(sticky_anchor) = find_sticky_anchor(&entries, visible_range.start) else {
@@ -194,6 +197,9 @@ where
         };
 
         let base_origin = bounds.origin - point(px(0.), scroll_offset.y);
+        self.covered_bottom.set(Some(
+            base_origin.y + item_height * items_count + drifting_y_offset,
+        ));
 
         for decoration in &self.decorations {
             if let Some(drifting_indent) = drifting_indent {
@@ -273,6 +279,10 @@ where
             rest_decorations: rest_decoration_elements,
         }
         .into_any_element()
+    }
+
+    fn covered_bottom(&self, _cx: &App) -> Option<Pixels> {
+        self.covered_bottom.get()
     }
 }
 

@@ -71,7 +71,7 @@ pub struct UniformList {
 /// Frame state used by the [UniformList].
 pub struct UniformListFrameState {
     items: SmallVec<[AnyElement; 32]>,
-    decorations: SmallVec<[AnyElement; 2]>,
+    decorations: SmallVec<[(AnyElement, Option<Pixels>); 2]>,
 }
 
 /// A handle for controlling the scroll position of a uniform list.
@@ -513,8 +513,8 @@ impl Element for UniformList {
 
                         let bounds =
                             Bounds::new(padded_bounds.origin + scroll_offset, padded_bounds.size);
-                        for decoration in &self.decorations {
-                            let mut decoration = decoration.as_ref().compute(
+                        for decoration_source in &self.decorations {
+                            let mut decoration = decoration_source.as_ref().compute(
                                 visible_range.clone(),
                                 bounds,
                                 scroll_offset,
@@ -529,7 +529,9 @@ impl Element for UniformList {
                             );
                             decoration.layout_as_root(available_space, window, cx);
                             decoration.prepaint_at(bounds.origin, window, cx);
-                            frame_state.decorations.push(decoration);
+                            frame_state
+                                .decorations
+                                .push((decoration, decoration_source.covered_bottom(cx)));
                         }
                     });
                 }
@@ -557,11 +559,34 @@ impl Element for UniformList {
             window,
             cx,
             |_, window, cx| {
-                for item in &mut request_layout.items {
-                    item.paint(window, cx);
-                }
-                for decoration in &mut request_layout.decorations {
-                    decoration.paint(window, cx);
+                let covered_bottoms: SmallVec<[Option<Pixels>; 2]> = request_layout
+                    .decorations
+                    .iter()
+                    .map(|(_, covered_bottom)| *covered_bottom)
+                    .collect();
+                let mask_below_coverings_from = |start: usize| {
+                    let top = covered_bottoms
+                        .iter()
+                        .skip(start)
+                        .flatten()
+                        .fold(bounds.top(), |top, bottom| top.max(*bottom));
+                    ContentMask {
+                        bounds: Bounds::from_corners(
+                            point(bounds.left(), top),
+                            bounds.bottom_right(),
+                        ),
+                    }
+                };
+
+                window.with_content_mask(Some(mask_below_coverings_from(0)), |window| {
+                    for item in &mut request_layout.items {
+                        item.paint(window, cx);
+                    }
+                });
+                for (ix, (decoration, _)) in request_layout.decorations.iter_mut().enumerate() {
+                    window.with_content_mask(Some(mask_below_coverings_from(ix + 1)), |window| {
+                        decoration.paint(window, cx);
+                    });
                 }
             },
         )
@@ -591,6 +616,12 @@ pub trait UniformListDecoration {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement;
+
+    /// The window y coordinate down to which the last computed decoration hides the list.
+    /// Items and earlier decorations are not painted above it.
+    fn covered_bottom(&self, _cx: &App) -> Option<Pixels> {
+        None
+    }
 }
 
 impl<T: UniformListDecoration + 'static> UniformListDecoration for Entity<T> {
@@ -615,6 +646,10 @@ impl<T: UniformListDecoration + 'static> UniformListDecoration for Entity<T> {
                 cx,
             )
         })
+    }
+
+    fn covered_bottom(&self, cx: &App) -> Option<Pixels> {
+        self.read(cx).covered_bottom(cx)
     }
 }
 
@@ -862,5 +897,79 @@ mod test {
                 assert_eq!(view.visible_range, ix..ix + 10);
             })
         }
+    }
+
+    #[gpui::test]
+    fn test_items_are_not_painted_under_a_covering_decoration(cx: &mut TestAppContext) {
+        use crate::{
+            AnyElement, App, Background, Bounds, Context, Pixels, Point, UniformListDecoration,
+            Window, blue, div, prelude::*, px, red, uniform_list,
+        };
+        use std::ops::Range;
+
+        const COVERED_HEIGHT: f32 = 30.;
+
+        struct Cover;
+
+        impl UniformListDecoration for Cover {
+            fn compute(
+                &self,
+                _visible_range: Range<usize>,
+                _bounds: Bounds<Pixels>,
+                _scroll_offset: Point<Pixels>,
+                _item_height: Pixels,
+                _item_count: usize,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> AnyElement {
+                div()
+                    .w(px(100.))
+                    .h(px(COVERED_HEIGHT))
+                    .bg(blue())
+                    .into_any_element()
+            }
+
+            fn covered_bottom(&self, _cx: &App) -> Option<Pixels> {
+                Some(px(COVERED_HEIGHT))
+            }
+        }
+
+        struct TestView;
+
+        impl Render for TestView {
+            fn render(
+                &mut self,
+                _window: &mut Window,
+                _cx: &mut Context<Self>,
+            ) -> impl IntoElement {
+                div().size_full().child(
+                    uniform_list("entries", 10, |range: Range<usize>, _window, _cx| {
+                        range
+                            .map(|ix| div().id(ix).h(px(20.)).bg(red()))
+                            .collect::<Vec<_>>()
+                    })
+                    .with_decoration(Cover)
+                    .h(px(200.)),
+                )
+            }
+        }
+
+        let (_view, cx) = cx.add_window_view(|_, _| TestView);
+        let (quads, scale_factor) =
+            cx.update(|window, _| (window.painted_quads(), window.scale_factor()));
+        let covered_bottom = px(COVERED_HEIGHT).scale(scale_factor);
+
+        let item_masks: Vec<_> = quads
+            .iter()
+            .filter(|quad| quad.background == Background::from(red()))
+            .map(|quad| quad.content_mask.bounds.origin.y)
+            .collect();
+        assert!(!item_masks.is_empty());
+        assert!(item_masks.iter().all(|top| *top >= covered_bottom));
+
+        let cover = quads
+            .iter()
+            .find(|quad| quad.background == Background::from(blue()));
+        assert!(cover.is_some_and(|quad| quad.content_mask.bounds.origin.y < covered_bottom));
     }
 }

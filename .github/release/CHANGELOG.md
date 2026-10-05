@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+- Fixed the dark bar that still showed at the top of the file tree when scrolling in Wu Dark.
+- The sidebar, activity bar and tab bar in Wu Light now have solid colors, so your desktop no longer shows through and makes them look muddy.
 - Fixed images dropped onto an agent chat opening in a preview instead of being attached. Images dragged from the file tree attach too.
 - When an agent is waiting on a background command or subagent, the bar under the chat box shows what's running and for how long. Click it to see the command, or to open the subagent.
 - Search inside an open agent chat with the Find bar (Cmd-F, or Ctrl-F on Windows and Linux). It searches your messages and the agent's replies.
