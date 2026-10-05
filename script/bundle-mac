@@ -8,9 +8,10 @@ target_dir="release"
 open_result=false
 local_install=false
 can_code_sign=false
+self_signed=false
 
-# This must match the team in the provisioning profile.
-IDENTITY="Farshed"
+# Common name of the signing certificate in MACOS_CERTIFICATE.
+IDENTITY="${MACOS_SIGNING_IDENTITY:-Farshed}"
 APPLE_NOTARIZATION_TEAM="${APPLE_NOTARIZATION_TEAM:-}"
 # Optional path to a provisioning profile to embed in the app bundle.
 MACOS_PROVISIONING_PROFILE="${MACOS_PROVISIONING_PROFILE:-}"
@@ -119,12 +120,17 @@ else
     echo "cargo::warning=Missing ${document_icon_source}; macOS document icons may not appear in Finder."
 fi
 
-if [[ -n "${MACOS_CERTIFICATE:-}" && -n "${MACOS_CERTIFICATE_PASSWORD:-}" && -n "${APPLE_NOTARIZATION_KEY:-}" && -n "${APPLE_NOTARIZATION_KEY_ID:-}" && -n "${APPLE_NOTARIZATION_ISSUER_ID:-}" ]]; then
-    can_code_sign=true
+if [[ -n "${MACOS_CERTIFICATE:-}" && -n "${MACOS_CERTIFICATE_PASSWORD:-}" ]]; then
+    if [[ -n "${APPLE_NOTARIZATION_KEY:-}" && -n "${APPLE_NOTARIZATION_KEY_ID:-}" && -n "${APPLE_NOTARIZATION_ISSUER_ID:-}" ]]; then
+        can_code_sign=true
 
-    if [[ -z "$APPLE_NOTARIZATION_TEAM" ]]; then
-        echo "APPLE_NOTARIZATION_TEAM must be set when code signing is enabled"
-        exit 1
+        if [[ -z "$APPLE_NOTARIZATION_TEAM" ]]; then
+            echo "APPLE_NOTARIZATION_TEAM must be set when code signing is enabled"
+            exit 1
+        fi
+    else
+        self_signed=true
+        echo "No notarization credentials, so the bundle is signed with \"${IDENTITY}\" and not notarized"
     fi
 
     echo "Setting up keychain for code signing..."
@@ -214,6 +220,16 @@ function sign_app_binaries() {
         /usr/bin/codesign --deep --force --timestamp --options runtime --sign "$IDENTITY" "${app_path}/Contents/MacOS/git" -v
         /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${app_path}/Contents/MacOS/wu" -v
         /usr/bin/codesign --force --timestamp --options runtime --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${app_path}" -v
+    elif [[ $self_signed = true ]]; then
+        echo "Code signing binaries with a self-signed certificate"
+        # Apple's timestamp server and notarization only accept Apple-issued certificates.
+        /usr/bin/codesign --force --timestamp=none --sign "$IDENTITY" "${app_path}/Contents/MacOS/cli" -v
+        /usr/bin/codesign --force --timestamp=none --sign "$IDENTITY" "${app_path}/Contents/MacOS/git" -v
+        /usr/bin/codesign --force --timestamp=none --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${app_path}/Contents/MacOS/wu" -v
+        /usr/bin/codesign --force --timestamp=none --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${app_path}" -v
+        /usr/bin/codesign --verify --deep --strict --verbose=2 "${app_path}"
+        echo "Designated requirement:"
+        /usr/bin/codesign --display --requirements - "${app_path}"
     else
         echo "One or more of the following variables are missing: MACOS_CERTIFICATE, MACOS_CERTIFICATE_PASSWORD, APPLE_NOTARIZATION_KEY, APPLE_NOTARIZATION_KEY_ID, APPLE_NOTARIZATION_ISSUER_ID"
 
@@ -293,6 +309,9 @@ function sign_binary() {
     if [[ $can_code_sign = true ]]; then
         echo "Code signing executable $binary_path"
         /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/wu/resources/zed.entitlements --sign "$IDENTITY" "${binary_path}" -v
+    elif [[ $self_signed = true ]]; then
+        echo "Code signing executable $binary_path with a self-signed certificate"
+        /usr/bin/codesign --force --timestamp=none --sign "$IDENTITY" "${binary_path}" -v
     fi
 }
 
