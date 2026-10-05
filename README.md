@@ -31,15 +31,9 @@ See [INSTALL.md](https://github.com/farshed/wu/blob/main/docs/INSTALL.md) for mo
 
 See [docs](https://wu.farshed.me).
 
-## Raycast
-
-On macOS, the [Wu extension for Raycast](https://www.raycast.com/farshed/wu-editor) lets you open recent projects, new windows, settings and more straight from Raycast.
-
 ---
 
-![Wu screenshot dark](https://wu.farshed.me/screenshot-dark.png)
-
-![Wu screenshot light](https://wu.farshed.me/screenshot-light.png)
+![Wu screenshot](https://wu.farshed.me/screenshot.png)
 
 ## Building
 
