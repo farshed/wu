@@ -9,6 +9,7 @@ mod links;
 mod mermaid;
 mod outline;
 mod queue_panel;
+mod search;
 mod todo_panel;
 
 use crate::{
@@ -162,6 +163,8 @@ pub struct ChatView {
     _dictation_download: Task<()>,
     _glide: Task<()>,
     container_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    painted_turns: Rc<std::cell::RefCell<HashMap<usize, Bounds<Pixels>>>>,
+    search: search::SearchState,
     outline_hover: Option<usize>,
     expanded_work: HashSet<usize>,
     todo_panel: todo_panel::TodoPanelState,
@@ -261,6 +264,9 @@ impl ChatView {
                     return;
                 }
                 this.sync_turns(cx);
+                if !this.search.is_empty() {
+                    cx.emit(workspace::searchable::SearchEvent::MatchesInvalidated);
+                }
                 if this.subagent.is_none() {
                     this.sync_answer_editors(window, cx);
                 }
@@ -275,6 +281,7 @@ impl ChatView {
                 EditorEvent::SelectionsChanged { .. } => this.update_command_menu(cx),
                 _ => {}
             }),
+            cx.on_release(|this, cx| this.clear_search_highlights(cx)),
             cx.observe_window_activation(window, |_, _, cx| cx.notify()),
             cx.observe(&store, |this, _, cx| {
                 if this.subagent.is_none() {
@@ -316,6 +323,8 @@ impl ChatView {
             _dictation_download: Task::ready(()),
             _glide: Task::ready(()),
             container_bounds: Default::default(),
+            painted_turns: Default::default(),
+            search: Default::default(),
             outline_hover: None,
             expanded_work: HashSet::default(),
             todo_panel: Default::default(),
@@ -990,9 +999,20 @@ impl ChatView {
                 && matches!(entries.get(*index), Some(Entry::User { undelivered: true, .. }))
         });
         let message_style = Self::message_style(window, cx);
+        let painted_turns = self.painted_turns.clone();
         let turn = v_flex()
             .relative()
             .w_full()
+            .child(
+                canvas(
+                    move |bounds, _, _| {
+                        painted_turns.borrow_mut().insert(turn_index, bounds);
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .pt(px(if is_first_turn {
                 self.first_row_inset()
             } else {
@@ -1182,11 +1202,11 @@ impl ChatView {
                                 div()
                                     .max_h(ui(USER_LINE_HEIGHT * USER_COLLAPSED_LINES as f32))
                                     .overflow_hidden()
-                                    .child(text.clone()),
+                                    .child(self.render_user_text(index, text.clone(), cx)),
                             )
                             .child(div().h(ui(USER_LINE_HEIGHT)).child("..."))
                         } else {
-                            this.child(text.clone())
+                            this.child(self.render_user_text(index, text.clone(), cx))
                         }
                     })
                     .when(collapsible, |this| {
@@ -1738,7 +1758,6 @@ impl ChatView {
                             self.render_tree_row(
                                 *index,
                                 position + 1 < row_count,
-                                is_live,
                                 window,
                                 cx,
                             )
@@ -1752,7 +1771,6 @@ impl ChatView {
         &self,
         index: usize,
         continues: bool,
-        is_live: bool,
         window: &Window,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -1788,9 +1806,7 @@ impl ChatView {
                 .map(|view| (view.additions, view.deletions)),
             _ => None,
         };
-        let streaming_thought =
-            is_live && index + 1 == entries.len() && matches!(entries[index], Entry::Thinking(_));
-        let expanded = self.expanded_rows.contains(&key) || streaming_thought;
+        let expanded = self.expanded_rows.contains(&key);
         let body = expanded.then(|| match &entries[index] {
             Entry::Tool(tool) => self.render_tool_detail(tool, cx),
             Entry::Thinking(markdown) => v_flex()
@@ -2753,6 +2769,7 @@ impl ChatView {
 
 impl Render for ChatView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.painted_turns.borrow_mut().clear();
         self.update_scroll_state();
         self.request_visible_diagrams(cx);
         self.refresh_path_links(cx);
@@ -2902,9 +2919,19 @@ impl Item for ChatView {
     }
 
     fn show_toolbar(&self) -> bool {
-        false
+        true
+    }
+
+    fn as_searchable(
+        &self,
+        handle: &Entity<Self>,
+        _: &App,
+    ) -> Option<Box<dyn workspace::searchable::SearchableItemHandle>> {
+        Some(Box::new(handle.clone()))
     }
 }
+
+impl EventEmitter<workspace::searchable::SearchEvent> for ChatView {}
 
 #[cfg(test)]
 mod tests {

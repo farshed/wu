@@ -7,6 +7,15 @@ release body.
 
 ## Unreleased
 
+- Search inside an open agent chat with the Find bar (Cmd-F, or Ctrl-F on Windows and Linux). It searches your messages and the agent's replies.
+- Fixed macOS asking Wu for access to Desktop, Documents and Photos when agent chat looked up the available models.
+- Fixed the tab and the split and zoom buttons flickering after clicking into a chat message and scrolling away from it.
+- Fixed empty thought blocks in agent chats, including ones saved in older chats.
+- Thoughts in agent chats stay collapsed until you open them, including while they stream in.
+- Claude models now use their largest context window by default, and Wu picks up the available sizes from Claude Code, so new sizes appear without an update.
+- Agent notifications now use the system's own notifications on macOS, Windows and Linux, so they show up in Notification Center and respect Focus and Do Not Disturb. Clicking one opens the chat.
+- In the model picker, effort is set with a slider you can click or drag, and short settings like the context window show every choice as a button.
+
 ## 1.1.1 - 2026-10-05
 
 - `/compact` and other slash commands now work mid-conversation in Claude chats.
@@ -14,12 +23,6 @@ release body.
 - Long agent chats scroll smoothly and typing in the chat box feels instant, since only the messages on screen are drawn.
 - Fixed a black bar at the top of the file tree when scrolling with the Wu themes.
 - Fixed text in the chat box being hard to read after switching between Wu Dark and Wu Light.
-- Fixed macOS asking Wu for access to Desktop, Documents and Photos when agent chat looked up the available models.
-- Fixed the tab and the split and zoom buttons flickering after clicking into a chat message and scrolling away from it.
-- Fixed empty thought blocks in agent chats, including ones saved in older chats.
-- Claude models now use their largest context window by default, and Wu picks up the available sizes from Claude Code, so new sizes appear without an update.
-- Agent notifications now use the system's own notifications on macOS, Windows and Linux, so they show up in Notification Center and respect Focus and Do Not Disturb. Clicking one opens the chat.
-- In the model picker, effort is set with a slider you can click or drag, and short settings like the context window show every choice as a button.
 
 ## 1.1.0 - 2026-10-04
 

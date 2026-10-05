@@ -1291,6 +1291,12 @@
     },
   },
   {
+    "context": "AgentChat",
+    "bindings": {
+      "cmd-f": "buffer_search::Deploy",
+    },
+  },
+  {
     "context": "AgentComposer && command_menu > Editor",
     "bindings": {
       "up": "agent_chat::SelectPreviousCommand",

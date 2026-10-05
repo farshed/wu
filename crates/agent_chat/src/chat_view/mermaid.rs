@@ -2,7 +2,7 @@ use super::ChatView;
 use crate::chat_style::{accent, ink, page, text_faint};
 use gpui::{App, Context, Hsla, Image, ImageFormat, Rgba};
 use mermaid_render::{DiagramTheme, RenderError};
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 use theme::ActiveTheme as _;
 use util::ResultExt as _;
 
@@ -47,31 +47,39 @@ pub(super) fn diagram_theme(cx: &App) -> DiagramTheme {
 }
 
 pub(super) fn mermaid_sources(markdown: &str) -> Vec<String> {
-    let mut sources = Vec::new();
-    let mut lines = markdown.lines();
-    while let Some(line) = lines.next() {
-        let fence = line.trim_start();
-        let Some(info) = fence.strip_prefix("```") else {
+    mermaid_blocks(markdown)
+        .into_iter()
+        .map(|(_, source)| source)
+        .collect()
+}
+
+pub(super) fn mermaid_blocks(markdown: &str) -> Vec<(Range<usize>, String)> {
+    let mut lines = Vec::new();
+    let mut offset = 0;
+    for line in markdown.split_inclusive('\n') {
+        lines.push((offset, line));
+        offset += line.len();
+    }
+    let mut blocks = Vec::new();
+    let mut lines = lines.into_iter();
+    while let Some((start, line)) = lines.next() {
+        let Some(info) = line.trim_start().strip_prefix("```") else {
             continue;
         };
         if !info.trim().eq_ignore_ascii_case("mermaid") {
             continue;
         }
         let mut source = String::new();
-        let mut closed = false;
-        for body in lines.by_ref() {
+        for (body_start, body) in lines.by_ref() {
             if body.trim_start().starts_with("```") {
-                closed = true;
+                blocks.push((start..body_start + body.len(), source));
                 break;
             }
-            source.push_str(body);
+            source.push_str(body.trim_end_matches(['\n', '\r']));
             source.push('\n');
         }
-        if closed {
-            sources.push(source);
-        }
     }
-    sources
+    blocks
 }
 
 impl ChatView {
@@ -99,6 +107,20 @@ impl ChatView {
         for source in sources {
             self.request_diagram(source, cx);
         }
+    }
+
+    pub(super) fn drawn_diagram_ranges(&self, markdown: &str, cx: &App) -> Vec<Range<usize>> {
+        if !markdown.contains("```") {
+            return Vec::new();
+        }
+        mermaid_blocks(markdown)
+            .into_iter()
+            .filter(|(_, source)| {
+                !self.diagram_sources_shown.contains(source.trim_end())
+                    && matches!(self.diagram(source, cx), Some(Diagram::Ready { .. }))
+            })
+            .map(|(range, _)| range)
+            .collect()
     }
 
     pub(super) fn diagram(&self, source: &str, cx: &App) -> Option<Diagram> {
@@ -158,5 +180,21 @@ mod tests {
         let markdown = "Text\n```mermaid\ngraph TD\n  A-->B\n```\n```rust\nfn x() {}\n```\n";
         assert_eq!(mermaid_sources(markdown), ["graph TD\n  A-->B\n"]);
         assert!(mermaid_sources("```mermaid\ngraph TD\n  A-->").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod block_tests {
+    use super::*;
+
+    #[test]
+    fn mermaid_blocks_cover_the_whole_fence() {
+        let markdown = "Intro\n```mermaid\ngraph TD\nA-->B\n```\nAfter\n```mermaid\nunclosed\n";
+        let blocks = mermaid_blocks(markdown);
+        assert_eq!(blocks.len(), 1);
+        let (range, source) = &blocks[0];
+        assert_eq!(&markdown[range.clone()], "```mermaid\ngraph TD\nA-->B\n```\n");
+        assert_eq!(source, "graph TD\nA-->B\n");
+        assert_eq!(mermaid_sources(markdown), vec![source.clone()]);
     }
 }
