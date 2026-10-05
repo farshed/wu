@@ -1,4 +1,7 @@
-use crate::{AgentEvent, BackgroundTaskKind, DoneStatus, HarnessId, TodoItem, TodoStatus, ToolCall};
+use crate::{
+    AgentEvent, BackgroundTaskInfo, BackgroundTaskKind, DoneStatus, HarnessId, TodoItem, TodoStatus,
+    ToolCall,
+};
 use serde_json::Value;
 
 use super::wire::{ContentBlock, Frame};
@@ -124,6 +127,15 @@ pub(crate) fn decode_tool_use(name: &str, input: &Value) -> ToolCall {
 
 fn new_message_id() -> String {
     uuid::Uuid::new_v4().to_string()
+}
+
+fn task_kind(task_type: Option<&str>, is_subagent: bool) -> BackgroundTaskKind {
+    match task_type {
+        _ if is_subagent => BackgroundTaskKind::Agent,
+        Some(kind) if kind.contains("agent") => BackgroundTaskKind::Agent,
+        Some(kind) if kind.contains("bash") || kind.contains("shell") => BackgroundTaskKind::Shell,
+        _ => BackgroundTaskKind::Other,
+    }
 }
 
 fn tag(parent: &str, event: AgentEvent) -> AgentEvent {
@@ -280,7 +292,7 @@ impl Normalizer {
                     };
                     let mut events = Vec::new();
                     if let Some(task) = f.task_id.as_deref().filter(|t| !t.is_empty()) {
-                        events.push(AgentEvent::BackgroundTaskFinished {
+                        events.push(AgentEvent::TaskFinished {
                             task_id: task.to_owned(),
                             status,
                         });
@@ -307,6 +319,19 @@ impl Normalizer {
                     }
                     return events;
                 }
+                if f.subtype == "background_tasks_changed" {
+                    let tasks = f
+                        .tasks
+                        .iter()
+                        .filter(|task| !task.ambient && !task.task_id.is_empty())
+                        .map(|task| BackgroundTaskInfo {
+                            task_id: task.task_id.clone(),
+                            kind: task_kind(task.task_type.as_deref(), false),
+                            description: task.description.clone(),
+                        })
+                        .collect();
+                    return vec![AgentEvent::BackgroundTasksChanged { tasks }];
+                }
                 if f.subtype == "task_started" {
                     let Some(task) = f.task_id.as_deref().filter(|t| !t.is_empty()) else {
                         return Vec::new();
@@ -324,19 +349,10 @@ impl Normalizer {
                         self.spawn_by_tool_id
                             .insert(tool.to_owned(), spawn.clone());
                     }
-                    let kind = if f.subagent_type.is_some()
-                        || f.task_type.as_deref().is_some_and(|kind| kind.contains("agent"))
-                    {
-                        BackgroundTaskKind::Agent
-                    } else if f.task_type.as_deref().is_some_and(|kind| kind.contains("bash")) {
-                        BackgroundTaskKind::Shell
-                    } else {
-                        BackgroundTaskKind::Other
-                    };
-                    return vec![AgentEvent::BackgroundTaskStarted {
+                    return vec![AgentEvent::TaskStarted {
                         task_id: task.to_owned(),
                         tool_use_id: tool.map(str::to_owned),
-                        kind,
+                        kind: task_kind(f.task_type.as_deref(), f.subagent_type.is_some()),
                         description: f
                             .description
                             .clone()
@@ -930,7 +946,7 @@ mod tests {
         .expect("parses");
         assert!(matches!(
             &norm.normalize(started, false)[..],
-            [AgentEvent::BackgroundTaskStarted { kind: BackgroundTaskKind::Agent, .. }]
+            [AgentEvent::TaskStarted { kind: BackgroundTaskKind::Agent, .. }]
         ));
         let send = crate::claude::wire::parse_frame(
             r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_send","name":"SendMessage","input":{"to":"a20b2336","message":"Also read the rebuild.","summary":"s"}}]}}"#,
@@ -1186,7 +1202,7 @@ mod tests {
         .expect("parses");
         assert_eq!(
             norm.normalize(done, false),
-            vec![AgentEvent::BackgroundTaskFinished {
+            vec![AgentEvent::TaskFinished {
                 task_id: "bg1".into(),
                 status: DoneStatus::Completed,
             }],
@@ -1201,7 +1217,7 @@ mod tests {
             |line: &str| norm.normalize(crate::claude::wire::parse_frame(line).unwrap(), false);
         assert_eq!(
             events(r#"{"type":"system","subtype":"task_started","task_id":"bg1","tool_use_id":"toolu_bash","task_type":"local_bash","description":"Run the test suite"}"#),
-            vec![AgentEvent::BackgroundTaskStarted {
+            vec![AgentEvent::TaskStarted {
                 task_id: "bg1".into(),
                 tool_use_id: Some("toolu_bash".into()),
                 kind: BackgroundTaskKind::Shell,
@@ -1210,7 +1226,7 @@ mod tests {
         );
         assert_eq!(
             events(r#"{"type":"system","subtype":"task_started","task_id":"a1","tool_use_id":"toolu_agent","task_type":"local_agent","subagent_type":"Explore"}"#),
-            vec![AgentEvent::BackgroundTaskStarted {
+            vec![AgentEvent::TaskStarted {
                 task_id: "a1".into(),
                 tool_use_id: Some("toolu_agent".into()),
                 kind: BackgroundTaskKind::Agent,
@@ -1224,13 +1240,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn background_task_list_replaces_the_set_and_skips_ambient_tasks() {
+        let mut norm = Normalizer::new();
+        let frame = crate::claude::wire::parse_frame(
+            r#"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"bg1","task_type":"local_bash","description":"Run tests"},{"task_id":"a1","task_type":"local_agent","description":"Explore"},{"task_id":"h1","task_type":"local_bash","description":"housekeeping","ambient":true}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            norm.normalize(frame, false),
+            vec![AgentEvent::BackgroundTasksChanged {
+                tasks: vec![
+                    BackgroundTaskInfo {
+                        task_id: "bg1".into(),
+                        kind: BackgroundTaskKind::Shell,
+                        description: "Run tests".into(),
+                    },
+                    BackgroundTaskInfo {
+                        task_id: "a1".into(),
+                        kind: BackgroundTaskKind::Agent,
+                        description: "Explore".into(),
+                    },
+                ]
+            }]
+        );
+        let empty = crate::claude::wire::parse_frame(
+            r#"{"type":"system","subtype":"background_tasks_changed","tasks":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            norm.normalize(empty, false),
+            vec![AgentEvent::BackgroundTasksChanged { tasks: Vec::new() }]
+        );
+    }
+
     fn without_tasks(events: Vec<AgentEvent>) -> Vec<AgentEvent> {
         events
             .into_iter()
             .filter(|event| {
                 !matches!(
                     event,
-                    AgentEvent::BackgroundTaskStarted { .. } | AgentEvent::BackgroundTaskFinished { .. }
+                    AgentEvent::TaskStarted { .. } | AgentEvent::TaskFinished { .. }
                 )
             })
             .collect()

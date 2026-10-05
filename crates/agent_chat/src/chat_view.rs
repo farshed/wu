@@ -165,7 +165,9 @@ pub struct ChatView {
     _glide: Task<()>,
     container_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     painted_turns: Rc<std::cell::RefCell<HashMap<usize, Bounds<Pixels>>>>,
+    this: WeakEntity<ChatView>,
     background_details: bool,
+    background_closed_at: Option<Instant>,
     background_ticking: bool,
     _background_tick: Task<()>,
     search: search::SearchState,
@@ -328,7 +330,9 @@ impl ChatView {
             _glide: Task::ready(()),
             container_bounds: Default::default(),
             painted_turns: Default::default(),
+            this: cx.entity().downgrade(),
             background_details: false,
+            background_closed_at: None,
             background_ticking: false,
             _background_tick: Task::ready(()),
             search: Default::default(),
@@ -2811,7 +2815,7 @@ impl Render for ChatView {
             }))
             .on_drop(cx.listener(|this, selection: &DraggedSelection, window, cx| {
                 let paths = this.selection_paths(selection, cx);
-                this.insert_mentions(paths, window, cx)
+                this.drop_paths(paths, window, cx)
             }))
             .children(self.render_lightbox(cx))
             .children(self.render_link_menu())
@@ -2927,6 +2931,36 @@ impl Item for ChatView {
     }
 
     fn show_toolbar(&self) -> bool {
+        true
+    }
+
+    fn handle_drop(
+        &self,
+        active_pane: &workspace::Pane,
+        dropped: &dyn std::any::Any,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        // Drops on a pane edge split the pane; only drops on the chat itself attach.
+        if self.subagent.is_some() || active_pane.drag_split_direction().is_some() {
+            return false;
+        }
+        let paths = if let Some(paths) = dropped.downcast_ref::<ExternalPaths>() {
+            paths.paths().to_vec()
+        } else if let Some(selection) = dropped.downcast_ref::<DraggedSelection>() {
+            self.selection_paths(selection, cx)
+        } else {
+            return false;
+        };
+        if paths.is_empty() {
+            return false;
+        }
+        // The pane calls this while it is already updating the chat.
+        let this = self.this.clone();
+        window.defer(cx, move |window, cx| {
+            this.update(cx, |chat, cx| chat.drop_paths(paths, window, cx))
+                .log_err();
+        });
         true
     }
 

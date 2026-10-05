@@ -11,6 +11,7 @@ use ui::prelude::*;
 
 const TICK: Duration = Duration::from_secs(1);
 const DETAILS_WIDTH: f32 = 360.;
+const CLOSE_DEBOUNCE: Duration = Duration::from_millis(300);
 
 struct TaskRow {
     kind: BackgroundTaskKind,
@@ -31,7 +32,11 @@ fn kind_label(kind: BackgroundTaskKind) -> &'static str {
 
 impl ChatView {
     pub(super) fn ensure_background_tick(&mut self, cx: &mut Context<Self>) {
-        if self.background_ticking || self.session.read(cx).background_tasks().is_empty() {
+        if self.session.read(cx).background_tasks().is_empty() {
+            self.background_details = false;
+            return;
+        }
+        if self.background_ticking {
             return;
         }
         self.background_ticking = true;
@@ -107,6 +112,7 @@ impl ChatView {
         Some(
             h_flex()
                 .id("agent-background-tasks")
+                .debug_selector(|| "agent-background-tasks".into())
                 .flex_none()
                 .h(px(20.))
                 .px(px(7.))
@@ -126,7 +132,11 @@ impl ChatView {
                 .child(label)
                 .child(div().text_color(text_faint(cx)).child(elapsed))
                 .on_click(cx.listener(|this, _, _, cx| {
-                    this.background_details = !this.background_details;
+                    // The card closes on this same press via its outside-click handler.
+                    let just_closed = this
+                        .background_closed_at
+                        .is_some_and(|closed| closed.elapsed() < CLOSE_DEBOUNCE);
+                    this.background_details = !this.background_details && !just_closed;
                     cx.notify();
                 }))
                 .when(open, |this| {
@@ -155,6 +165,7 @@ impl ChatView {
             .gap(px(2.))
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                 this.background_details = false;
+                this.background_closed_at = Some(std::time::Instant::now());
                 cx.notify();
             }))
             .children(
@@ -279,17 +290,31 @@ mod tests {
                         input: None,
                     },
                 },
-                AgentEvent::BackgroundTaskStarted {
+                AgentEvent::TaskStarted {
                     task_id: "bg1".into(),
                     tool_use_id: Some("toolu_bash".into()),
                     kind: BackgroundTaskKind::Shell,
                     description: String::new(),
                 },
-                AgentEvent::BackgroundTaskStarted {
+                AgentEvent::TaskStarted {
                     task_id: "a1".into(),
                     tool_use_id: Some("toolu_agent".into()),
                     kind: BackgroundTaskKind::Agent,
                     description: "Scan the repo".into(),
+                },
+                AgentEvent::BackgroundTasksChanged {
+                    tasks: vec![
+                        agent_harness::BackgroundTaskInfo {
+                            task_id: "bg1".into(),
+                            kind: BackgroundTaskKind::Shell,
+                            description: String::new(),
+                        },
+                        agent_harness::BackgroundTaskInfo {
+                            task_id: "a1".into(),
+                            kind: BackgroundTaskKind::Agent,
+                            description: String::new(),
+                        },
+                    ],
                 },
             ],
             cx,
@@ -322,20 +347,62 @@ mod tests {
         });
         feed_events(
             &session,
-            vec![
-                AgentEvent::BackgroundTaskFinished {
-                    task_id: "bg1".into(),
-                    status: agent_harness::DoneStatus::Completed,
-                },
-                AgentEvent::BackgroundTaskFinished {
-                    task_id: "a1".into(),
-                    status: agent_harness::DoneStatus::Completed,
-                },
-            ],
+            vec![AgentEvent::BackgroundTasksChanged { tasks: Vec::new() }],
             cx,
         );
         chat.update(cx, |chat, cx| {
             assert!(chat.render_background_indicator(cx).is_none())
         });
+    }
+
+    #[gpui::test]
+    async fn clicking_the_indicator_toggles_the_details(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            workspace::AppState::test(cx);
+            editor::init(cx);
+        });
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        store.update(cx, |store, _| store.skip_plan_usage());
+        let project = project::Project::test(FakeFs::new(cx.executor()), [], cx).await;
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        crate::session::tests::feed_user(&session, "run the tests in the background", cx);
+        feed_events(
+            &session,
+            vec![AgentEvent::BackgroundTasksChanged {
+                tasks: vec![agent_harness::BackgroundTaskInfo {
+                    task_id: "bg1".into(),
+                    kind: BackgroundTaskKind::Shell,
+                    description: "Run tests".into(),
+                }],
+            }],
+            cx,
+        );
+        let (chat, cx) = cx.add_window_view(|window, cx| {
+            ChatView::new(
+                session.clone(),
+                store.clone(),
+                project,
+                WeakEntity::new_invalid(),
+                window,
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        let chip = cx
+            .debug_bounds("agent-background-tasks")
+            .expect("indicator is drawn")
+            .center();
+        cx.simulate_click(chip, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(chat.read_with(cx, |chat, _| chat.background_details));
+        cx.simulate_click(chip, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(
+            !chat.read_with(cx, |chat, _| chat.background_details),
+            "a second click on the indicator closes the details"
+        );
     }
 }

@@ -642,6 +642,7 @@ impl Subagent {
     }
 }
 
+#[derive(Clone)]
 pub struct BackgroundTask {
     pub task_id: String,
     pub tool_use_id: Option<String>,
@@ -706,6 +707,7 @@ pub struct AgentSession {
     working: bool,
     compacting: bool,
     background_tasks: Vec<BackgroundTask>,
+    known_tasks: HashMap<String, BackgroundTask>,
     run: Option<ActiveRun>,
     prompt_after_stop: Option<Prompt>,
     user_stopped: bool,
@@ -763,6 +765,7 @@ impl AgentSession {
             working: false,
             compacting: false,
             background_tasks: Vec::new(),
+            known_tasks: HashMap::default(),
             run: None,
             prompt_after_stop: None,
             user_stopped: false,
@@ -1314,6 +1317,7 @@ impl AgentSession {
     fn run_ended(&mut self, cx: &mut Context<Self>) {
         self.run = None;
         self.background_tasks.clear();
+        self.known_tasks.clear();
         self.pending_questions.clear();
         self.cancel_running_tools();
         for subagent in self.subagents.values_mut() {
@@ -1463,28 +1467,53 @@ impl AgentSession {
                 self.save_entries(cx);
             }
             AgentEvent::Compacting { active } => self.compacting = active,
-            AgentEvent::BackgroundTaskStarted {
+            AgentEvent::TaskStarted {
                 task_id,
                 tool_use_id,
                 kind,
                 description,
             } => {
                 let started_at = self
-                    .background_tasks
-                    .iter()
-                    .find(|task| task.task_id == task_id)
+                    .known_tasks
+                    .get(&task_id)
                     .map_or_else(Instant::now, |task| task.started_at);
-                self.background_tasks.retain(|task| task.task_id != task_id);
-                self.background_tasks.push(BackgroundTask {
-                    task_id,
-                    tool_use_id,
-                    kind,
-                    description,
-                    started_at,
-                });
+                self.known_tasks.insert(
+                    task_id.clone(),
+                    BackgroundTask {
+                        task_id,
+                        tool_use_id,
+                        kind,
+                        description,
+                        started_at,
+                    },
+                );
             }
-            AgentEvent::BackgroundTaskFinished { task_id, .. } => {
+            AgentEvent::TaskFinished { task_id, .. } => {
+                self.known_tasks.remove(&task_id);
                 self.background_tasks.retain(|task| task.task_id != task_id);
+            }
+            AgentEvent::BackgroundTasksChanged { tasks } => {
+                let previous = std::mem::take(&mut self.background_tasks);
+                self.background_tasks = tasks
+                    .into_iter()
+                    .map(|info| {
+                        let known = self
+                            .known_tasks
+                            .get(&info.task_id)
+                            .or_else(|| previous.iter().find(|task| task.task_id == info.task_id));
+                        BackgroundTask {
+                            tool_use_id: known.and_then(|task| task.tool_use_id.clone()),
+                            started_at: known.map_or_else(Instant::now, |task| task.started_at),
+                            description: if info.description.trim().is_empty() {
+                                known.map(|task| task.description.clone()).unwrap_or_default()
+                            } else {
+                                info.description
+                            },
+                            kind: info.kind,
+                            task_id: info.task_id,
+                        }
+                    })
+                    .collect();
             }
             AgentEvent::Compacted { tokens, manual } => {
                 self.compacting = false;
@@ -3369,48 +3398,89 @@ done
     }
 
     #[gpui::test]
-    async fn background_tasks_are_tracked_until_they_finish(cx: &mut TestAppContext) {
+    async fn background_tasks_follow_the_live_list(cx: &mut TestAppContext) {
+        use agent_harness::{BackgroundTaskInfo, BackgroundTaskKind};
         let directory = tempfile::tempdir().expect("temporary directory");
         let store = new_store(directory.path(), cx);
         let session = store.update(cx, |store, cx| {
             store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
         });
-        let started = |task_id: &str, kind| AgentEvent::BackgroundTaskStarted {
+        let info = |task_id: &str, kind| BackgroundTaskInfo {
             task_id: task_id.into(),
-            tool_use_id: None,
             kind,
-            description: format!("{task_id} description"),
+            description: String::new(),
         };
         feed_events(
             &session,
             vec![
-                started("bg1", agent_harness::BackgroundTaskKind::Shell),
-                started("a1", agent_harness::BackgroundTaskKind::Agent),
-                started("bg1", agent_harness::BackgroundTaskKind::Shell),
+                AgentEvent::TaskStarted {
+                    task_id: "fg1".into(),
+                    tool_use_id: Some("toolu_fg".into()),
+                    kind: BackgroundTaskKind::Shell,
+                    description: "Foreground command".into(),
+                },
+                AgentEvent::TaskStarted {
+                    task_id: "bg1".into(),
+                    tool_use_id: Some("toolu_bg".into()),
+                    kind: BackgroundTaskKind::Shell,
+                    description: "Run tests".into(),
+                },
             ],
             cx,
         );
-        let ids = |cx: &mut TestAppContext| {
+        let tasks = |cx: &mut TestAppContext| {
             session.read_with(cx, |session, _| {
                 session
                     .background_tasks()
                     .iter()
-                    .map(|task| task.task_id.clone())
+                    .map(|task| (task.task_id.clone(), task.description.clone(), task.tool_use_id.clone()))
                     .collect::<Vec<_>>()
             })
         };
-        assert_eq!(ids(cx), ["a1", "bg1"], "a repeated start does not duplicate the task");
+        assert!(tasks(cx).is_empty(), "started tasks are not background work by themselves");
         feed_events(
             &session,
-            vec![AgentEvent::BackgroundTaskFinished {
+            vec![AgentEvent::BackgroundTasksChanged {
+                tasks: vec![
+                    info("bg1", BackgroundTaskKind::Shell),
+                    info("a1", BackgroundTaskKind::Agent),
+                ],
+            }],
+            cx,
+        );
+        assert_eq!(
+            tasks(cx),
+            [
+                ("bg1".into(), "Run tests".into(), Some("toolu_bg".into())),
+                ("a1".into(), String::new(), None),
+            ]
+        );
+        feed_events(
+            &session,
+            vec![AgentEvent::BackgroundTasksChanged {
+                tasks: vec![info("a1", BackgroundTaskKind::Agent)],
+            }],
+            cx,
+        );
+        assert_eq!(tasks(cx).len(), 1, "the list replaces the set even without an end message");
+        feed_events(
+            &session,
+            vec![AgentEvent::TaskFinished {
                 task_id: "a1".into(),
                 status: DoneStatus::Completed,
             }],
             cx,
         );
-        assert_eq!(ids(cx), ["bg1"]);
+        assert!(tasks(cx).is_empty());
+        feed_events(
+            &session,
+            vec![AgentEvent::BackgroundTasksChanged {
+                tasks: vec![info("bg2", BackgroundTaskKind::Shell)],
+            }],
+            cx,
+        );
         session.update(cx, |session, cx| session.run_ended(cx));
-        assert!(ids(cx).is_empty(), "tasks end with the agent process");
+        assert!(tasks(cx).is_empty(), "tasks end with the agent process");
     }
 
     #[gpui::test]

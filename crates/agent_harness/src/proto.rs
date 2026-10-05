@@ -321,6 +321,14 @@ pub enum BackgroundTaskKind {
     Other,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundTaskInfo {
+    pub task_id: String,
+    pub kind: BackgroundTaskKind,
+    pub description: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AgentEvent {
@@ -374,16 +382,20 @@ pub enum AgentEvent {
         active: bool,
     },
     #[serde(rename_all = "camelCase")]
-    BackgroundTaskStarted {
+    TaskStarted {
         task_id: String,
         tool_use_id: Option<String>,
         kind: BackgroundTaskKind,
         description: String,
     },
     #[serde(rename_all = "camelCase")]
-    BackgroundTaskFinished {
+    TaskFinished {
         task_id: String,
         status: DoneStatus,
+    },
+    /// The complete set of live background tasks; replaces any earlier set.
+    BackgroundTasksChanged {
+        tasks: Vec<BackgroundTaskInfo>,
     },
     Compacted {
         tokens: Option<u64>,

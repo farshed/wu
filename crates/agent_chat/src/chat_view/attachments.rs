@@ -247,11 +247,17 @@ impl ChatView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (images, others): (Vec<PathBuf>, Vec<PathBuf>) = paths
-            .paths()
-            .iter()
-            .cloned()
-            .partition(|path| is_image_path(path));
+        self.drop_paths(paths.paths().to_vec(), window, cx);
+    }
+
+    pub(super) fn drop_paths(
+        &mut self,
+        paths: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (images, others): (Vec<PathBuf>, Vec<PathBuf>) =
+            paths.into_iter().partition(|path| is_image_path(path));
         self.attach_paths(images, cx);
         self.insert_mentions(others, window, cx);
         cx.notify();
@@ -260,7 +266,7 @@ impl ChatView {
     pub(super) fn selection_paths(
         &self,
         selection: &workspace::DraggedSelection,
-        cx: &Context<Self>,
+        cx: &App,
     ) -> Vec<PathBuf> {
         let project = self.project.read(cx);
         selection
@@ -387,6 +393,59 @@ impl ChatView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[gpui::test]
+    async fn files_dropped_on_the_chat_tab_attach_instead_of_opening(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use crate::{AgentKind, session::tests::new_store};
+        cx.update(|cx| {
+            workspace::AppState::test(cx);
+            editor::init(cx);
+        });
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let image = directory.path().join("screenshot.png");
+        image::RgbImage::new(2, 2).save(&image).expect("write png");
+        let notes = directory.path().join("notes.txt");
+        std::fs::write(&notes, "hello").expect("write text");
+        let store = new_store(directory.path(), cx);
+        store.update(cx, |store, _| store.skip_plan_usage());
+        let project = project::Project::test(project::FakeFs::new(cx.executor()), [], cx).await;
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let (multi_workspace, cx) = cx.add_window_view(|window, cx| {
+            workspace::MultiWorkspace::test_new(project.clone(), window, cx)
+        });
+        let workspace = multi_workspace.read_with(cx, |multi, _| multi.workspace().clone());
+        let chat = workspace.update_in(cx, |workspace, window, cx| {
+            let weak = cx.entity().downgrade();
+            let chat = cx.new(|cx| {
+                ChatView::new(session.clone(), store.clone(), project.clone(), weak, window, cx)
+            });
+            workspace.add_item_to_active_pane(Box::new(chat.clone()), None, true, window, cx);
+            chat
+        });
+        let pane = workspace.read_with(cx, |workspace, _| workspace.active_pane().clone());
+        let dropped = ExternalPaths([image.clone(), notes].into_iter().collect());
+        let drop = |cx: &mut gpui::VisualTestContext| {
+            pane.update_in(cx, |pane, window, cx| {
+                let item = pane.active_item().expect("chat tab");
+                item.handle_drop(pane, &dropped, window, cx)
+            })
+        };
+        assert!(drop(cx), "the chat takes the drop");
+        cx.run_until_parked();
+        chat.read_with(cx, |chat, cx| {
+            assert_eq!(chat.attachments, vec![image.clone()]);
+            assert!(chat.composer.read(cx).text(cx).contains("notes.txt"));
+        });
+
+        pane.update(cx, |pane, _| {
+            pane.drag_split_direction = Some(workspace::SplitDirection::Right)
+        });
+        assert!(!drop(cx), "edge drops still split the pane");
+    }
 
     #[test]
     fn supported_images_are_used_in_place_and_others_become_png() {

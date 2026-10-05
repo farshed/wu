@@ -40,9 +40,23 @@ pub(crate) struct SystemFrame {
     #[serde(default)]
     pub task_type: Option<String>,
     #[serde(default)]
+    pub tasks: Vec<WireBackgroundTask>,
+    #[serde(default)]
     pub compact_result: Option<String>,
     #[serde(default)]
     pub compact_error: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct WireBackgroundTask {
+    #[serde(default)]
+    pub task_id: String,
+    #[serde(default)]
+    pub task_type: Option<String>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub ambient: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
