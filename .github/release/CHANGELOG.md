@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+## 1.1.2 - 2026-10-05
+
 - Fixed images dropped onto an agent chat opening in a preview instead of being attached.
 - When an agent is waiting on a background command or subagent, the bar under the chat box shows what's running and for how long.
 - Search inside an open agent chat with the Find bar (Cmd-F, or Ctrl-F on Windows and Linux).
