@@ -310,6 +310,7 @@ impl Render for ContextCard {
             .key_context("menu")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|_, _: &menu::Cancel, _, cx| cx.emit(DismissEvent)))
+            .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(DismissEvent)))
             .child(menu_heading("Context window", cx))
             .child(
                 div()
@@ -373,6 +374,7 @@ impl Render for UsageCard {
             .key_context("menu")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|_, _: &menu::Cancel, _, cx| cx.emit(DismissEvent)))
+            .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(DismissEvent)))
             .w(px(USAGE_CARD_WIDTH))
             .child(menu_heading(&plan_label, cx))
             .child(
@@ -537,6 +539,52 @@ impl UsageCard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::{TestAppContext, VisualTestContext};
+    use ui::{PopoverMenu, PopoverMenuHandle};
+
+    struct Host {
+        card: PopoverMenuHandle<ContextCard>,
+    }
+
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            h_flex()
+                .size_full()
+                .items_start()
+                .child(
+                    div().debug_selector(|| "context-chip".into()).child(
+                        PopoverMenu::new("context")
+                            .with_handle(self.card.clone())
+                            .trigger(Button::new("context-trigger", "Context"))
+                            .menu(|_, cx| Some(cx.new(|cx| ContextCard::new(None, cx)))),
+                    ),
+                )
+                .child(div().w(px(600.)))
+                .child(div().debug_selector(|| "outside".into()).size(px(40.)))
+        }
+    }
+
+    #[gpui::test]
+    fn context_card_closes_on_a_click_elsewhere(cx: &mut TestAppContext) {
+        cx.update(workspace::AppState::test);
+        let card = PopoverMenuHandle::default();
+        let window = cx.add_window({
+            let card = card.clone();
+            move |_, _| Host { card }
+        });
+        let cx = &mut VisualTestContext::from_window(*window, cx);
+        cx.run_until_parked();
+        let chip = cx.debug_bounds("context-chip").expect("chip is drawn").center();
+        cx.simulate_click(chip, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(card.is_deployed());
+
+        let outside = cx.debug_bounds("outside").expect("outside area is drawn").center();
+        cx.simulate_click(outside, gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert!(!card.is_deployed(), "clicking elsewhere closes the card");
+    }
+
 
     #[test]
     fn token_counts_are_grouped_by_thousands() {

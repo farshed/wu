@@ -7,6 +7,7 @@ release body.
 
 ## Unreleased
 
+- Fixed the context window and plan usage popups in agent chats staying open when clicking elsewhere.
 - Removed the options menu from the top of the agent chat sidebar.
 - Agent chats in the sidebar no longer repeat the project name on every row, so the list is shorter and easier to scan.
 - The agent chat sidebar now uses the same background as the other panels in every theme.
