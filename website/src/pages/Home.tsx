@@ -46,11 +46,8 @@ export function Home() {
           </div>
         </section>
 
-        <section className="mx-auto my-28 max-w-[1240px] px-8 max-sm:my-18 max-sm:px-4">
+        <section className="mx-auto mt-28 mb-40 max-w-[1240px] px-8 max-sm:my-18 max-sm:px-4">
           <WuWindowFrame className={mediaFrame} />
-          <p className="mt-4 text-center text-sm text-tertiary max-sm:hidden">
-            Click around: open files, search the project or chat with the agent.
-          </p>
         </section>
 
         <MediaSection
