@@ -7,6 +7,7 @@ release body.
 
 ## Unreleased
 
+- When an agent is waiting on a background command or subagent, the bar under the chat box shows what's running and for how long. Click it to see the command, or to open the subagent.
 - Search inside an open agent chat with the Find bar (Cmd-F, or Ctrl-F on Windows and Linux). It searches your messages and the agent's replies.
 - Fixed macOS asking Wu for access to Desktop, Documents and Photos when agent chat looked up the available models.
 - Fixed the tab and the split and zoom buttons flickering after clicking into a chat message and scrolling away from it.

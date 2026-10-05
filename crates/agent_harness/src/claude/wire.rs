@@ -36,6 +36,10 @@ pub(crate) struct SystemFrame {
     #[serde(default, alias = "compactMetadata")]
     pub compact_metadata: Option<Value>,
     #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub task_type: Option<String>,
+    #[serde(default)]
     pub compact_result: Option<String>,
     #[serde(default)]
     pub compact_error: Option<String>,

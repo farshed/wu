@@ -642,6 +642,14 @@ impl Subagent {
     }
 }
 
+pub struct BackgroundTask {
+    pub task_id: String,
+    pub tool_use_id: Option<String>,
+    pub kind: agent_harness::BackgroundTaskKind,
+    pub description: String,
+    pub started_at: Instant,
+}
+
 pub struct PendingQuestion {
     pub questions: Vec<UserInputQuestion>,
     responder: Option<tokio::sync::oneshot::Sender<Vec<UserInputAnswer>>>,
@@ -697,6 +705,7 @@ pub struct AgentSession {
     subagents: HashMap<String, Subagent>,
     working: bool,
     compacting: bool,
+    background_tasks: Vec<BackgroundTask>,
     run: Option<ActiveRun>,
     prompt_after_stop: Option<Prompt>,
     user_stopped: bool,
@@ -753,6 +762,7 @@ impl AgentSession {
             subagents,
             working: false,
             compacting: false,
+            background_tasks: Vec::new(),
             run: None,
             prompt_after_stop: None,
             user_stopped: false,
@@ -822,6 +832,16 @@ impl AgentSession {
 
     pub fn is_working(&self) -> bool {
         self.working
+    }
+
+    pub fn background_tasks(&self) -> &[BackgroundTask] {
+        &self.background_tasks
+    }
+
+    pub fn tool_entry(&self, id: &str) -> Option<&ToolEntry> {
+        std::iter::once(&self.transcript)
+            .chain(self.subagents.values().map(|subagent| &subagent.transcript))
+            .find_map(|transcript| transcript.tool(id))
     }
 
     pub fn is_compacting(&self) -> bool {
@@ -1293,6 +1313,7 @@ impl AgentSession {
 
     fn run_ended(&mut self, cx: &mut Context<Self>) {
         self.run = None;
+        self.background_tasks.clear();
         self.pending_questions.clear();
         self.cancel_running_tools();
         for subagent in self.subagents.values_mut() {
@@ -1442,6 +1463,29 @@ impl AgentSession {
                 self.save_entries(cx);
             }
             AgentEvent::Compacting { active } => self.compacting = active,
+            AgentEvent::BackgroundTaskStarted {
+                task_id,
+                tool_use_id,
+                kind,
+                description,
+            } => {
+                let started_at = self
+                    .background_tasks
+                    .iter()
+                    .find(|task| task.task_id == task_id)
+                    .map_or_else(Instant::now, |task| task.started_at);
+                self.background_tasks.retain(|task| task.task_id != task_id);
+                self.background_tasks.push(BackgroundTask {
+                    task_id,
+                    tool_use_id,
+                    kind,
+                    description,
+                    started_at,
+                });
+            }
+            AgentEvent::BackgroundTaskFinished { task_id, .. } => {
+                self.background_tasks.retain(|task| task.task_id != task_id);
+            }
             AgentEvent::Compacted { tokens, manual } => {
                 self.compacting = false;
                 // After /compact the Claude process keeps the old history in memory; a resume loads the new one.
@@ -3322,6 +3366,51 @@ done
         store.update(cx, |store, cx| store.delete_session(&id, cx));
         assert!(opening.await.is_err());
         store.read_with(cx, |store, _| assert!(!store.live.contains_key(&id)));
+    }
+
+    #[gpui::test]
+    async fn background_tasks_are_tracked_until_they_finish(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let started = |task_id: &str, kind| AgentEvent::BackgroundTaskStarted {
+            task_id: task_id.into(),
+            tool_use_id: None,
+            kind,
+            description: format!("{task_id} description"),
+        };
+        feed_events(
+            &session,
+            vec![
+                started("bg1", agent_harness::BackgroundTaskKind::Shell),
+                started("a1", agent_harness::BackgroundTaskKind::Agent),
+                started("bg1", agent_harness::BackgroundTaskKind::Shell),
+            ],
+            cx,
+        );
+        let ids = |cx: &mut TestAppContext| {
+            session.read_with(cx, |session, _| {
+                session
+                    .background_tasks()
+                    .iter()
+                    .map(|task| task.task_id.clone())
+                    .collect::<Vec<_>>()
+            })
+        };
+        assert_eq!(ids(cx), ["a1", "bg1"], "a repeated start does not duplicate the task");
+        feed_events(
+            &session,
+            vec![AgentEvent::BackgroundTaskFinished {
+                task_id: "a1".into(),
+                status: DoneStatus::Completed,
+            }],
+            cx,
+        );
+        assert_eq!(ids(cx), ["bg1"]);
+        session.update(cx, |session, cx| session.run_ended(cx));
+        assert!(ids(cx).is_empty(), "tasks end with the agent process");
     }
 
     #[gpui::test]

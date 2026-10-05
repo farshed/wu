@@ -1,4 +1,5 @@
 mod attachments;
+mod background_tasks;
 mod checkout;
 mod completion;
 mod composer;
@@ -164,6 +165,9 @@ pub struct ChatView {
     _glide: Task<()>,
     container_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     painted_turns: Rc<std::cell::RefCell<HashMap<usize, Bounds<Pixels>>>>,
+    background_details: bool,
+    background_ticking: bool,
+    _background_tick: Task<()>,
     search: search::SearchState,
     outline_hover: Option<usize>,
     expanded_work: HashSet<usize>,
@@ -324,6 +328,9 @@ impl ChatView {
             _glide: Task::ready(()),
             container_bounds: Default::default(),
             painted_turns: Default::default(),
+            background_details: false,
+            background_ticking: false,
+            _background_tick: Task::ready(()),
             search: Default::default(),
             outline_hover: None,
             expanded_work: HashSet::default(),
@@ -2770,6 +2777,7 @@ impl ChatView {
 impl Render for ChatView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.painted_turns.borrow_mut().clear();
+        self.ensure_background_tick(cx);
         self.update_scroll_state();
         self.request_visible_diagrams(cx);
         self.refresh_path_links(cx);

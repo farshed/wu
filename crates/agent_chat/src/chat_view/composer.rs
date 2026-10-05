@@ -474,6 +474,7 @@ impl ChatView {
         h_flex()
             .h(px(24.))
             .child(self.render_checkout(cx))
+            .children(self.render_background_indicator(cx))
             .child(
                 h_flex()
                     .flex_none()

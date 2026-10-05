@@ -1,4 +1,4 @@
-use crate::{AgentEvent, DoneStatus, HarnessId, TodoItem, TodoStatus, ToolCall};
+use crate::{AgentEvent, BackgroundTaskKind, DoneStatus, HarnessId, TodoItem, TodoStatus, ToolCall};
 use serde_json::Value;
 
 use super::wire::{ContentBlock, Frame};
@@ -270,19 +270,6 @@ impl Normalizer {
         match frame {
             Frame::System(f) => {
                 if f.subtype == "task_notification" {
-                    // After a resume the tool id may be SendMessage's or missing; the task id is stable.
-                    let parent = f
-                        .task_id
-                        .as_deref()
-                        .and_then(|task| self.spawn_by_task_id.get(task).map(String::as_str))
-                        .or_else(|| f.tool_use_id.as_deref().filter(|t| !t.is_empty()));
-                    let Some(parent) = parent else {
-                        return Vec::new();
-                    };
-                    // Background shell tasks share this subtype and must not settle as subagents.
-                    if !self.spawn_tool_ids.contains(parent) {
-                        return Vec::new();
-                    }
                     let status = match f.status.as_deref().unwrap_or("") {
                         "completed" | "complete" | "succeeded" | "success" => DoneStatus::Completed,
                         "failed" | "errored" | "error" => DoneStatus::Errored,
@@ -291,32 +278,71 @@ impl Normalizer {
                         }
                         _ => return Vec::new(),
                     };
-                    return vec![tag(
-                        parent,
-                        AgentEvent::Done {
+                    let mut events = Vec::new();
+                    if let Some(task) = f.task_id.as_deref().filter(|t| !t.is_empty()) {
+                        events.push(AgentEvent::BackgroundTaskFinished {
+                            task_id: task.to_owned(),
                             status,
-                            result: None,
-                            error: None,
-                            session_id: None,
-                        },
-                    )];
+                        });
+                    }
+                    // After a resume the tool id may be SendMessage's or missing; the task id is stable.
+                    let parent = f
+                        .task_id
+                        .as_deref()
+                        .and_then(|task| self.spawn_by_task_id.get(task).map(String::as_str))
+                        .or_else(|| f.tool_use_id.as_deref().filter(|t| !t.is_empty()));
+                    // Background shell tasks share this subtype and must not settle as subagents.
+                    if let Some(parent) = parent
+                        && self.spawn_tool_ids.contains(parent)
+                    {
+                        events.push(tag(
+                            parent,
+                            AgentEvent::Done {
+                                status,
+                                result: None,
+                                error: None,
+                                session_id: None,
+                            },
+                        ));
+                    }
+                    return events;
                 }
-                // Shell tasks share task_started but carry no subagent_type.
-                if f.subtype == "task_started"
-                    && f.subagent_type.is_some()
-                    && let (Some(task), Some(tool)) = (
-                        f.task_id.as_deref().filter(|t| !t.is_empty()),
-                        f.tool_use_id.as_deref().filter(|t| !t.is_empty()),
-                    )
-                {
-                    let spawn = self
-                        .spawn_by_task_id
-                        .entry(task.to_owned())
-                        .or_insert_with(|| tool.to_owned());
-                    self.spawn_tool_ids.insert(spawn.clone());
-                    self.spawn_by_tool_id
-                        .insert(tool.to_owned(), spawn.clone());
-                    return Vec::new();
+                if f.subtype == "task_started" {
+                    let Some(task) = f.task_id.as_deref().filter(|t| !t.is_empty()) else {
+                        return Vec::new();
+                    };
+                    let tool = f.tool_use_id.as_deref().filter(|t| !t.is_empty());
+                    // Shell tasks share task_started but carry no subagent_type.
+                    if f.subagent_type.is_some()
+                        && let Some(tool) = tool
+                    {
+                        let spawn = self
+                            .spawn_by_task_id
+                            .entry(task.to_owned())
+                            .or_insert_with(|| tool.to_owned());
+                        self.spawn_tool_ids.insert(spawn.clone());
+                        self.spawn_by_tool_id
+                            .insert(tool.to_owned(), spawn.clone());
+                    }
+                    let kind = if f.subagent_type.is_some()
+                        || f.task_type.as_deref().is_some_and(|kind| kind.contains("agent"))
+                    {
+                        BackgroundTaskKind::Agent
+                    } else if f.task_type.as_deref().is_some_and(|kind| kind.contains("bash")) {
+                        BackgroundTaskKind::Shell
+                    } else {
+                        BackgroundTaskKind::Other
+                    };
+                    return vec![AgentEvent::BackgroundTaskStarted {
+                        task_id: task.to_owned(),
+                        tool_use_id: tool.map(str::to_owned),
+                        kind,
+                        description: f
+                            .description
+                            .clone()
+                            .or_else(|| f.subagent_type.clone())
+                            .unwrap_or_default(),
+                    }];
                 }
                 if f.subtype == "status" {
                     // The CLI repeats the compacting status every 30 seconds.
@@ -902,7 +928,10 @@ mod tests {
             r#"{"type":"system","subtype":"task_started","task_id":"a20b2336","tool_use_id":"toolu_spawn","subagent_type":"general-purpose","prompt":"p","description":"d"}"#,
         )
         .expect("parses");
-        assert!(norm.normalize(started, false).is_empty());
+        assert!(matches!(
+            &norm.normalize(started, false)[..],
+            [AgentEvent::BackgroundTaskStarted { kind: BackgroundTaskKind::Agent, .. }]
+        ));
         let send = crate::claude::wire::parse_frame(
             r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_send","name":"SendMessage","input":{"to":"a20b2336","message":"Also read the rebuild.","summary":"s"}}]}}"#,
         )
@@ -922,7 +951,7 @@ mod tests {
             r#"{"type":"system","subtype":"task_started","task_id":"bg1","tool_use_id":"toolu_bash","task_type":"local_bash"}"#,
         )
         .expect("parses");
-        assert!(norm.normalize(shell_task, false).is_empty());
+        assert!(without_tasks(norm.normalize(shell_task, false)).is_empty());
         let send = crate::claude::wire::parse_frame(
             r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"SendMessage","input":{"to":"bg1","message":"x"}}]}}"#,
         )
@@ -980,7 +1009,7 @@ mod tests {
         };
         let notify = |norm: &mut Normalizer, raw: &str| {
             let frame = crate::claude::wire::parse_frame(raw).expect("parses");
-            norm.normalize(frame, false)
+            without_tasks(norm.normalize(frame, false))
         };
         let mut norm = Normalizer::new();
         spawn(&mut norm);
@@ -1034,10 +1063,10 @@ mod tests {
             ] {
                 norm.normalize(crate::claude::wire::parse_frame(raw).unwrap(), false);
             }
-            let events = norm.normalize(
+            let events = without_tasks(norm.normalize(
                 crate::claude::wire::parse_frame(notification).unwrap(),
                 false,
-            );
+            ));
             let expected = if notification.contains("completed") {
                 DoneStatus::Completed
             } else {
@@ -1117,9 +1146,9 @@ mod tests {
         norm.normalize(crate::claude::wire::parse_frame(
             r#"{"type":"system","subtype":"task_started","task_id":"a1","tool_use_id":"toolu_send","subagent_type":"general-purpose"}"#,
         ).unwrap(), false);
-        let events = norm.normalize(crate::claude::wire::parse_frame(
+        let events = without_tasks(norm.normalize(crate::claude::wire::parse_frame(
             r#"{"type":"system","subtype":"task_notification","task_id":"a1","tool_use_id":"toolu_send","status":"completed"}"#,
-        ).unwrap(), false);
+        ).unwrap(), false));
         assert_eq!(
             events,
             vec![tag(
@@ -1155,7 +1184,56 @@ mod tests {
             r#"{"type":"system","subtype":"task_notification","task_id":"bg1","tool_use_id":"toolu_bash","status":"completed"}"#,
         )
         .expect("parses");
-        assert!(norm.normalize(done, false).is_empty());
+        assert_eq!(
+            norm.normalize(done, false),
+            vec![AgentEvent::BackgroundTaskFinished {
+                task_id: "bg1".into(),
+                status: DoneStatus::Completed,
+            }],
+            "a shell task finishes as a background task, never as a subagent"
+        );
+    }
+
+    #[test]
+    fn background_tasks_report_their_kind_and_description() {
+        let mut norm = Normalizer::new();
+        let mut events =
+            |line: &str| norm.normalize(crate::claude::wire::parse_frame(line).unwrap(), false);
+        assert_eq!(
+            events(r#"{"type":"system","subtype":"task_started","task_id":"bg1","tool_use_id":"toolu_bash","task_type":"local_bash","description":"Run the test suite"}"#),
+            vec![AgentEvent::BackgroundTaskStarted {
+                task_id: "bg1".into(),
+                tool_use_id: Some("toolu_bash".into()),
+                kind: BackgroundTaskKind::Shell,
+                description: "Run the test suite".into(),
+            }]
+        );
+        assert_eq!(
+            events(r#"{"type":"system","subtype":"task_started","task_id":"a1","tool_use_id":"toolu_agent","task_type":"local_agent","subagent_type":"Explore"}"#),
+            vec![AgentEvent::BackgroundTaskStarted {
+                task_id: "a1".into(),
+                tool_use_id: Some("toolu_agent".into()),
+                kind: BackgroundTaskKind::Agent,
+                description: "Explore".into(),
+            }]
+        );
+        assert!(events(r#"{"type":"system","subtype":"task_started","tool_use_id":"x"}"#).is_empty());
+        assert!(
+            events(r#"{"type":"system","subtype":"task_notification","task_id":"bg1","status":"running"}"#)
+                .is_empty()
+        );
+    }
+
+    fn without_tasks(events: Vec<AgentEvent>) -> Vec<AgentEvent> {
+        events
+            .into_iter()
+            .filter(|event| {
+                !matches!(
+                    event,
+                    AgentEvent::BackgroundTaskStarted { .. } | AgentEvent::BackgroundTaskFinished { .. }
+                )
+            })
+            .collect()
     }
 
     #[test]

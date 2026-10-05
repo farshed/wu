@@ -313,6 +313,14 @@ pub enum DoneStatus {
     Errored,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BackgroundTaskKind {
+    Shell,
+    Agent,
+    Other,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AgentEvent {
@@ -364,6 +372,18 @@ pub enum AgentEvent {
     },
     Compacting {
         active: bool,
+    },
+    #[serde(rename_all = "camelCase")]
+    BackgroundTaskStarted {
+        task_id: String,
+        tool_use_id: Option<String>,
+        kind: BackgroundTaskKind,
+        description: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    BackgroundTaskFinished {
+        task_id: String,
+        status: DoneStatus,
     },
     Compacted {
         tokens: Option<u64>,
