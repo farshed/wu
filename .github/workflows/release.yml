@@ -25,6 +25,11 @@ jobs:
 
   bundle_mac:
     needs: check_version
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64, x86_64]
+    # Intel builds are cross-compiled on the Apple Silicon runner.
     runs-on: macos-14
     timeout-minutes: 300
     steps:
@@ -55,18 +60,18 @@ jobs:
           APPLE_NOTARIZATION_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
           APPLE_NOTARIZATION_ISSUER_ID: ${{ secrets.APPLE_NOTARIZATION_ISSUER_ID }}
           APPLE_NOTARIZATION_TEAM: ${{ secrets.APPLE_NOTARIZATION_TEAM }}
-        run: script/bundle-mac aarch64-apple-darwin
+        run: script/bundle-mac ${{ matrix.arch }}-apple-darwin
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-aarch64
+          name: macos-${{ matrix.arch }}
           path: |
-            target/aarch64-apple-darwin/release/Wu-aarch64.dmg
-            target/wu-remote-server-macos-aarch64.gz
+            target/${{ matrix.arch }}-apple-darwin/release/Wu-${{ matrix.arch }}.dmg
+            target/wu-remote-server-macos-${{ matrix.arch }}.gz
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-aarch64-dsym
-          path: target/aarch64-apple-darwin/release/Wu.dSYM.zip
+          name: macos-${{ matrix.arch }}-dsym
+          path: target/${{ matrix.arch }}-apple-darwin/release/Wu.dSYM.zip
           if-no-files-found: error
 
   bundle_linux:

@@ -21,6 +21,7 @@ Wu is a fast, native code editor written in Rust, with a clean, modern design an
 ## Download
 
 - [macOS (Apple Silicon)](https://github.com/farshed/wu/releases/latest/download/Wu-aarch64.dmg)
+- [macOS (Intel)](https://github.com/farshed/wu/releases/latest/download/Wu-x86_64.dmg)
 - [Linux x86-64](https://github.com/farshed/wu/releases/latest/download/wu-linux-x86_64.tar.gz)
 - [Linux AArch64](https://github.com/farshed/wu/releases/latest/download/wu-linux-aarch64.tar.gz)
 - [Windows x86-64](https://github.com/farshed/wu/releases/latest/download/Wu-x86_64.exe)

@@ -2,9 +2,13 @@
 
 All releases are available [here](https://github.com/farshed/wu/releases/latest).
 
-### macOS (Apple Silicon)
+### macOS (Apple Silicon and Intel)
 
-1. Download the [installer](https://github.com/farshed/wu/releases/latest/download/Wu-aarch64.dmg), open it, and drag Wu into your Applications folder. Wu is not signed with an Apple Developer certificate yet, so macOS will block it the first time you open it.
+1. Download the installer for your Mac, open it, and drag Wu into your Applications folder.
+    - [**Apple Silicon**](https://github.com/farshed/wu/releases/latest/download/Wu-aarch64.dmg) (M1 and later)
+    - [**Intel**](https://github.com/farshed/wu/releases/latest/download/Wu-x86_64.dmg)
+
+   Wu is not signed with an Apple Developer certificate yet, so macOS will block it the first time you open it.
 2. Open Terminal and run:
 
    ```sh
