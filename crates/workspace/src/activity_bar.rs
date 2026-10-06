@@ -352,7 +352,7 @@ impl Render for ActivityBar {
             .w(bar_width(window, cx))
             .h_full()
             .items_center()
-            .gap_1()
+            .gap_2()
             .py_1()
             .bg(colors.status_bar_background)
             .border_r_1()

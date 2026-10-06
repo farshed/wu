@@ -1261,7 +1261,7 @@ export function WuWindow() {
       </div>
 
       <div className="flex min-h-0 flex-1 border-y border-[#ffffff1a] bg-[#0d0d0dcc]">
-        <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-[#ffffff1a] py-1">
+        <div className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-[#ffffff1a] py-1">
           {panels.map((item) => {
             const isActive = panel === item.key;
             return (
