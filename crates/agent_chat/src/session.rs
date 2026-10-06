@@ -828,7 +828,14 @@ impl AgentSession {
             .chain(self.subagents.values().map(|subagent| &subagent.transcript))
             .find_map(|transcript| transcript.tool(id))
             .is_some_and(|tool| tool.status == ToolStatus::Running);
-        subagent.status.is_none() && self.run.is_some() && (spawn_running || self.working)
+        let backgrounded = self
+            .background_tasks
+            .iter()
+            .chain(self.known_tasks.values())
+            .any(|task| task.tool_use_id.as_deref() == Some(id));
+        subagent.status.is_none()
+            && self.run.is_some()
+            && (spawn_running || backgrounded || self.working)
     }
 
     pub fn mark_seen(&mut self, cx: &mut Context<Self>) {
@@ -3792,6 +3799,56 @@ done
                     "tool child-tool: Canceled"
                 ]
             );
+        });
+    }
+
+    #[gpui::test]
+    async fn a_background_subagent_runs_after_the_turn_that_spawned_it(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        feed_subagent(&session, cx);
+        session.update(cx, |session, cx| {
+            let (steering, _) = tokio::sync::mpsc::channel(1);
+            session.run = Some(ActiveRun {
+                steering,
+                interrupt: CancellationToken::new(),
+                _events: Task::ready(()),
+            });
+            for event in [
+                AgentEvent::TaskStarted {
+                    task_id: "agent-task".into(),
+                    tool_use_id: Some("spawn-1".into()),
+                    kind: agent_harness::BackgroundTaskKind::Agent,
+                    description: "Scan the repo".into(),
+                },
+                AgentEvent::ToolResult {
+                    id: "spawn-1".into(),
+                    is_error: false,
+                    output: Some("Started in the background".into()),
+                    diff: None,
+                },
+                AgentEvent::Done {
+                    status: DoneStatus::Completed,
+                    result: None,
+                    error: None,
+                    session_id: None,
+                },
+            ] {
+                session.apply_event(event, cx);
+            }
+            assert!(!session.is_working());
+            assert!(session.subagent_running("spawn-1"));
+            session.apply_event(
+                AgentEvent::TaskFinished {
+                    task_id: "agent-task".into(),
+                    status: DoneStatus::Completed,
+                },
+                cx,
+            );
+            assert!(!session.subagent_running("spawn-1"));
         });
     }
 
