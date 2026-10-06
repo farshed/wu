@@ -47,6 +47,4 @@ Wu is a derivative work of [Zed](https://github.com/zed-industries/zed) and shar
 
 ## Acknowledgements
 
-Wu is a fork of [Zed](https://github.com/zed-industries/zed). It keeps Zed's editor core, GPU rendering and language tooling.
-
-Thanks to the Zed team for building an excellent editor and releasing it as open source. Wu would not exist without their work.
+Wu is a fork of [Zed](https://github.com/zed-industries/zed). Thanks to the Zed team for building an excellent editor and releasing it as open source. Wu would not exist without their work.

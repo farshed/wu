@@ -89,7 +89,7 @@ script/generate-licenses
 
 rustup target add $target_triple
 
-echo "Compiling zed binaries"
+echo "Compiling wu binaries"
 cargo build ${build_flag} --package wu --package cli --target $target_triple
 # Build remote_server in separate invocation to prevent feature unification from other crates
 # from influencing dynamic libraries required by it.

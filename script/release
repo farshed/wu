@@ -87,7 +87,7 @@ script/changelog-section "$version" | sed 's/^/  /'
 echo
 
 git add "$manifest" Cargo.lock "$changelog"
-git commit --quiet -m "bump to $version"
+git commit --quiet -m "Bump to $version"
 git tag "$tag"
 echo "Committed $(git rev-parse --short HEAD) and tagged $tag."
 
