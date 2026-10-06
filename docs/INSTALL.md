@@ -15,6 +15,23 @@ All releases are available [here](https://github.com/farshed/wu/releases/latest)
 
 3. Open Wu normally.
 
+#### Command line
+
+To open files and folders from Terminal with `wu`, choose **Wu → Install CLI** from the menu bar. It adds `wu` to `/usr/local/bin` and may ask for your password.
+
+If that fails, for example because your account isn't an admin, add it yourself without a password:
+
+```sh
+mkdir -p ~/.local/bin
+ln -sf /Applications/Wu.app/Contents/MacOS/cli ~/.local/bin/wu
+```
+
+If `wu` still isn't found, add `~/.local/bin` to your `PATH` by adding this line to `~/.zshrc`, then open a new Terminal window:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 ### Linux (x86-64 and AArch64)
 
 1. Download the tarball for your platform.
