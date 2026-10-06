@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+- Activity bar icons now follow the UI font size by default (1.25 times it, 20px at the default size). Setting `activity_bar.icon_size` still fixes them at that many pixels.
+- Fixed the side panel jumping wider when you start resizing it, which left the resize handle away from the pointer.
 - Choose how much an agent can do without asking from the model picker: Claude Code's and Codex's own permission modes. Chats start in Auto, which only asks about risky actions, and each chat remembers its choice. The model chip shows the current mode, and Wu says so when Claude can't use Auto. Permission prompts now offer just Allow and Deny.
 - Wu Light now uses the same interface colors as One Light, with Wu's own code colors.
 

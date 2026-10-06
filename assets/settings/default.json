@@ -1537,8 +1537,10 @@
     // activity bar in VS Code.
     "show": true,
     // Size of the activity bar icons, in pixels (12 to 48). The bar grows or
-    // shrinks to fit them.
-    "icon_size": 24
+    // shrinks to fit them. Leave it unset to make the icons 1.25 times the UI
+    // font size, so they follow it.
+    //
+    // "icon_size": 20
   },
   // Status bar-related settings.
   "status_bar": {

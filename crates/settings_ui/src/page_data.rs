@@ -3260,7 +3260,7 @@ fn window_and_layout_page() -> SettingsPage {
             }),
             SettingsPageItem::SettingItem(SettingItem {
                 title: "Icon Size",
-                description: "Size of the activity bar icons, in pixels. The bar grows or shrinks to fit them.",
+                description: "Size of the activity bar icons, in pixels.",
                 field: Box::new(SettingField {
                     json_path: Some("activity_bar.icon_size"),
                     pick: |settings_content| {

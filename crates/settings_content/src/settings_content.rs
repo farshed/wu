@@ -64,6 +64,36 @@ impl std::fmt::Display for PixelSetting {
     }
 }
 
+/// The activity bar's icon size in pixels.
+///
+/// Valid range: 12.0 to 48.0
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    PartialEq,
+    PartialOrd,
+    derive_more::FromStr,
+    derive_more::Deref,
+    derive_more::From,
+)]
+#[serde(transparent)]
+pub struct ActivityBarIconSize(
+    #[serde(serialize_with = "crate::serialize_f32_with_two_decimal_places")] pub f32,
+);
+
+impl std::fmt::Display for ActivityBarIconSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let rounded = (self.0 * 100.0).round() / 100.0;
+        write!(f, "{rounded}")
+    }
+}
+
 /// Defines a settings override struct where each field is
 /// `Option<Box<SettingsContent>>`, along with:
 /// - `OVERRIDE_KEYS`: a `&[&str]` of the field names (the JSON keys)

@@ -556,6 +556,7 @@ fn init_renderers(cx: &mut App) {
         .add_basic_renderer::<settings::DelayMs>(render_editable_number_field)
         .add_basic_renderer::<settings::FontWeightContent>(render_editable_number_field)
         .add_basic_renderer::<settings::PixelSetting>(render_editable_number_field)
+        .add_basic_renderer::<settings::ActivityBarIconSize>(render_activity_bar_icon_size)
         .add_basic_renderer::<settings::CenteredPaddingSettings>(render_editable_number_field)
         .add_basic_renderer::<settings::InactiveOpacity>(render_editable_number_field)
         .add_basic_renderer::<settings::MinimumContrast>(render_editable_number_field)
@@ -4584,6 +4585,20 @@ fn render_toggle_button<B: Into<bool> + From<bool> + Copy>(
         .into_any_element()
 }
 
+fn render_activity_bar_icon_size(
+    field: SettingField<settings::ActivityBarIconSize>,
+    file: SettingsUiFile,
+    _metadata: Option<&SettingsFieldMetadata>,
+    title: &'static str,
+    description: &'static str,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    let ui_font_size = f32::from(ThemeSettings::get_global(cx).ui_font_size(cx));
+    let default = settings::ActivityBarIconSize((ui_font_size * 1.25).clamp(12., 48.));
+    render_number_field_with_default(field, file, title, description, default, window, cx)
+}
+
 fn render_editable_number_field<T: NumberFieldType + Send + Sync>(
     field: SettingField<T>,
     file: SettingsUiFile,
@@ -4593,8 +4608,20 @@ fn render_editable_number_field<T: NumberFieldType + Send + Sync>(
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
+    render_number_field_with_default(field, file, title, description, T::min_value(), window, cx)
+}
+
+fn render_number_field_with_default<T: NumberFieldType + Send + Sync>(
+    field: SettingField<T>,
+    file: SettingsUiFile,
+    title: &'static str,
+    description: &'static str,
+    default: T,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
     let (_, value) = SettingsStore::global(cx).get_value_from_file(file.to_settings(), field.pick);
-    let value = value.copied().unwrap_or_else(T::min_value);
+    let value = value.copied().unwrap_or(default);
 
     let id = field
         .json_path

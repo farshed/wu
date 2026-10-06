@@ -7417,6 +7417,15 @@ impl Workspace {
         }
     }
 
+    fn left_dock_size_at(&self, pointer_x: Pixels, window: &Window, cx: &App) -> Pixels {
+        let activity_bar = if self.activity_bar_visible(cx) {
+            activity_bar::bar_width(window, cx)
+        } else {
+            Pixels::ZERO
+        };
+        pointer_x - self.bounds.left() - activity_bar
+    }
+
     fn resize_left_dock(&mut self, new_size: Pixels, window: &mut Window, cx: &mut App) {
         let workspace_width = self.bounds.size.width;
         let mut size = new_size.min(workspace_width - RESIZE_HANDLE_SIZE);
@@ -7990,8 +7999,11 @@ impl Render for Workspace {
                                             match e.drag(cx).0 {
                                                 DockPosition::Left => {
                                                     workspace.resize_left_dock(
-                                                        e.event.position.x
-                                                            - workspace.bounds.left(),
+                                                        workspace.left_dock_size_at(
+                                                            e.event.position.x,
+                                                            window,
+                                                            cx,
+                                                        ),
                                                         window,
                                                         cx,
                                                     );
@@ -13005,6 +13017,61 @@ mod tests {
                     None
                 );
             });
+        });
+    }
+
+    #[gpui::test]
+    async fn test_left_dock_resize_follows_the_pointer_past_the_activity_bar(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        init_test(cx);
+        let project = Project::test(FakeFs::new(cx.executor()), [], cx).await;
+        let (multi_workspace, cx) =
+            cx.add_window_view(|window, cx| MultiWorkspace::test_new(project, window, cx));
+        let workspace = multi_workspace.read_with(cx, |mw, _| mw.workspace().clone());
+        let set_activity_bar = |show: bool, cx: &mut VisualTestContext| {
+            cx.update(|_, cx| {
+                SettingsStore::update_global(cx, |store, cx| {
+                    store.update_user_settings(cx, |settings| {
+                        settings.activity_bar.get_or_insert_default().show = Some(show);
+                    });
+                });
+            });
+        };
+
+        set_activity_bar(true, cx);
+        workspace.update_in(cx, |workspace, window, cx| {
+            workspace.bounds.origin.x = px(10.);
+            let bar = activity_bar::bar_width(window, cx);
+            assert_eq!(
+                workspace.left_dock_size_at(px(10.) + bar + px(300.), window, cx),
+                px(300.)
+            );
+        });
+
+        set_activity_bar(false, cx);
+        workspace.update_in(cx, |workspace, window, cx| {
+            workspace.bounds.origin.x = px(10.);
+            assert_eq!(workspace.left_dock_size_at(px(310.), window, cx), px(300.));
+        });
+    }
+
+    #[gpui::test]
+    async fn test_activity_bar_follows_the_ui_font_size_unless_set(cx: &mut gpui::TestAppContext) {
+        init_test(cx);
+        let project = Project::test(FakeFs::new(cx.executor()), [], cx).await;
+        let (_multi_workspace, cx) =
+            cx.add_window_view(|window, cx| MultiWorkspace::test_new(project, window, cx));
+        cx.update(|window, cx| {
+            window.set_rem_size(px(20.));
+            assert_eq!(activity_bar::bar_width(window, cx), px(25. + 24.));
+            SettingsStore::update_global(cx, |store, cx| {
+                store.update_user_settings(cx, |settings| {
+                    settings.activity_bar.get_or_insert_default().icon_size =
+                        Some(settings::ActivityBarIconSize(30.));
+                });
+            });
+            assert_eq!(activity_bar::bar_width(window, cx), px(30. + 24.));
         });
     }
 

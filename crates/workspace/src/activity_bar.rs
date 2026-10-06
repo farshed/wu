@@ -12,16 +12,25 @@ use ui::{
 };
 use util::ResultExt as _;
 
-fn icon_size(cx: &App) -> f32 {
-    ActivityBarSettings::get_global(cx).icon_size
+const DEFAULT_ICON_SIZE: Rems = rems(1.25);
+
+fn icon_size(window: &Window, cx: &App) -> Pixels {
+    ActivityBarSettings::get_global(cx)
+        .icon_size
+        .map(px)
+        .unwrap_or_else(|| DEFAULT_ICON_SIZE.to_pixels(window.rem_size()))
 }
 
-fn button_height(cx: &App) -> Pixels {
-    px(icon_size(cx) + 16.)
+fn icon_rems(window: &Window, cx: &App) -> Rems {
+    rems(f32::from(icon_size(window, cx)) / f32::from(window.rem_size()))
 }
 
-fn bar_width(cx: &App) -> Pixels {
-    px(icon_size(cx) + 24.)
+fn button_height(window: &Window, cx: &App) -> Pixels {
+    icon_size(window, cx) + px(16.)
+}
+
+pub(crate) fn bar_width(window: &Window, cx: &App) -> Pixels {
+    icon_size(window, cx) + px(24.)
 }
 
 /// Entries are shown in this order by `Panel::panel_key()` until the user drags
@@ -55,12 +64,12 @@ pub struct DraggedActivityBarEntry {
 }
 
 impl Render for DraggedActivityBarEntry {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .p_1()
             .rounded_md()
             .bg(cx.theme().colors().elevated_surface_background)
-            .child(Icon::new(self.icon).size(IconSize::Custom(rems_from_px(icon_size(cx)))))
+            .child(Icon::new(self.icon).size(IconSize::Custom(icon_rems(window, cx))))
     }
 }
 
@@ -251,8 +260,8 @@ impl ActivityBar {
                 .and_then(|label| label.parse::<usize>().ok()),
         };
 
-        let icon_size = icon_size(cx);
-        let button_height = button_height(cx);
+        let icon_rems = icon_rems(window, cx);
+        let button_height = button_height(window, cx);
         let button = move |is_menu_open: bool| {
             let action = action.boxed_clone();
             let focus_handle = focus_handle.clone();
@@ -262,7 +271,7 @@ impl ActivityBar {
             IconButton::new((key, is_active as u64), icon)
                 .size(ButtonSize::Large)
                 .height(button_height.into())
-                .icon_size(IconSize::Custom(rems_from_px(icon_size)))
+                .icon_size(IconSize::Custom(icon_rems))
                 .toggle_state(is_active)
                 .tab_index(0isize)
                 .aria_label(icon_tooltip)
@@ -340,7 +349,7 @@ impl Render for ActivityBar {
         let bar = v_flex()
             .id("activity-bar")
             .flex_none()
-            .w(bar_width(cx))
+            .w(bar_width(window, cx))
             .h_full()
             .items_center()
             .gap_1()
@@ -354,18 +363,18 @@ impl Render for ActivityBar {
         }
         bar.children(buttons)
             .child(div().flex_1())
-            .child(self.render_settings_menu(cx))
+            .child(self.render_settings_menu(window, cx))
     }
 }
 
 impl ActivityBar {
-    fn render_settings_menu(&self, cx: &App) -> impl IntoElement {
+    fn render_settings_menu(&self, window: &Window, cx: &App) -> impl IntoElement {
         PopoverMenu::new("activity-bar-settings-menu")
             .trigger_with_tooltip(
                 IconButton::new("activity-bar-settings", IconName::ActivitySettings)
                     .size(ButtonSize::Large)
-                    .height(button_height(cx).into())
-                    .icon_size(IconSize::Custom(rems_from_px(icon_size(cx))))
+                    .height(button_height(window, cx).into())
+                    .icon_size(IconSize::Custom(icon_rems(window, cx)))
                     .tab_index(0isize)
                     .aria_label("Manage"),
                 Tooltip::text("Manage"),
