@@ -69,15 +69,17 @@ fn build(diff: &ToolDiff) -> FileDiffView {
         highlights: Vec::new(),
     };
     for (index, (before, after)) in hunks.iter().enumerate() {
-        let delta = after.start as i64 - before.start as i64;
         let leading_start = before.start.saturating_sub(CONTEXT_LINES).max(old_position);
         if leading_start > old_position && !lines.is_empty() {
             lines.push(line(LineKind::Gap, None, None, ""));
         }
         for old_index in leading_start..before.start {
-            let new_index = (old_index as i64 + delta) as u32;
+            let new_index = after
+                .start
+                .checked_sub(before.start - old_index)
+                .filter(|&idx| (idx as usize) < new_lines.len());
             let text = old_lines.get(old_index as usize).copied().unwrap_or_default();
-            lines.push(line(LineKind::Context, Some(old_index), Some(new_index), text));
+            lines.push(line(LineKind::Context, Some(old_index), new_index, text));
         }
         for old_index in before.clone() {
             deletions += 1;
@@ -89,15 +91,17 @@ fn build(diff: &ToolDiff) -> FileDiffView {
             let text = new_lines.get(new_index as usize).copied().unwrap_or_default();
             lines.push(line(LineKind::Added, None, Some(new_index), text));
         }
-        let trailing_delta = after.end as i64 - before.end as i64;
         let next_start = hunks
             .get(index + 1)
             .map_or(old_lines.len() as u32, |(next, _)| next.start);
         let trailing_end = (before.end + CONTEXT_LINES).min(next_start).min(old_lines.len() as u32);
         for old_index in before.end..trailing_end {
-            let new_index = (old_index as i64 + trailing_delta) as u32;
+            let new_index = after
+                .end
+                .checked_add(old_index - before.end)
+                .filter(|&idx| (idx as usize) < new_lines.len());
             let text = old_lines.get(old_index as usize).copied().unwrap_or_default();
-            lines.push(line(LineKind::Context, Some(old_index), Some(new_index), text));
+            lines.push(line(LineKind::Context, Some(old_index), new_index, text));
         }
         old_position = trailing_end.max(before.end);
     }
@@ -482,5 +486,24 @@ mod tests {
         assert_eq!(shown, MAX_DIFF_LINES);
         assert_eq!(view.hidden, 800 - MAX_DIFF_LINES);
         assert!(view.lines.last().is_some_and(|line| line.kind != LineKind::Gap));
+    }
+
+    #[test]
+    fn line_numbers_do_not_underflow_with_leading_or_trailing_deletions() {
+        let old = "del 1\ndel 2\ndel 3\nkeep 4\nkeep 5\nmod 6\nkeep 7\n";
+        let new = "keep 4\nkeep 5\nmodified 6\nkeep 7\n";
+        let view = build(&ToolDiff {
+            path: "a.rs".into(),
+            old_text: Some(old.into()),
+            new_text: new.into(),
+        });
+        for line in &view.lines {
+            if let Some(num) = line.new_number {
+                assert!(num <= 4, "new_number {num} should be within bounds");
+            }
+            if let Some(num) = line.old_number {
+                assert!(num <= 7, "old_number {num} should be within bounds");
+            }
+        }
     }
 }
