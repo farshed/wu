@@ -26,6 +26,7 @@ type TabId = `file:${string}` | `chat:${string}` | 'diff';
 const WIDTH = 1440;
 const HEIGHT = 900;
 const LINE_HEIGHT = 24;
+const PANEL_WIDTH = 240;
 const GUTTER_WIDTH = 104;
 
 const text = '#e8e8ea';
@@ -53,13 +54,13 @@ const tokenStyles: Record<TokenKind, CSSProperties> = {
   literal: { color: '#34d399' }
 };
 
-const panels: { key: PanelKey; icon: string; label: string; width: number }[] = [
-  { key: 'explorer', icon: 'activity_explorer', label: 'Project Panel', width: 240 },
-  { key: 'search', icon: 'activity_search', label: 'Search', width: 300 },
-  { key: 'git', icon: 'activity_source_control', label: 'Git Panel', width: 360 },
-  { key: 'outline', icon: 'activity_outline', label: 'Outline Panel', width: 300 },
-  { key: 'debug', icon: 'activity_debug', label: 'Debug Panel', width: 300 },
-  { key: 'agent', icon: 'agent_bot', label: 'Agent Chats', width: 300 }
+const panels: { key: PanelKey; icon: string; label: string }[] = [
+  { key: 'explorer', icon: 'activity_explorer', label: 'Project Panel' },
+  { key: 'search', icon: 'activity_search', label: 'Search' },
+  { key: 'git', icon: 'activity_source_control', label: 'Git Panel' },
+  { key: 'outline', icon: 'activity_outline', label: 'Outline Panel' },
+  { key: 'debug', icon: 'activity_debug', label: 'Debug Panel' },
+  { key: 'agent', icon: 'agent_bot', label: 'Agent Chats' }
 ];
 
 const toolIcons: Record<ToolKind, string> = {
@@ -846,7 +847,6 @@ export function WuWindow() {
   const [diffTarget, setDiffTarget] = useState(changedFiles[0]?.path ?? '');
   const activeChat = activeTab?.startsWith('chat:') ? chats.find((chat) => chat.id === activeTab.slice(5)) : undefined;
   const cursor = activeFile ? (cursors[activeFile.path] ?? { line: 0, column: 1 }) : undefined;
-  const panelWidth = panels.find((candidate) => candidate.key === panel)?.width ?? 0;
 
   const openTab = (tab: TabId) => {
     setTabs((current) => {
@@ -1290,7 +1290,7 @@ export function WuWindow() {
         </div>
 
         {panel && (
-          <div className="flex shrink-0 flex-col border-r border-[#ffffff1a]" style={{ width: panelWidth }}>
+          <div className="flex shrink-0 flex-col border-r border-[#ffffff1a]" style={{ width: PANEL_WIDTH }}>
             {renderSidebar()}
           </div>
         )}
