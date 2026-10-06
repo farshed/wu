@@ -210,6 +210,7 @@ impl Settings for TabBarSettings {
 #[derive(Deserialize, RegisterSetting)]
 pub struct ActivityBarSettings {
     pub show: bool,
+    pub position: settings::ActivityBarPosition,
     pub icon_size: Option<f32>,
 }
 
@@ -218,6 +219,7 @@ impl Settings for ActivityBarSettings {
         let activity_bar = content.activity_bar.clone().unwrap();
         ActivityBarSettings {
             show: activity_bar.show.unwrap(),
+            position: activity_bar.position.unwrap(),
             icon_size: activity_bar.icon_size.map(|size| size.0.clamp(12., 48.)),
         }
     }

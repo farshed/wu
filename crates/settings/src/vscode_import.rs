@@ -175,7 +175,10 @@ impl VsCodeSettings {
             auto_update: None,
             base_keymap: Some(BaseKeymapContent::VSCode),
             credentials_url: None,
-            debugger: None,
+            debugger: self.side_bar_on_right().then(|| DebuggerSettingsContent {
+                dock: Some(DockPosition::Right),
+                ..DebuggerSettingsContent::default()
+            }),
             diagnostics: None,
             editor: self.editor_settings_content(),
             extension: ExtensionSettingsContent::default(),
@@ -198,7 +201,12 @@ impl VsCodeSettings {
             preview_tabs: self.preview_tabs_settings_content(),
             project: self.project_settings_content(),
             project_panel: self.project_panel_settings_content(),
-            search_panel: None,
+            search_panel: self
+                .side_bar_on_right()
+                .then(|| SearchPanelSettingsContent {
+                    dock: Some(DockSide::Right),
+                    ..SearchPanelSettingsContent::default()
+                }),
             proxy: self.read_string("http.proxy"),
             reduce_motion: self.read_enum("workbench.reduceMotion", |s| match s {
                 "on" => Some(ReduceMotionMode::On),
@@ -484,10 +492,19 @@ impl VsCodeSettings {
         })
     }
 
+    fn side_bar_on_right(&self) -> bool {
+        self.read_str("workbench.sideBar.location") == Some("right")
+    }
+
+    fn side_bar_dock(&self) -> Option<DockSide> {
+        self.side_bar_on_right().then_some(DockSide::Right)
+    }
+
     fn git_panel_settings_content(&self) -> Option<GitPanelSettingsContent> {
         skip_default(GitPanelSettingsContent {
             button: self.read_bool("git.enabled"),
             fallback_branch_name: self.read_string("git.defaultBranchName"),
+            dock: self.side_bar_on_right().then_some(DockPosition::Right),
             ..Default::default()
         })
     }
@@ -644,6 +661,7 @@ impl VsCodeSettings {
                 }
             }),
             git_status: self.read_bool("git.decorations.enabled"),
+            dock: self.side_bar_dock(),
             ..Default::default()
         })
     }
@@ -736,6 +754,13 @@ impl VsCodeSettings {
             show: self
                 .read_str("workbench.activityBar.location")
                 .and_then(|location| (location == "hidden").then_some(false)),
+            position: self.read_str("workbench.sideBar.location").and_then(
+                |location| match location {
+                    "left" => Some(ActivityBarPosition::Left),
+                    "right" => Some(ActivityBarPosition::Right),
+                    _ => None,
+                },
+            ),
             icon_size: None,
         })
     }
@@ -758,7 +783,7 @@ impl VsCodeSettings {
             bold_folder_labels: None,
             button: None,
             default_width: None,
-            dock: None,
+            dock: self.side_bar_dock(),
             drag_and_drop: None,
             entry_spacing: None,
             file_icons: None,
@@ -1109,5 +1134,45 @@ mod tests {
         .settings_content();
 
         assert_eq!(settings.workspace.reveal_if_open, Some(true));
+    }
+
+    #[test]
+    fn test_import_side_bar_on_the_right() {
+        let import = |json: &str| {
+            VsCodeSettings::from_str(json, VsCodeSettingsSource::VsCode)
+                .unwrap()
+                .settings_content()
+        };
+
+        let settings = import(r#"{ "workbench.sideBar.location": "right" }"#);
+        assert_eq!(
+            settings.activity_bar.and_then(|bar| bar.position),
+            Some(ActivityBarPosition::Right)
+        );
+        assert_eq!(
+            settings.project_panel.and_then(|panel| panel.dock),
+            Some(DockSide::Right)
+        );
+        assert_eq!(
+            settings.outline_panel.and_then(|panel| panel.dock),
+            Some(DockSide::Right)
+        );
+        assert_eq!(
+            settings.search_panel.and_then(|panel| panel.dock),
+            Some(DockSide::Right)
+        );
+        assert_eq!(
+            settings.git_panel.and_then(|panel| panel.dock),
+            Some(DockPosition::Right)
+        );
+        assert_eq!(
+            settings.debugger.and_then(|debugger| debugger.dock),
+            Some(DockPosition::Right)
+        );
+
+        let settings = import(r#"{ "workbench.sideBar.location": "left" }"#);
+        assert_eq!(settings.project_panel.and_then(|panel| panel.dock), None);
+        assert!(settings.search_panel.is_none());
+        assert!(settings.debugger.is_none());
     }
 }

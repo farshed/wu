@@ -4,7 +4,7 @@ use gpui::{
     Action, Anchor, App, Context, Entity, FocusHandle, Focusable as _, IntoElement, ParentElement,
     Pixels, Render, SharedString, Styled, Subscription, Task, WeakEntity, Window, px,
 };
-use settings::{Settings as _, SettingsStore};
+use settings::{ActivityBarPosition, Settings as _, SettingsStore};
 use std::sync::Arc;
 use ui::{
     ButtonSize, ContextMenu, CountBadge, Icon, IconButton, IconName, IconSize, PopoverMenu,
@@ -13,6 +13,19 @@ use ui::{
 use util::ResultExt as _;
 
 const DEFAULT_ICON_SIZE: Rems = rems(1.25);
+
+fn on_right(cx: &App) -> bool {
+    ActivityBarSettings::get_global(cx).position == ActivityBarPosition::Right
+}
+
+fn menu_anchors(top: bool, cx: &App) -> (Anchor, Anchor) {
+    match (top, on_right(cx)) {
+        (true, false) => (Anchor::TopLeft, Anchor::TopRight),
+        (true, true) => (Anchor::TopRight, Anchor::TopLeft),
+        (false, false) => (Anchor::BottomLeft, Anchor::BottomRight),
+        (false, true) => (Anchor::BottomRight, Anchor::BottomLeft),
+    }
+}
 
 fn icon_size(window: &Window, cx: &App) -> Pixels {
     ActivityBarSettings::get_global(cx)
@@ -302,6 +315,7 @@ impl ActivityBar {
                             .is_none_or(|dragged_position| position < dragged_position)
                     };
                 let order = self.order.clone();
+                let (menu_anchor, menu_attach) = menu_anchors(true, cx);
                 let on_drop =
                     cx.listener(move |this, dragged: &DraggedActivityBarEntry, window, cx| {
                         this.move_entry(dragged.key, key, window, cx);
@@ -310,8 +324,8 @@ impl ActivityBar {
                     .menu(move |window, cx| {
                         panel_button_context_menu(&panel, &dock, &workspace, window, cx)
                     })
-                    .anchor(Anchor::TopLeft)
-                    .attach(Anchor::TopRight)
+                    .anchor(menu_anchor)
+                    .attach(menu_attach)
                     .trigger(move |is_menu_open, _window, _cx| {
                         div()
                             .id(SharedString::from(format!("activity-bar-entry-{key}")))
@@ -355,7 +369,13 @@ impl Render for ActivityBar {
             .gap_2()
             .py_1()
             .bg(colors.status_bar_background)
-            .border_r_1()
+            .map(|bar| {
+                if on_right(cx) {
+                    bar.border_l_1()
+                } else {
+                    bar.border_r_1()
+                }
+            })
             .border_color(colors.border);
         let mut buttons = Vec::new();
         for entry in self.entries(window, cx) {
@@ -398,8 +418,8 @@ impl ActivityBar {
                 })
                 .into()
             })
-            .anchor(Anchor::BottomLeft)
-            .attach(Anchor::BottomRight)
+            .anchor(menu_anchors(false, cx).0)
+            .attach(menu_anchors(false, cx).1)
     }
 }
 

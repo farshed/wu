@@ -7417,13 +7417,34 @@ impl Workspace {
         }
     }
 
-    fn left_dock_size_at(&self, pointer_x: Pixels, window: &Window, cx: &App) -> Pixels {
-        let activity_bar = if self.activity_bar_visible(cx) {
+    fn activity_bar_side(&self, cx: &App) -> Option<settings::ActivityBarPosition> {
+        self.activity_bar_visible(cx)
+            .then(|| ActivityBarSettings::get_global(cx).position)
+    }
+
+    fn activity_bar_width_on(
+        &self,
+        side: settings::ActivityBarPosition,
+        window: &Window,
+        cx: &App,
+    ) -> Pixels {
+        if self.activity_bar_side(cx) == Some(side) {
             activity_bar::bar_width(window, cx)
         } else {
             Pixels::ZERO
-        };
-        pointer_x - self.bounds.left() - activity_bar
+        }
+    }
+
+    fn left_dock_size_at(&self, pointer_x: Pixels, window: &Window, cx: &App) -> Pixels {
+        pointer_x
+            - self.bounds.left()
+            - self.activity_bar_width_on(settings::ActivityBarPosition::Left, window, cx)
+    }
+
+    fn right_dock_size_at(&self, pointer_x: Pixels, window: &Window, cx: &App) -> Pixels {
+        self.bounds.right()
+            - self.activity_bar_width_on(settings::ActivityBarPosition::Right, window, cx)
+            - pointer_x
     }
 
     fn resize_left_dock(&mut self, new_size: Pixels, window: &mut Window, cx: &mut App) {
@@ -8010,8 +8031,11 @@ impl Render for Workspace {
                                                 }
                                                 DockPosition::Right => {
                                                     workspace.resize_right_dock(
-                                                        workspace.bounds.right()
-                                                            - e.event.position.x,
+                                                        workspace.right_dock_size_at(
+                                                            e.event.position.x,
+                                                            window,
+                                                            cx,
+                                                        ),
                                                         window,
                                                         cx,
                                                     );
@@ -8036,9 +8060,11 @@ impl Render for Workspace {
                                     .w_full()
                                     .min_h_0()
                                     .overflow_hidden()
-                                    .when(self.activity_bar_visible(cx), |this| {
-                                        this.child(self.activity_bar.clone())
-                                    })
+                                    .when(
+                                        self.activity_bar_side(cx)
+                                            == Some(settings::ActivityBarPosition::Left),
+                                        |this| this.child(self.activity_bar.clone()),
+                                    )
                                     .child({
                                         match bottom_dock_layout {
                                     BottomDockLayout::Full => div()
@@ -8278,7 +8304,12 @@ impl Render for Workspace {
                                 .flex_1()
                                 .min_w_0()
                                 .overflow_hidden()
-                                    }),
+                                    })
+                                    .when(
+                                        self.activity_bar_side(cx)
+                                            == Some(settings::ActivityBarPosition::Right),
+                                        |this| this.child(self.activity_bar.clone()),
+                                    ),
                             )
                             .children(self.zoomed.as_ref().and_then(|view| {
                                 let zoomed_view = view.upgrade()?;
@@ -13021,7 +13052,7 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn test_left_dock_resize_follows_the_pointer_past_the_activity_bar(
+    async fn test_dock_resize_follows_the_pointer_past_the_activity_bar(
         cx: &mut gpui::TestAppContext,
     ) {
         init_test(cx);
@@ -13049,10 +13080,29 @@ mod tests {
             );
         });
 
+        cx.update(|_, cx| {
+            SettingsStore::update_global(cx, |store, cx| {
+                store.update_user_settings(cx, |settings| {
+                    settings.activity_bar.get_or_insert_default().position =
+                        Some(settings::ActivityBarPosition::Right);
+                });
+            });
+        });
+        workspace.update_in(cx, |workspace, window, cx| {
+            workspace.bounds = Bounds::new(point(px(10.), px(0.)), size(px(1000.), px(600.)));
+            let bar = activity_bar::bar_width(window, cx);
+            assert_eq!(workspace.left_dock_size_at(px(310.), window, cx), px(300.));
+            assert_eq!(
+                workspace.right_dock_size_at(px(1010.) - bar - px(300.), window, cx),
+                px(300.)
+            );
+        });
+
         set_activity_bar(false, cx);
         workspace.update_in(cx, |workspace, window, cx| {
-            workspace.bounds.origin.x = px(10.);
+            workspace.bounds = Bounds::new(point(px(10.), px(0.)), size(px(1000.), px(600.)));
             assert_eq!(workspace.left_dock_size_at(px(310.), window, cx), px(300.));
+            assert_eq!(workspace.right_dock_size_at(px(710.), window, cx), px(300.));
         });
     }
 

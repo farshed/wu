@@ -3242,17 +3242,35 @@ fn search_and_files_page() -> SettingsPage {
 }
 
 fn window_and_layout_page() -> SettingsPage {
-    fn activity_bar_section() -> [SettingsPageItem; 3] {
+    fn activity_bar_section() -> [SettingsPageItem; 4] {
         [
             SettingsPageItem::SectionHeader("Activity Bar"),
             SettingsPageItem::SettingItem(SettingItem {
                 title: "Show Activity Bar",
-                description: "Show the activity bar with the dock panel buttons on the left side of the window.",
+                description: "Show the activity bar with the dock panel buttons on the side of the window.",
                 field: Box::new(SettingField {
                     json_path: Some("activity_bar.show"),
                     pick: |settings_content| settings_content.activity_bar.as_ref()?.show.as_ref(),
                     write: |settings_content, value, _| {
                         settings_content.activity_bar.get_or_insert_default().show = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Activity Bar Position",
+                description: "Which side of the window the activity bar is on.",
+                field: Box::new(SettingField {
+                    json_path: Some("activity_bar.position"),
+                    pick: |settings_content| {
+                        settings_content.activity_bar.as_ref()?.position.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .activity_bar
+                            .get_or_insert_default()
+                            .position = value;
                     },
                 }),
                 metadata: None,

@@ -529,15 +529,39 @@ pub struct TabBarSettingsContent {
     pub show_pinned_tabs_in_separate_row: Option<bool>,
 }
 
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    MergeFrom,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityBarPosition {
+    #[default]
+    Left,
+    Right,
+}
+
 #[with_fallible_options]
 #[derive(Clone, Default, Serialize, Deserialize, JsonSchema, MergeFrom, Debug, PartialEq)]
 pub struct ActivityBarSettingsContent {
-    /// Whether to show the activity bar on the left side of the window.
-    /// The activity bar holds the buttons for the left and right dock panels,
-    /// like the activity bar in VS Code.
+    /// Whether to show the activity bar. It holds the buttons for the left
+    /// and right dock panels, like the activity bar in VS Code.
     ///
     /// Default: true
     pub show: Option<bool>,
+    /// Which side of the window the activity bar is on.
+    ///
+    /// Default: left
+    pub position: Option<ActivityBarPosition>,
     /// Size of the activity bar icons, in pixels. The bar grows or shrinks
     /// to fit them. When unset, the icons are 1.25 times the UI font size.
     ///
