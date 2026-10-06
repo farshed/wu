@@ -11682,9 +11682,15 @@ impl EditorSnapshot {
                 // runnables, breakpoints and bookmarks are shown in the same place
                 // if all three are there only the runnable is shown
                 } else if show_runnables || show_breakpoints || show_bookmarks {
-                    ch_width * 3.0
-                } else if show_git_gutter && show_line_numbers {
-                    ch_width * 2.0
+                    let line_height = style.text.line_height_in_pixels(window.rem_size());
+                    // Matches where `prepaint_button` draws the square, UI-sized icon button.
+                    let icon_button =
+                        rems(IconSize::XSmall.rems().0 + 0.25).to_pixels(window.rem_size());
+                    (EditorElement::gutter_strip_width(line_height, cx)
+                        + px(2.)
+                        + icon_button
+                        + px(2.))
+                    .max(ch_width * 2.0 + px(4.))
                 } else if show_git_gutter || show_line_numbers {
                     ch_width
                 } else {
@@ -11694,7 +11700,10 @@ impl EditorSnapshot {
             let shows_folds = is_singleton && gutter_settings.folds;
 
             let right_padding = if shows_folds && show_line_numbers {
-                ch_width * 4.0
+                // Fits the `Disclosure` fold toggle, which is centered across this and the margin.
+                let fold_toggle = rems(IconSize::Small.rems().0 + 0.5).to_pixels(window.rem_size());
+                let margin = GutterDimensions::default_gutter_margin(font_id, font_size, cx);
+                (fold_toggle + px(4.) - margin).max(ch_width * 2.0)
             } else if shows_folds || (!is_singleton && show_line_numbers) {
                 ch_width * 3.0
             } else if show_line_numbers {

@@ -32236,6 +32236,43 @@ fn add_log_breakpoint_at_cursor(
 }
 
 #[gpui::test]
+fn test_gutter_leaves_room_for_icon_buttons_at_large_ui_font(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+    let editor = cx.add_window(|window, cx| {
+        let buffer = MultiBuffer::build_simple(&sample_text(300, 5, 'a'), cx);
+        build_editor(buffer, window, cx)
+    });
+    editor
+        .update(cx, |editor, window, cx| {
+            window.set_rem_size(px(24.));
+            let style = editor.style(cx).clone();
+            let font_id = window.text_system().resolve_font(&style.text.font());
+            let font_size = style.text.font_size.to_pixels(window.rem_size());
+            let line_height = style.text.line_height_in_pixels(window.rem_size());
+            let dimensions = editor
+                .snapshot(window, cx)
+                .gutter_dimensions(font_id, font_size, &style, window, cx);
+            let button_end = EditorElement::gutter_strip_width(line_height, cx)
+                + px(2.)
+                + rems(1.).to_pixels(window.rem_size());
+            assert!(
+                dimensions.left_padding >= button_end,
+                "{:?} < {:?}",
+                dimensions.left_padding,
+                button_end
+            );
+            let fold_toggle = rems(0.875 + 0.5).to_pixels(window.rem_size());
+            assert!(
+                dimensions.fold_area_width() >= fold_toggle,
+                "{:?} < {:?}",
+                dimensions.fold_area_width(),
+                fold_toggle
+            );
+        })
+        .unwrap();
+}
+
+#[gpui::test]
 fn test_gutter_button_tooltip_updates_intent_with_secondary_modifier(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
 

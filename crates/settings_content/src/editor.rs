@@ -511,7 +511,7 @@ pub struct GutterContent {
     pub line_numbers: Option<bool>,
     /// Minimum number of characters to reserve space for in the gutter.
     ///
-    /// Default: 4
+    /// Default: 3
     pub min_line_number_digits: Option<usize>,
     /// Whether to show runnable buttons in the gutter.
     ///

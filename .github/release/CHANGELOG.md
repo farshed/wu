@@ -7,6 +7,7 @@ release body.
 
 ## Unreleased
 
+- The line number gutter is more compact: it reserves room for three digits instead of four (more only when a file needs them) and has less padding around the numbers.
 - The activity bar can sit on the right side of the window. Set it with `activity_bar.position` or in Settings, and importing VS Code settings with the side bar on the right moves the activity bar and the side panels there too.
 - A little more space between the activity bar icons.
 - Activity bar icons now follow the UI font size by default (1.25 times it, 20px at the default size). Setting `activity_bar.icon_size` still fixes them at that many pixels.

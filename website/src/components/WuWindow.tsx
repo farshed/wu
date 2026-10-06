@@ -27,7 +27,9 @@ const WIDTH = 1440;
 const HEIGHT = 900;
 const LINE_HEIGHT = 24;
 const PANEL_WIDTH = 240;
-const GUTTER_WIDTH = 104;
+const CHAR_WIDTH = 9;
+const GUTTER_ICON_AREA = 26;
+const GUTTER_FOLD_AREA = 26;
 
 const text = '#e8e8ea';
 const muted = '#a9a9ae';
@@ -239,6 +241,8 @@ function Editor({
   const scrollRef = useRef<HTMLDivElement>(null);
   const lines = file.code.split('\n');
   const levels = indentLevels(lines);
+  const digits = Math.max(3, String(file.firstLine + lines.length - 1).length);
+  const gutterWidth = GUTTER_ICON_AREA + digits * CHAR_WIDTH + GUTTER_FOLD_AREA;
   const hunkColor = (index: number) => {
     const hunk = file.hunks?.find((candidate) => index >= candidate.start && index <= candidate.end);
     if (!hunk) return undefined;
@@ -269,8 +273,8 @@ function Editor({
           >
             {marker && <span className="absolute inset-y-0 left-0 w-[6px]" style={{ background: marker }} />}
             <span
-              className="shrink-0 pr-[41px] text-right select-none"
-              style={{ width: GUTTER_WIDTH, color: isActive ? text : '#5a5a60' }}
+              className="shrink-0 text-right select-none"
+              style={{ width: gutterWidth, paddingRight: GUTTER_FOLD_AREA, color: isActive ? text : '#5a5a60' }}
             >
               {file.firstLine + index}
             </span>

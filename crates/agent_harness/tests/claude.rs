@@ -486,6 +486,45 @@ async fn missing_binary_is_not_installed() {
 }
 
 #[tokio::test]
+async fn captured_live_text_deltas_stream_one_by_one() {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("claude")
+        .join("live-2.1.291-text-streaming.jsonl");
+    let script = std::fs::read_to_string(&fixture).expect("fixture readable");
+    let dir = std::env::temp_dir().join(format!("claude-stream-replay-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("tmp dir");
+    let frames = dir.join("frames.jsonl");
+    std::fs::write(&frames, &script).expect("frames written");
+    let cli = dir.join("replay.sh");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\nread -r _first || exit 1\ncat '{}'\n",
+            frames.display()
+        ),
+    )
+    .expect("replayer written");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let harness = ClaudeHarness::new().with_executable(&cli);
+    let (controls, _steer, _token) = controls("A");
+    let events = run_to_end(&harness, request("replay"), controls).await;
+    let text_deltas = events
+        .iter()
+        .filter(|event| matches!(event, AgentEvent::TextDelta { .. }))
+        .count();
+    let source_deltas = script.matches("\"text_delta\"").count();
+    assert!(source_deltas > 1);
+    assert_eq!(text_deltas, source_deltas, "{events:?}");
+}
+
+#[tokio::test]
 async fn captured_live_background_subagent_frames_replay_correctly() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")

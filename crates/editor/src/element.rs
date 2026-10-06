@@ -5121,7 +5121,7 @@ impl EditorElement {
         });
     }
 
-    fn gutter_strip_width(line_height: Pixels, cx: &App) -> Pixels {
+    pub(crate) fn gutter_strip_width(line_height: Pixels, cx: &App) -> Pixels {
         match EditorSettings::get_global(cx).gutter.git_gutter_width {
             GitGutterWidth::Custom(width) => px(*width),
             GitGutterWidth::Default => (0.275 * line_height).floor(),
