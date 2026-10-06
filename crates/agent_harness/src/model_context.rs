@@ -23,6 +23,7 @@ pub(crate) fn context(
             let root = root("CLAUDE_CONFIG_DIR", home.join(".claude"));
             vec![root.join("settings.json"), root.join(".credentials.json")]
         }
+        HarnessId::Opencode => opencode_files(&home),
     };
     let binary = binary
         .canonicalize()
@@ -41,10 +42,15 @@ pub(crate) fn context(
             format!("{:?}:{}", metadata.modified().ok(), metadata.len()).as_bytes(),
         );
     }
-    hash_files(&mut hash, files.iter().chain(extra))?;
+    if id == HarnessId::Opencode {
+        hash_opencode_files(&mut hash, files.iter().chain(extra));
+    } else {
+        hash_files(&mut hash, files.iter().chain(extra))?;
+    }
     let prefixes: &[&str] = match id {
         HarnessId::Codex => &["CODEX_", "OPENAI_"],
         HarnessId::ClaudeCode => &["CLAUDE_", "ANTHROPIC_", "AWS_"],
+        HarnessId::Opencode => &["OPENCODE_", "OPENAI_", "ANTHROPIC_", "GOOGLE_"],
     };
     let mut env: Vec<_> = std::env::vars_os()
         .filter(|(key, _)| {
@@ -63,6 +69,69 @@ pub(crate) fn context(
         binary_path: binary,
         binary_version: version,
     })
+}
+
+/// The files that shape opencode's discovery run, which boots in Wu's scratch folder.
+fn opencode_files(home: &Path) -> Vec<PathBuf> {
+    let data = root("XDG_DATA_HOME", home.join(".local").join("share"));
+    let config = root("XDG_CONFIG_HOME", home.join(".config")).join("opencode");
+    let mut files = vec![
+        data.join("opencode").join("auth.json"),
+        config.join("config.json"),
+        config.join("opencode.json"),
+        config.join("opencode.jsonc"),
+    ];
+    for directory in crate::executable::scratch_dir().ancestors() {
+        for name in [
+            "opencode.json",
+            "opencode.jsonc",
+            ".opencode/opencode.json",
+            ".opencode/opencode.jsonc",
+        ] {
+            files.push(directory.join(name));
+        }
+    }
+    if let Some(directory) =
+        std::env::var_os("OPENCODE_CONFIG_DIR").filter(|value| !value.is_empty())
+    {
+        let directory = PathBuf::from(directory);
+        files.push(directory.join("opencode.json"));
+        files.push(directory.join("opencode.jsonc"));
+    }
+    if let Some(path) = std::env::var_os("OPENCODE_CONFIG").filter(|path| !path.is_empty()) {
+        files.push(path.into());
+    }
+    files
+}
+
+/// opencode writes a schema-only global config on first boot, so that file must hash like a missing one.
+fn is_generated_opencode_config(bytes: &[u8]) -> bool {
+    serde_json_lenient::from_slice::<serde_json::Value>(bytes)
+        .ok()
+        .and_then(|config| {
+            config
+                .as_object()
+                .map(|config| config.keys().all(|key| key == "$schema"))
+        })
+        .unwrap_or(false)
+}
+
+fn hash_opencode_files<'a>(hash: &mut Sha256, files: impl Iterator<Item = &'a PathBuf>) {
+    for path in files {
+        field(hash, path.as_os_str().as_encoded_bytes());
+        match std::fs::read(path) {
+            Ok(bytes) if is_generated_opencode_config(&bytes) => hash.update([0]),
+            Ok(bytes) => {
+                hash.update([1]);
+                field(hash, &bytes);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => hash.update([0]),
+            Err(error) => {
+                hash.update([2]);
+                field(hash, format!("{:?}", error.kind()).as_bytes());
+            }
+        }
+    }
 }
 
 fn field(hash: &mut Sha256, bytes: &[u8]) {
@@ -117,5 +186,29 @@ mod tests {
         assert!(!first.contains("account"));
         std::fs::remove_file(&file).unwrap();
         assert_eq!(key(), missing);
+    }
+
+    #[test]
+    fn opencode_first_boot_config_and_unreadable_files_keep_the_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("opencode.jsonc");
+        let ancestor_file = dir.path().join(".opencode");
+        std::fs::write(&ancestor_file, "a file where a folder is expected").unwrap();
+        let unreadable = ancestor_file.join("opencode.json");
+        let files = [config.clone(), unreadable];
+        let key = || {
+            let mut hash = Sha256::new();
+            hash_opencode_files(&mut hash, files.iter());
+            format!("{:x}", hash.finalize())
+        };
+        let missing = key();
+        std::fs::write(&config, r#"{"$schema":"https://opencode.ai/config.json"}"#).unwrap();
+        assert_eq!(key(), missing, "the config opencode writes on first boot");
+        std::fs::write(
+            &config,
+            r#"{"$schema":"https://opencode.ai/config.json","model":"a/b"}"#,
+        )
+        .unwrap();
+        assert_ne!(key(), missing);
     }
 }

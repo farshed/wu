@@ -25,6 +25,8 @@ actions!(
         NewClaudeChat,
         /// Starts a new Codex chat.
         NewCodexChat,
+        /// Starts a new OpenCode chat.
+        NewOpencodeChat,
         /// Sends the message in the chat box.
         Send,
         /// Stops the agent's current turn.
@@ -47,13 +49,24 @@ actions!(
 pub enum AgentKind {
     Claude,
     Codex,
+    Opencode,
 }
 
 impl AgentKind {
+    pub const ALL: [AgentKind; 3] = [AgentKind::Claude, AgentKind::Codex, AgentKind::Opencode];
+
     pub fn label(self) -> &'static str {
         match self {
             AgentKind::Claude => "Claude Code",
             AgentKind::Codex => "Codex",
+            AgentKind::Opencode => "OpenCode",
+        }
+    }
+
+    pub(crate) fn has_plan_usage(self) -> bool {
+        match self {
+            AgentKind::Claude | AgentKind::Codex => true,
+            AgentKind::Opencode => false,
         }
     }
 }

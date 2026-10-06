@@ -1,5 +1,5 @@
 use crate::{
-    AgentKind, NewClaudeChat, NewCodexChat, ToggleFocus,
+    AgentKind, NewClaudeChat, NewCodexChat, NewOpencodeChat, ToggleFocus,
     chat_style::{accent, ink, selected_row, text_faint, ui, wash},
     chat_view::ChatView,
     session::{AgentSession, AgentStore, ChatListPrefs, ChatOutcome, SessionSummary},
@@ -64,6 +64,9 @@ pub fn init(cx: &mut App) {
             })
             .register_action(|workspace, _: &NewCodexChat, window, cx| {
                 new_chat(workspace, AgentKind::Codex, window, cx);
+            })
+            .register_action(|workspace, _: &NewOpencodeChat, window, cx| {
+                new_chat(workspace, AgentKind::Opencode, window, cx);
             });
     })
     .detach();
@@ -575,22 +578,20 @@ impl AgentPanel {
             .menu(move |window, cx| {
                 let workspace = workspace.clone();
                 Some(ContextMenu::build(window, cx, move |menu, _, _| {
-                    [AgentKind::Claude, AgentKind::Codex]
-                        .into_iter()
-                        .fold(menu, |menu, kind| {
-                            let workspace = workspace.clone();
-                            menu.entry(
-                                kind.label(),
-                                Some(new_chat_action(kind)),
-                                move |window, cx| {
-                                    workspace
-                                        .update(cx, |workspace, cx| {
-                                            new_chat(workspace, kind, window, cx)
-                                        })
-                                        .log_err();
-                                },
-                            )
-                        })
+                    AgentKind::ALL.into_iter().fold(menu, |menu, kind| {
+                        let workspace = workspace.clone();
+                        menu.entry(
+                            kind.label(),
+                            Some(new_chat_action(kind)),
+                            move |window, cx| {
+                                workspace
+                                    .update(cx, |workspace, cx| {
+                                        new_chat(workspace, kind, window, cx)
+                                    })
+                                    .log_err();
+                            },
+                        )
+                    })
                 }))
             })
     }
@@ -678,8 +679,7 @@ impl AgentPanel {
             .child(
                 v_flex()
                     .gap(px(LIST_GAP))
-                    .child(new_chat_row(AgentKind::Claude))
-                    .child(new_chat_row(AgentKind::Codex)),
+                    .children(AgentKind::ALL.map(new_chat_row)),
             )
     }
 
@@ -891,10 +891,11 @@ impl AgentPanel {
         let harness_icon = match session.kind {
             AgentKind::Claude => IconName::AgentClaude,
             AgentKind::Codex => IconName::AgentCodex,
+            AgentKind::Opencode => IconName::AgentOpencode,
         };
         let harness_tint: Option<Hsla> = match session.kind {
             AgentKind::Claude => Some(rgb(CLAUDE_BRAND).into()),
-            AgentKind::Codex => None,
+            AgentKind::Codex | AgentKind::Opencode => None,
         };
         let title_content = match renaming {
             Some(field) => self.rename_field(&field.editor, cx),
@@ -1949,6 +1950,7 @@ fn new_chat_action(kind: AgentKind) -> Box<dyn Action> {
     match kind {
         AgentKind::Claude => Box::new(NewClaudeChat),
         AgentKind::Codex => Box::new(NewCodexChat),
+        AgentKind::Opencode => Box::new(NewOpencodeChat),
     }
 }
 

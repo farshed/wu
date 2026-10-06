@@ -84,7 +84,7 @@ impl ChatView {
             colors.text_muted.opacity(0.7)
         };
         let brand = match kind {
-            AgentKind::Codex => agent_icon(kind).color(Color::Muted),
+            AgentKind::Codex | AgentKind::Opencode => agent_icon(kind).color(Color::Muted),
             AgentKind::Claude => agent_icon(kind),
         }
         .size(icon_size_px(16., window));
@@ -497,27 +497,29 @@ impl ChatView {
                     .pl(px(4.))
                     .pr(px(10.))
                     .gap(px(4.))
-                    .child(
-                        PopoverMenu::new(SharedString::from(format!(
-                            "agent-plan-usage-{}",
-                            cx.entity_id()
-                        )))
-                        .trigger(
-                            Chip::new(
-                                "agent-plan-usage-chip",
-                                6.,
-                                usage_chip(usage_fraction, cx),
+                    .when(kind.has_plan_usage(), |this| {
+                        this.child(
+                            PopoverMenu::new(SharedString::from(format!(
+                                "agent-plan-usage-{}",
+                                cx.entity_id()
+                            )))
+                            .trigger(
+                                Chip::new(
+                                    "agent-plan-usage-chip",
+                                    6.,
+                                    usage_chip(usage_fraction, cx),
+                                )
+                                .hover_background(ring_hover),
                             )
-                            .hover_background(ring_hover),
+                            .menu(move |_, cx| {
+                                let store = store.clone();
+                                Some(cx.new(|cx| UsageCard::new(store, kind, cx)))
+                            })
+                            .anchor(Anchor::BottomRight)
+                            .attach(Anchor::TopRight)
+                            .offset(point(px(0.), px(-6.))),
                         )
-                        .menu(move |_, cx| {
-                            let store = store.clone();
-                            Some(cx.new(|cx| UsageCard::new(store, kind, cx)))
-                        })
-                        .anchor(Anchor::BottomRight)
-                        .attach(Anchor::TopRight)
-                        .offset(point(px(0.), px(-6.))),
-                    )
+                    })
                     .child(
                         PopoverMenu::new(SharedString::from(format!(
                             "agent-context-usage-{}",

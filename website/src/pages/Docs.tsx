@@ -51,12 +51,12 @@ export function Docs() {
 
         <h2>Agent Chat</h2>
         <p>
-          Agent Chat lets you work with Claude Code or Codex inside Wu. It runs the <code>claude</code> and{' '}
-          <code>codex</code> command line tools you already have installed and signed in, so there are no API keys and
-          no Wu account.
+          Agent Chat lets you work with Claude Code, Codex or OpenCode inside Wu. It runs the <code>claude</code>,{' '}
+          <code>codex</code> and <code>opencode</code> command line tools you already have installed and signed in, so
+          there are no API keys and no Wu account.
         </p>
         <ul>
-          <li>Open it from the agent icon in the activity bar, then start a new Claude or Codex chat.</li>
+          <li>Open it from the agent icon in the activity bar, then start a new Claude, Codex or OpenCode chat.</li>
           <li>
             Type <code>/</code> for the agent's commands, <code>@</code> to mention a file, and <code>$</code> to use a
             skill.
@@ -68,8 +68,9 @@ export function Docs() {
           </li>
           <li>Subagents open in their own tabs, and the agent's to-do list shows above the chat box.</li>
           <li>
-            The model picker sets the model, reasoning level, and fast mode. The rings next to it show your plan usage
-            and how full the context is, and you can switch between accounts there.
+            The model picker sets the model, reasoning level, fast mode, and how much the agent can do without asking.
+            The rings next to it show how full the context is and, for Claude Code and Codex, your plan usage, where you
+            can also switch accounts.
           </li>
           <li>Chats can be pinned, archived, sorted into sections, forked, or opened as side chats.</li>
           <li>

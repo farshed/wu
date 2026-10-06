@@ -1,7 +1,7 @@
 use agent_harness::{
     AgentEvent, CancellationToken, ClaudeHarness, CodexHarness, DoneStatus, Harness, HarnessId,
-    Model, PermissionMode, ReasoningLevel, RunControls, RunRequest, SkillRef, SlashCommand,
-    SteerMessage, ToolCall, UserInputAnswer, UserInputQuestion, usage::PlanUsage,
+    Model, OpencodeHarness, PermissionMode, ReasoningLevel, RunControls, RunRequest, SkillRef,
+    SlashCommand, SteerMessage, ToolCall, UserInputAnswer, UserInputQuestion, usage::PlanUsage,
 };
 use anyhow::{Context as _, Result};
 use collections::HashMap;
@@ -108,6 +108,7 @@ impl AgentKind {
         match self {
             AgentKind::Claude => HarnessId::ClaudeCode,
             AgentKind::Codex => HarnessId::Codex,
+            AgentKind::Opencode => HarnessId::Opencode,
         }
     }
 
@@ -115,6 +116,7 @@ impl AgentKind {
         match self {
             AgentKind::Claude => Arc::new(ClaudeHarness::new()),
             AgentKind::Codex => Arc::new(CodexHarness::new()),
+            AgentKind::Opencode => Arc::new(OpencodeHarness::new()),
         }
     }
 }
@@ -291,6 +293,7 @@ pub enum Entry {
         text: SharedString,
         at: i64,
         attachments: Vec<PathBuf>,
+        skills: Vec<SkillRef>,
         undelivered: bool,
     },
     Assistant { markdown: Entity<Markdown>, at: i64 },
@@ -309,6 +312,8 @@ enum SerializedEntry {
         at: i64,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         attachments: Vec<PathBuf>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        skills: Vec<SkillRef>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         undelivered: bool,
     },
@@ -448,12 +453,13 @@ impl Transcript {
         }
     }
 
-    fn push_user(&mut self, text: String, attachments: Vec<PathBuf>) {
+    fn push_user(&mut self, text: String, attachments: Vec<PathBuf>, skills: Vec<SkillRef>) {
         self.text_block_open = false;
         self.entries.push(Entry::User {
             text: text.into(),
             at: now(),
             attachments,
+            skills,
             undelivered: false,
         });
     }
@@ -537,11 +543,13 @@ impl Transcript {
                     text,
                     at,
                     attachments,
+                    skills,
                     undelivered,
                 } => SerializedEntry::User {
                     text: text.to_string(),
                     at: *at,
                     attachments: attachments.clone(),
+                    skills: skills.clone(),
                     undelivered: *undelivered,
                 },
                 Entry::Assistant { markdown, at } => SerializedEntry::Assistant {
@@ -583,11 +591,13 @@ fn deserialize_entry(
             text,
             at,
             attachments,
+            skills,
             undelivered,
         } => Entry::User {
             text: text.into(),
             at,
             attachments,
+            skills,
             undelivered,
         },
         SerializedEntry::Assistant { text, at } => Entry::Assistant {
@@ -1049,6 +1059,7 @@ impl AgentSession {
         let Some(Entry::User {
             text,
             attachments,
+            skills,
             undelivered: true,
             ..
         }) = self.transcript.entries.get(index)
@@ -1058,7 +1069,7 @@ impl AgentSession {
         let prompt = Prompt {
             text: text.to_string(),
             attachments: attachments.clone(),
-            skills: Vec::new(),
+            skills: skills.clone(),
         };
         let notices = self.transcript.entries[index + 1..]
             .iter()
@@ -1102,8 +1113,11 @@ impl AgentSession {
         if self.metadata.title.is_empty() {
             self.metadata.title = title_from(&prompt.text);
         }
-        self.transcript
-            .push_user(prompt.text.clone(), prompt.attachments.clone());
+        self.transcript.push_user(
+            prompt.text.clone(),
+            prompt.attachments.clone(),
+            prompt.skills.clone(),
+        );
         if !self.working {
             self.working_since = Some(Instant::now());
         }
@@ -1390,17 +1404,21 @@ impl AgentSession {
                     );
                 }
             }
-            AgentEvent::TextDelta { text } => self.append_text(&text, false, cx),
-            AgentEvent::ReasoningDelta { text } => self.append_text(&text, true, cx),
+            AgentEvent::TextDelta { text } => {
+                self.resume_working();
+                self.append_text(&text, false, cx)
+            }
+            AgentEvent::ReasoningDelta { text } => {
+                self.resume_working();
+                self.append_text(&text, true, cx)
+            }
             AgentEvent::AssistantMessageCompleted { .. } => self.transcript.text_block_open = false,
             AgentEvent::Steered { .. } => {
                 self.transcript.text_block_open = false;
-                if !self.working {
-                    self.working = true;
-                    self.working_since = Some(Instant::now());
-                }
+                self.resume_working();
             }
             AgentEvent::ToolCall { id, call } => {
+                self.resume_working();
                 if call.is_subagent_spawn() {
                     self.subagents.entry(id.clone()).or_insert_with(Subagent::new);
                 }
@@ -1459,7 +1477,12 @@ impl AgentSession {
                 self.transcript.entries.push(Entry::Image { path: path.into() });
                 self.save_entries(cx);
             }
-            AgentEvent::Compacting { active } => self.compacting = active,
+            AgentEvent::Compacting { active } => {
+                if active {
+                    self.resume_working();
+                }
+                self.compacting = active;
+            }
             AgentEvent::TaskStarted {
                 task_id,
                 tool_use_id,
@@ -1548,12 +1571,20 @@ impl AgentSession {
         cx.notify();
     }
 
+    /// The agent can start a turn on its own after a background command or subagent finishes.
+    fn resume_working(&mut self) {
+        if !self.working {
+            self.working = true;
+            self.working_since = Some(Instant::now());
+        }
+    }
+
     fn apply_subagent_event(&mut self, parent: String, event: AgentEvent, cx: &mut Context<Self>) {
         let languages = self.languages.clone();
         let subagent = self.subagents.entry(parent).or_insert_with(Subagent::new);
         let transcript = &mut subagent.transcript;
         match event {
-            AgentEvent::UserMessage { text } => transcript.push_user(text, Vec::new()),
+            AgentEvent::UserMessage { text } => transcript.push_user(text, Vec::new(), Vec::new()),
             AgentEvent::TextDelta { text } => transcript.append_text(&text, false, &languages, cx),
             AgentEvent::ReasoningDelta { text } => {
                 transcript.append_text(&text, true, &languages, cx)
@@ -2111,7 +2142,7 @@ impl AgentStore {
 
     #[cfg(test)]
     pub(crate) fn skip_plan_usage(&mut self) {
-        for kind in [AgentKind::Claude, AgentKind::Codex] {
+        for kind in AgentKind::ALL {
             self.plan_usage.entry(kind).or_default().loading = true;
         }
     }
@@ -2121,6 +2152,9 @@ impl AgentStore {
     }
 
     pub fn refresh_accounts(&mut self, kind: AgentKind, cx: &mut Context<Self>) {
+        if !kind.has_plan_usage() {
+            return;
+        }
         let state = self.accounts.entry(kind).or_default();
         if state.loading {
             return;
@@ -2238,6 +2272,9 @@ impl AgentStore {
     }
 
     pub fn refresh_plan_usage(&mut self, kind: AgentKind, force: bool, cx: &mut Context<Self>) {
+        if !kind.has_plan_usage() {
+            return;
+        }
         let state = self.plan_usage.entry(kind).or_default();
         let min_age = if force {
             USAGE_FORCED_MIN_INTERVAL
@@ -3443,6 +3480,59 @@ done
     }
 
     #[gpui::test]
+    async fn a_turn_the_agent_starts_on_its_own_counts_as_working(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let done = || AgentEvent::Done {
+            status: DoneStatus::Completed,
+            result: None,
+            error: None,
+            session_id: None,
+        };
+        session.update(cx, |session, cx| {
+            for wake in [
+                AgentEvent::TextDelta {
+                    text: "The build finished.".into(),
+                },
+                AgentEvent::ReasoningDelta {
+                    text: "Checking the output".into(),
+                },
+                AgentEvent::ToolCall {
+                    id: "tool-1".into(),
+                    call: ToolCall::Exec {
+                        command: "cat build.log".into(),
+                    },
+                },
+            ] {
+                session.apply_event(done(), cx);
+                assert!(!session.is_working());
+                session.apply_event(wake, cx);
+                assert!(session.is_working());
+                assert!(session.working_since().is_some());
+            }
+            session.apply_event(done(), cx);
+            session.apply_event(
+                AgentEvent::TaskFinished {
+                    task_id: "task-1".into(),
+                    status: DoneStatus::Completed,
+                },
+                cx,
+            );
+            session.apply_event(
+                AgentEvent::ContextUsage {
+                    tokens: Some(10),
+                    window: None,
+                },
+                cx,
+            );
+            assert!(!session.is_working());
+        });
+    }
+
+    #[gpui::test]
     async fn a_chat_deleted_while_opening_stays_deleted(cx: &mut TestAppContext) {
         let directory = tempfile::tempdir().expect("temporary directory");
         let store = new_store(directory.path(), cx);
@@ -3575,7 +3665,9 @@ done
 
     pub(crate) fn feed_user(session: &Entity<AgentSession>, text: &str, cx: &mut TestAppContext) {
         session.update(cx, |session, cx| {
-            session.transcript.push_user(text.to_string(), Vec::new());
+            session
+                .transcript
+                .push_user(text.to_string(), Vec::new(), Vec::new());
             cx.notify();
         });
     }
@@ -3938,7 +4030,9 @@ done
         });
         session.update(cx, |session, cx| {
             session.transcript.push_notice("older crash".into(), true);
-            session.transcript.push_user("failed".into(), Vec::new());
+            session
+                .transcript
+                .push_user("failed".into(), Vec::new(), Vec::new());
             session.fail_run("could not start".into(), cx);
         });
         let index = session.read_with(cx, |session, _| {

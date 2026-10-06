@@ -99,6 +99,7 @@ pub mod codex;
 pub(crate) mod executable;
 pub(crate) mod jsonrpc;
 mod model_context;
+pub mod opencode;
 pub mod process;
 mod proto;
 pub mod usage;
@@ -279,6 +280,7 @@ pub(crate) fn crash_message(
 
 pub use claude::ClaudeHarness;
 pub use codex::CodexHarness;
+pub use opencode::OpencodeHarness;
 
 #[cfg_attr(not(unix), allow(unused_variables))]
 pub(crate) async fn shutdown_child(child: &mut process::Child, kill_grace: std::time::Duration) {

@@ -223,7 +223,7 @@ pub fn permission_label(mode: crate::PermissionMode, harness: crate::HarnessId) 
         PermissionMode::ApproveForMe => "Approve for me",
         PermissionMode::FullAccess => match harness {
             crate::HarnessId::ClaudeCode => "Bypass",
-            crate::HarnessId::Codex => "Full access",
+            crate::HarnessId::Codex | crate::HarnessId::Opencode => "Full access",
         },
     }
 }
@@ -242,11 +242,13 @@ pub fn permission_description(
         (PermissionMode::Auto, HarnessId::Codex) => {
             "Works freely in the project, asks to go beyond"
         }
+        (PermissionMode::Auto, HarnessId::Opencode) => "Follows your OpenCode permission settings",
         (PermissionMode::DontAsk, _) => "Never asks, denies anything not already allowed",
         (PermissionMode::ReadOnly, _) => "Reads files, asks before changing anything",
         (PermissionMode::ApproveForMe, _) => "An automatic reviewer answers approval requests",
         (PermissionMode::FullAccess, HarnessId::ClaudeCode) => "Skips every permission check",
         (PermissionMode::FullAccess, HarnessId::Codex) => "No sandbox and no approval requests",
+        (PermissionMode::FullAccess, HarnessId::Opencode) => "Never asks for permission",
     }
 }
 

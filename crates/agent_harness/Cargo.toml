@@ -18,9 +18,11 @@ base64.workspace = true
 chrono.workspace = true
 futures.workspace = true
 log.workspace = true
+reqwest.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_json_lenient.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
@@ -36,4 +38,4 @@ security-framework = "3.5"
 
 [dev-dependencies]
 tempfile.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "test-util"] }

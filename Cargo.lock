@@ -203,6 +203,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "serde_json_lenient",
  "sha2",
  "tempfile",
  "thiserror 2.0.17",
@@ -210,6 +211,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+ "zed-reqwest",
 ]
 
 [[package]]

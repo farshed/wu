@@ -45,6 +45,7 @@ impl UsageRequest {
         let mut usage = match harness {
             HarnessId::ClaudeCode => claude_usage_windows(body),
             HarnessId::Codex => codex_usage_snapshot(body),
+            HarnessId::Opencode => None,
         }?;
         if usage.plan_label.is_none() {
             usage.plan_label = self.plan_label.clone();
@@ -66,8 +67,11 @@ pub async fn usage_request(harness: HarnessId) -> Result<UsageRequest, String> {
                 .ok_or_else(|| "Sign in to Codex to see usage".to_string())?;
             codex_usage_request(&auth)
         }
+        HarnessId::Opencode => Err(OPENCODE_NO_USAGE.into()),
     }
 }
+
+pub const OPENCODE_NO_USAGE: &str = "OpenCode doesn't report plan usage";
 
 pub(crate) fn claude_usage_request(credentials: &Value) -> Result<UsageRequest, String> {
     let oauth = credentials
