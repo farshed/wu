@@ -783,10 +783,10 @@ async fn run_session(session: Session) {
         }
     }
 
-    shutdown_child(&mut child, kill_grace).await;
     if let Some(handle) = escalation {
         handle.abort();
     }
+    shutdown_child(&mut child, kill_grace).await;
 }
 
 type RequestInputFn = Box<
