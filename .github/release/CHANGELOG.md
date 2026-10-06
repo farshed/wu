@@ -7,6 +7,7 @@ release body.
 
 ## Unreleased
 
+- The title bar and status bar in Wu Dark now have the same tint as the panels instead of showing the plain blurred desktop.
 - Fixed the working indicator in agent chats not coming back when the agent picks up again after a background command or subagent finishes.
 - Agent Chat now works with OpenCode. Start an OpenCode chat from the new chat menu to use any model you've set up in OpenCode, with its slash commands, skills, thinking levels and subagents.
 - The line number gutter is more compact: it reserves room for three digits instead of four (more only when a file needs them) and has less padding around the numbers.

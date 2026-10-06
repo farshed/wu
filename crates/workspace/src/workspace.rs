@@ -7901,6 +7901,11 @@ impl Render for Workspace {
             .size_full()
             .flex()
             .flex_col()
+            .bg(colors.background)
+            .map(|this| match window.window_decorations() {
+                Decorations::Server => this,
+                Decorations::Client { tiling } => this.rounded_client_corners(tiling),
+            })
             .font(ui_font)
             .gap_0()
             .justify_start()
@@ -7958,7 +7963,6 @@ impl Render for Workspace {
                     .child(
                         div()
                             .id("workspace")
-                            .bg(colors.background)
                             .relative()
                             .flex_1()
                             .w_full()
