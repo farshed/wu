@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+## 1.1.3 - 2026-10-06
+
 - Support for Intel Macs.
 - Fixed subagent tabs not showing the working indicator while a background subagent was still running.
 - Hovering the running command or agent indicator under the chat box now shows what's running in a tooltip.
