@@ -1323,7 +1323,7 @@ impl AgentSession {
             subagent.transcript.cancel_running_tools();
             subagent.status.get_or_insert(DoneStatus::Interrupted);
         }
-        self.save_entries(cx);
+        self.save_entries_immediately(cx);
         match self.prompt_after_stop.take() {
             Some(prompt) if !self.deleted => {
                 self.working = true;
@@ -1580,6 +1580,7 @@ impl AgentSession {
     }
 
     fn apply_subagent_event(&mut self, parent: String, event: AgentEvent, cx: &mut Context<Self>) {
+        let is_done = matches!(&event, AgentEvent::Done { .. });
         let languages = self.languages.clone();
         let subagent = self.subagents.entry(parent).or_insert_with(Subagent::new);
         let transcript = &mut subagent.transcript;
@@ -1614,7 +1615,11 @@ impl AgentSession {
             } => return self.apply_subagent_event(parent_tool_use_id, *event, cx),
             _ => return,
         }
-        self.save_entries(cx);
+        if is_done {
+            self.save_entries_immediately(cx);
+        } else {
+            self.save_entries(cx);
+        }
     }
 
     fn append_text(&mut self, text: &str, thinking: bool, cx: &mut Context<Self>) {
@@ -1643,7 +1648,7 @@ impl AgentSession {
     fn touch(&mut self, cx: &mut Context<Self>) {
         self.metadata.updated_at = now();
         self.save_metadata(cx);
-        self.save_entries(cx);
+        self.save_entries_immediately(cx);
     }
 
     fn saved_transcript(&self, cx: &App) -> SavedTranscript {
@@ -1706,6 +1711,26 @@ impl AgentSession {
             })
             .await;
         });
+    }
+
+    pub fn save_entries_immediately(&mut self, cx: &mut Context<Self>) {
+        if self.deleted {
+            return;
+        }
+        let directory = self.directory.clone();
+        let id = self.metadata.id.clone();
+        let entries = self.saved_transcript(cx);
+        self.save_entries_task = cx.background_spawn(async move {
+            serde_json::to_vec(&entries)
+                .map_err(anyhow::Error::from)
+                .and_then(|json| write_atomically(&entries_path(&directory, &id), &json))
+                .log_err();
+        });
+    }
+
+    pub fn flush(&mut self, cx: &mut Context<Self>) {
+        self.save_metadata(cx);
+        self.save_entries_immediately(cx);
     }
 }
 
@@ -2721,6 +2746,12 @@ impl AgentStore {
         })
         .detach();
         cx.notify();
+    }
+
+    pub fn flush_all(&mut self, cx: &mut Context<Self>) {
+        for session in self.live.values() {
+            session.update(cx, |session, cx| session.flush(cx));
+        }
     }
 
     pub fn models_discovered(&self, kind: AgentKind) -> Option<&[Model]> {
@@ -4152,6 +4183,22 @@ done
         });
         session.update(cx, |session, cx| session.mark_seen(cx));
         session.read_with(cx, |session, _| assert!(!session.metadata().unseen));
+    }
+
+    #[gpui::test]
+    async fn completed_runs_save_entries_immediately_without_debounce(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        session.update(cx, |session, cx| session.send_message("scenario:happy", cx));
+        run_until(cx, |cx| session.read_with(cx, |session, _| !session.is_working()));
+
+        let id = session_id(&session, cx);
+        let saved_entries = entries_path(directory.path(), &id);
+        run_until(cx, |_| saved_entries.exists());
+        assert!(saved_entries.exists());
     }
 
     fn session_id(session: &Entity<AgentSession>, cx: &mut TestAppContext) -> String {
