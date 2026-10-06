@@ -9,7 +9,7 @@ use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
 use agent_harness::{
-    AgentEvent, DoneStatus, HarnessId, RunRequest, SandboxLevel, ToolCall, UserInputAnswer,
+    AgentEvent, DoneStatus, HarnessId, PermissionMode, RunRequest, ToolCall, UserInputAnswer,
     UserInputQuestion,
 };
 use agent_harness::{
@@ -43,8 +43,7 @@ fn request(prompt: &str) -> RunRequest {
         reasoning: None,
         model_options: serde_json::Map::new(),
         cwd: String::new(),
-        sandbox: SandboxLevel::DangerFullAccess,
-        auto_approve: true,
+        permission: PermissionMode::FullAccess,
         resume: None,
         attachments: Vec::new(),
         skills: Vec::new(),
@@ -596,7 +595,7 @@ async fn live_real_cli_single_turn() {
     let mut req = request("Reply with exactly the word: pong");
     req.model = Some("haiku".into());
     req.cwd = std::env::temp_dir().display().to_string();
-    req.auto_approve = false;
+    req.permission = PermissionMode::Auto;
     let (controls, _steer, _token) = controls("A");
     let mut stream = harness.run(req, controls).await.expect("run starts");
     let events = tokio::time::timeout(Duration::from_secs(120), async {
@@ -739,7 +738,7 @@ fn permission_controls(
 async fn tool_permissions_are_asked_when_not_auto_approving() {
     let asked = Arc::new(Mutex::new(Vec::new()));
     let mut req = request("scenario:askuser");
-    req.auto_approve = false;
+    req.permission = PermissionMode::Auto;
     let (controls, _steer) = permission_controls("Allow", asked.clone());
     let events = run_to_end(&harness(), req, controls).await;
 
@@ -769,7 +768,7 @@ async fn tool_permissions_are_asked_when_not_auto_approving() {
 async fn denied_tool_permissions_reach_the_cli_as_deny() {
     let asked = Arc::new(Mutex::new(Vec::new()));
     let mut req = request("scenario:askuser");
-    req.auto_approve = false;
+    req.permission = PermissionMode::Auto;
     let (controls, _steer) = permission_controls("Deny", asked.clone());
     let events = run_to_end(&harness(), req, controls).await;
 

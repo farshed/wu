@@ -8,7 +8,7 @@ use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
 use agent_harness::{
-    AgentEvent, DoneStatus, HarnessId, ReasoningLevel, RunRequest, SandboxLevel, Skill, SkillRef,
+    AgentEvent, DoneStatus, HarnessId, PermissionMode, ReasoningLevel, RunRequest, Skill, SkillRef,
     TodoItem, TodoStatus, ToolCall, UserInputAnswer, UserInputQuestion,
 };
 use agent_harness::{
@@ -42,8 +42,7 @@ fn request(prompt: &str) -> RunRequest {
         reasoning: Some(ReasoningLevel::Ultra),
         model_options: serde_json::Map::new(),
         cwd: String::new(),
-        sandbox: SandboxLevel::WorkspaceWrite,
-        auto_approve: true,
+        permission: PermissionMode::FullAccess,
         resume: None,
         attachments: Vec::new(),
         skills: Vec::new(),
@@ -397,7 +396,7 @@ async fn approvals_round_trip_as_input_requests() {
         interrupt: token.clone(),
     };
     let mut req = request("scenario:approve");
-    req.auto_approve = false;
+    req.permission = PermissionMode::Auto;
     let events = run_to_end(&harness(), req, controls).await;
 
     let asked = asked.lock().unwrap();
@@ -434,7 +433,7 @@ async fn approvals_round_trip_as_input_requests() {
 async fn approval_no_answer_becomes_decline() {
     let (controls, _steer, _token) = controls("Deny");
     let mut req = request("scenario:decline");
-    req.auto_approve = false;
+    req.permission = PermissionMode::Auto;
     let events = run_to_end(&harness(), req, controls).await;
 
     // The fake only completes the turn after seeing the decline decision.

@@ -4,7 +4,7 @@ use crate::{
     chat_style::{accent, hairline, ink, mix, popover_card, selected_row, ui},
     session::{AgentSession, AgentStore, ChatListPrefs, RunSettings},
 };
-use agent_harness::{Model, ModelOption, ReasoningLevel, view};
+use agent_harness::{Model, ModelOption, PermissionMode, ReasoningLevel, view};
 use editor::Editor;
 use gpui::{
     AnyElement, App, Background, Bounds, BoxShadow, Context, Corners, DismissEvent, DispatchPhase,
@@ -115,6 +115,14 @@ fn menu_row(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .cursor_pointer()
         .text_color(text.opacity(0.9))
         .hover(move |style| style.bg(hover).text_color(text))
+}
+
+fn permission_color(mode: PermissionMode, resting: Hsla, cx: &App) -> Hsla {
+    if mode == PermissionMode::FullAccess {
+        cx.theme().status().error
+    } else {
+        resting
+    }
 }
 
 fn selected_ring(cx: &App) -> Vec<BoxShadow> {
@@ -428,6 +436,7 @@ impl Selection {
 enum Page {
     Settings,
     Models,
+    Permissions,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -527,6 +536,114 @@ impl ModelPicker {
         self.page = Page::Settings;
         window.focus(&self.focus_handle, cx);
         cx.notify();
+    }
+
+    fn show_permissions(&mut self, cx: &mut Context<Self>) {
+        self.page = Page::Permissions;
+        cx.notify();
+    }
+
+    fn pick_permission(
+        &mut self,
+        mode: PermissionMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.update_settings(cx, |settings| settings.permission = mode);
+        self.show_settings(window, cx);
+    }
+
+    fn render_permission_row(
+        &self,
+        kind: AgentKind,
+        current: PermissionMode,
+        height: f32,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let muted = cx.theme().colors().text_muted;
+        menu_row("picker-setting-permissions", cx)
+            .h(px(height))
+            .py(px(0.))
+            .child(div().flex_1().min_w_0().truncate().child("Permissions"))
+            .child(
+                div()
+                    .max_w(px(120.))
+                    .truncate()
+                    .text_color(permission_color(current, muted, cx))
+                    .child(view::permission_label(current, kind.harness_id())),
+            )
+            .child(glyph(IconName::AgentArrowRight, 12., muted))
+            .on_click(cx.listener(|this, _, _, cx| this.show_permissions(cx)))
+            .into_any_element()
+    }
+
+    fn render_permissions(
+        &self,
+        kind: AgentKind,
+        current: PermissionMode,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let colors = cx.theme().colors();
+        let harness = kind.harness_id();
+        let wash = selected_row(cx);
+        let ring = selected_ring(cx);
+        let rows = PermissionMode::choices(harness).iter().map(|&mode| {
+            let selected = mode == current;
+            menu_row(
+                SharedString::from(format!("picker-permission-{mode:?}")),
+                cx,
+            )
+            .when(selected, |this| this.bg(wash).shadow(ring.clone()))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(1.))
+                    .child(
+                        div()
+                            .text_color(permission_color(mode, colors.text, cx))
+                            .child(view::permission_label(mode, harness)),
+                    )
+                    .child(
+                        div()
+                            .text_size(ui(11.5))
+                            .text_color(colors.text_muted)
+                            .child(view::permission_description(mode, harness)),
+                    ),
+            )
+            .when(selected, |this| {
+                this.child(glyph(IconName::AgentCheck, 12., colors.text_muted))
+            })
+            .on_click(
+                cx.listener(move |this, _, window, cx| this.pick_permission(mode, window, cx)),
+            )
+        });
+        v_flex()
+            .child(
+                h_flex()
+                    .h(px(LIST_HEADER_HEIGHT))
+                    .flex_none()
+                    .px(px(CARD_INSET))
+                    .border_b_1()
+                    .border_color(hairline(0.08, cx))
+                    .gap(px(4.))
+                    .child(
+                        menu_row("picker-permissions-back", cx)
+                            .flex_none()
+                            .tooltip(Tooltip::text("Back"))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.show_settings(window, cx)),
+                            )
+                            .child(back_glyph(14., colors.text_muted)),
+                    )
+                    .child(
+                        div()
+                            .text_size(ui(13.))
+                            .text_color(colors.text.opacity(0.9))
+                            .child("Permissions"),
+                    ),
+            )
+            .child(v_flex().p(px(CARD_INSET)).gap(px(MENU_GAP)).children(rows))
     }
 
     fn render_setting_row(&self, row: SettingRow, height: f32, cx: &Context<Self>) -> AnyElement {
@@ -792,6 +909,12 @@ impl ModelPicker {
             .children(fast_button);
 
         let option_count = options.len();
+        let permission_row = self.render_permission_row(
+            kind,
+            settings.permission.for_harness(kind.harness_id()),
+            COMPACT_SETTING_HEIGHT,
+            cx,
+        );
         v_flex()
             .p(px(CARD_INSET))
             .child(header)
@@ -823,6 +946,12 @@ impl ModelPicker {
                         })),
                 )
             })
+            .child(
+                div()
+                    .mt(px(OPTIONS_GAP))
+                    .pt(px(CARD_INSET))
+                    .child(permission_row),
+            )
     }
 
     fn render_slider(
@@ -1340,6 +1469,7 @@ impl ModelPicker {
         models: &[Model],
         selection: &Selection,
         settings_rows: Vec<SettingRow>,
+        permission: PermissionMode,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let colors = cx.theme().colors();
@@ -1416,7 +1546,8 @@ impl ModelPicker {
                 )
                 .child(self.render_slider(&ladder, selected_index, selection.fast_on(), cx))
         });
-        let tray_height = full_tray_height(settings_rows.len(), slider.is_some());
+        let tray_height = full_tray_height(settings_rows.len() + 1, slider.is_some());
+        let permission_row = self.render_permission_row(kind, permission, FULL_SETTING_HEIGHT, cx);
         v_flex()
             .child(tabs)
             .child(search_row)
@@ -1438,7 +1569,8 @@ impl ModelPicker {
                                 .children(slider)
                                 .children(settings_rows.into_iter().map(|row| {
                                     self.render_setting_row(row, FULL_SETTING_HEIGHT, cx)
-                                })),
+                                }))
+                                .child(permission_row),
                         ),
                 )
             })
@@ -1467,17 +1599,24 @@ impl Render for ModelPicker {
             .on_action(cx.listener(|_, _: &menu::Cancel, _, cx| cx.emit(DismissEvent)))
             .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(DismissEvent)))
             .p(px(0.));
+        let permission = settings.permission.for_harness(kind.harness_id());
+        if self.page == Page::Permissions {
+            return card
+                .w(px(if full { FULL_WIDTH } else { COMPACT_WIDTH }))
+                .child(self.render_permissions(kind, permission, cx))
+                .into_any_element();
+        }
         if full {
             let settings_rows: Vec<SettingRow> = selection
                 .option_rows(|option| EFFORT_OPTION_IDS.contains(&option.id.as_str()));
             let has_slider = !selection.ladder().is_empty();
             let height = FULL_CHROME_HEIGHT
                 + FULL_LIST_HEIGHT
-                + full_tray_height(settings_rows.len(), has_slider);
+                + full_tray_height(settings_rows.len() + 1, has_slider);
             return card
                 .w(px(FULL_WIDTH))
                 .h(px(height))
-                .child(self.render_full(kind, &models, &selection, settings_rows, cx))
+                .child(self.render_full(kind, &models, &selection, settings_rows, permission, cx))
                 .into_any_element();
         }
         card.w(px(COMPACT_WIDTH))
@@ -1485,7 +1624,9 @@ impl Render for ModelPicker {
                 Page::Settings => {
                     this.child(self.render_settings(kind, &selection, &settings, cx))
                 }
-                Page::Models => this.child(self.render_models(kind, &models, &selection, cx)),
+                Page::Models | Page::Permissions => {
+                    this.child(self.render_models(kind, &models, &selection, cx))
+                }
             })
             .into_any_element()
     }
@@ -1558,6 +1699,32 @@ mod tests {
         assert!(picker.read_with(cx, |picker, _| picker.dragging_slider));
         cx.simulate_mouse_up(position, MouseButton::Left, gpui::Modifiers::none());
         assert!(!picker.read_with(cx, |picker, _| picker.dragging_slider));
+    }
+
+    #[gpui::test]
+    async fn picking_a_permission_mode_saves_it_and_returns(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            workspace::AppState::test(cx);
+            editor::init(cx);
+        });
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = crate::session::tests::new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let (picker, cx) = cx.add_window_view(|window, cx| {
+            ModelPicker::new(session.clone(), store.clone(), window, cx)
+        });
+        picker.update(cx, |picker, cx| picker.show_permissions(cx));
+        cx.run_until_parked();
+        picker.update_in(cx, |picker, window, cx| {
+            picker.pick_permission(PermissionMode::FullAccess, window, cx)
+        });
+        assert_eq!(
+            session.read_with(cx, |session, _| session.settings().permission),
+            PermissionMode::FullAccess
+        );
+        assert!(picker.read_with(cx, |picker, _| picker.page == Page::Settings));
     }
 
     #[test]

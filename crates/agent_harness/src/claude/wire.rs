@@ -17,6 +17,8 @@ pub(crate) enum Frame {
 pub(crate) struct SystemFrame {
     #[serde(default)]
     pub subtype: String,
+    #[serde(default, rename = "permissionMode")]
+    pub permission_mode: Option<String>,
     #[serde(default)]
     pub model: String,
     #[serde(default)]

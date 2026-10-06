@@ -73,6 +73,16 @@ impl ChatView {
         let effort = selection.reasoning.map(view::reasoning_label);
         let fast = selection.fast_on();
         let colors = cx.theme().colors();
+        let permission = settings.permission.for_harness(kind.harness_id());
+        let permission_label = format!(
+            "({})",
+            view::permission_label(permission, kind.harness_id())
+        );
+        let permission_color = if permission == agent_harness::PermissionMode::FullAccess {
+            cx.theme().status().error
+        } else {
+            colors.text_muted.opacity(0.7)
+        };
         let brand = match kind {
             AgentKind::Codex => agent_icon(kind).color(Color::Muted),
             AgentKind::Claude => agent_icon(kind),
@@ -111,6 +121,12 @@ impl ChatView {
                                 .child(effort),
                         )
                     })
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(permission_color)
+                            .child(permission_label),
+                    )
                     .when(fast, |this| {
                         this.child(icon(IconName::AgentFastFilled, px(13.), accent(cx)))
                     }),
@@ -723,31 +739,26 @@ impl ChatView {
         let options: Vec<AnyElement> = if answer_editor.is_some() {
             Vec::new()
         } else if is_permission {
-            [
-                ("Allow", Some(true)),
-                ("Allow all in this chat", None),
-                ("Deny", Some(false)),
-            ]
-            .into_iter()
-            .enumerate()
-            .map(|(position, (label, allow))| {
-                let pending_id = pending_id.clone();
-                self.render_option_row(
-                    format!("permission-{pending_id}-{position}").into(),
-                    position + 1,
-                    label.into(),
-                    false,
-                    cx,
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.session.update(cx, |session, cx| match allow {
-                        Some(allow) => session.answer_permission(&pending_id, allow, cx),
-                        None => session.set_auto_approve(true, cx),
-                    })
-                }))
-                .into_any_element()
-            })
-            .collect()
+            [("Allow", true), ("Deny", false)]
+                .into_iter()
+                .enumerate()
+                .map(|(position, (label, allow))| {
+                    let pending_id = pending_id.clone();
+                    self.render_option_row(
+                        format!("permission-{pending_id}-{position}").into(),
+                        position + 1,
+                        label.into(),
+                        false,
+                        cx,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.session.update(cx, |session, cx| {
+                            session.answer_permission(&pending_id, allow, cx)
+                        })
+                    }))
+                    .into_any_element()
+                })
+                .collect()
         } else {
             question
                 .options

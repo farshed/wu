@@ -395,14 +395,18 @@ impl Normalizer {
                 }
                 self.saw_init = true;
                 self.session_id = Some(f.session_id.clone());
-                vec![AgentEvent::SessionStarted {
+                let mut events = vec![AgentEvent::SessionStarted {
                     harness: HarnessId::ClaudeCode,
                     model: f.model,
                     tools: f.tools,
                     cwd: f.cwd,
                     session_id: f.session_id,
                     assistant_message_id: self.assistant_message_id.clone(),
-                }]
+                }];
+                if let Some(mode) = f.permission_mode {
+                    events.push(AgentEvent::PermissionModeReported { mode });
+                }
+                events
             }
 
             Frame::StreamEvent(f) => {
@@ -782,6 +786,23 @@ mod tests {
     fn normalize_one(raw: &str) -> Vec<AgentEvent> {
         let frame = crate::claude::wire::parse_frame(raw).expect("frame parses");
         Normalizer::new().normalize(frame, false)
+    }
+
+    #[test]
+    fn init_reports_the_permission_mode_claude_started_in() {
+        let events = normalize_one(
+            r#"{"type":"system","subtype":"init","model":"m","cwd":"/x","session_id":"s1","permissionMode":"default"}"#,
+        );
+        assert!(matches!(
+            events.first(),
+            Some(AgentEvent::SessionStarted { .. })
+        ));
+        assert_eq!(
+            events.get(1),
+            Some(&AgentEvent::PermissionModeReported {
+                mode: "default".into()
+            })
+        );
     }
 
     fn result_done(raw: &str) -> AgentEvent {

@@ -15,8 +15,9 @@ use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc;
 
 use crate::{
-    AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice, ReasoningLevel,
-    RunRequest, Skill, SkillRef, SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
+    AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice, PermissionMode,
+    ReasoningLevel, RunRequest, Skill, SkillRef, SlashCommand, SteeringMode, UserInputAnswer,
+    UserInputQuestion,
 };
 
 use crate::jsonrpc::{Incoming, RpcClient};
@@ -488,7 +489,7 @@ impl Harness for CodexHarness {
 impl CodexHarness {
     async fn run_with_mode(
         &self,
-        mut request: RunRequest,
+        request: RunRequest,
         controls: RunControls,
     ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
         let native = command_request(&request.prompt, "")?;
@@ -505,9 +506,6 @@ impl CodexHarness {
             return Err(command_with_extras_error());
         }
         let exe = self.resolve_executable()?;
-        if request.auto_approve {
-            request.sandbox = crate::SandboxLevel::DangerFullAccess;
-        }
         let mut cmd = Command::new(&exe);
         cmd.arg("app-server");
         crate::compose_child_path(&mut cmd, &exe);
@@ -785,11 +783,14 @@ async fn run_session(session: Session) {
     } = controls;
     let request_input = Arc::new(request_input);
 
-    let approval_policy = if request.auto_approve {
+    let permission = request.permission.for_harness(HarnessId::Codex);
+    let sandbox = permission_sandbox(permission);
+    let approval_policy = if permission.skips_prompts() {
         "never"
     } else {
         "on-request"
     };
+    let approvals_reviewer = (permission == PermissionMode::ApproveForMe).then_some("auto_review");
     let effort = to_effort(request.reasoning);
     let service_tier = request
         .model_options
@@ -802,7 +803,10 @@ async fn run_session(session: Session) {
         let mut p = serde_json::Map::new();
         p.insert("cwd".into(), Value::String(request.cwd.clone()));
         p.insert("approvalPolicy".into(), approval_policy.into());
-        p.insert("sandbox".into(), sandbox_mode(request.sandbox).into());
+        if let Some(reviewer) = approvals_reviewer {
+            p.insert("approvalsReviewer".into(), reviewer.into());
+        }
+        p.insert("sandbox".into(), sandbox_mode(sandbox).into());
         if let Some(model) = &request.model {
             p.insert("model".into(), Value::String(model.clone()));
         }
@@ -895,10 +899,7 @@ async fn run_session(session: Session) {
         p.insert("threadId".into(), Value::String(thread_id.clone()));
         p.insert("input".into(), prompt_input(text, attachments, skills));
         p.insert("approvalPolicy".into(), approval_policy.into());
-        p.insert(
-            "sandboxPolicy".into(),
-            sandbox_policy_value(request.sandbox),
-        );
+        p.insert("sandboxPolicy".into(), sandbox_policy_value(sandbox));
         // Without this Codex streams no reasoning summaries and looks idle for minutes.
         p.insert("summary".into(), "auto".into());
         if let Some(model) = &request.model {
@@ -1234,7 +1235,7 @@ async fn run_session(session: Session) {
                         id,
                         &method,
                         &params,
-                        request.auto_approve,
+                        permission.skips_prompts(),
                         &request_input,
                     );
                 }
@@ -1412,12 +1413,20 @@ type RequestInputFn = Box<
 >;
 
 /// Every request must get a reply or the app server stalls waiting for it.
+fn permission_sandbox(permission: PermissionMode) -> crate::SandboxLevel {
+    match permission {
+        PermissionMode::ReadOnly => crate::SandboxLevel::ReadOnly,
+        PermissionMode::FullAccess => crate::SandboxLevel::DangerFullAccess,
+        _ => crate::SandboxLevel::WorkspaceWrite,
+    }
+}
+
 fn handle_server_request(
     client: &RpcClient,
     id: Value,
     method: &str,
     params: &Value,
-    auto_approve: bool,
+    skip_prompts: bool,
     request_input: &Arc<RequestInputFn>,
 ) {
     // A content question, so never auto-approved.
@@ -1457,7 +1466,7 @@ fn handle_server_request(
         client.respond_error(&id, -32601, &format!("unsupported method: {method}"));
         return;
     }
-    if auto_approve {
+    if skip_prompts {
         client.respond(&id, json!({ "decision": "accept" }));
         return;
     }
@@ -1597,6 +1606,30 @@ use crate::shutdown_child;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn permission_modes_pick_the_sandbox() {
+        assert_eq!(
+            permission_sandbox(PermissionMode::ReadOnly),
+            crate::SandboxLevel::ReadOnly
+        );
+        assert_eq!(
+            permission_sandbox(PermissionMode::Auto),
+            crate::SandboxLevel::WorkspaceWrite
+        );
+        assert_eq!(
+            permission_sandbox(PermissionMode::ApproveForMe),
+            crate::SandboxLevel::WorkspaceWrite
+        );
+        assert_eq!(
+            permission_sandbox(PermissionMode::FullAccess),
+            crate::SandboxLevel::DangerFullAccess
+        );
+        assert_eq!(
+            PermissionMode::AcceptEdits.for_harness(HarnessId::Codex),
+            PermissionMode::Auto
+        );
+    }
     use serde_json::json;
 
     #[test]

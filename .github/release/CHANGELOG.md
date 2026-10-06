@@ -7,6 +7,9 @@ release body.
 
 ## Unreleased
 
+- Choose how much an agent can do without asking from the model picker: Claude Code's and Codex's own permission modes. Chats start in Auto, which only asks about risky actions, and each chat remembers its choice. The model chip shows the current mode, and Wu says so when Claude can't use Auto. Permission prompts now offer just Allow and Deny.
+- Wu Light now uses the same interface colors as One Light, with Wu's own code colors.
+
 ## 1.1.2 - 2026-10-05
 
 - Fixed images dropped onto an agent chat opening in a preview instead of being attached.

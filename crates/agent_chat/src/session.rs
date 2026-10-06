@@ -1,6 +1,6 @@
 use agent_harness::{
     AgentEvent, CancellationToken, ClaudeHarness, CodexHarness, DoneStatus, Harness, HarnessId,
-    Model, ReasoningLevel, RunControls, RunRequest, SandboxLevel, SkillRef, SlashCommand,
+    Model, PermissionMode, ReasoningLevel, RunControls, RunRequest, SkillRef, SlashCommand,
     SteerMessage, ToolCall, UserInputAnswer, UserInputQuestion, usage::PlanUsage,
 };
 use anyhow::{Context as _, Result};
@@ -104,7 +104,7 @@ fn truncate_output(text: String) -> String {
 }
 
 impl AgentKind {
-    fn harness_id(self) -> HarnessId {
+    pub(crate) fn harness_id(self) -> HarnessId {
         match self {
             AgentKind::Claude => HarnessId::ClaudeCode,
             AgentKind::Codex => HarnessId::Codex,
@@ -127,6 +127,8 @@ pub struct RunSettings {
     pub reasoning: Option<ReasoningLevel>,
     #[serde(default)]
     pub options: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    pub permission: PermissionMode,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,6 +181,10 @@ pub struct SessionMetadata {
 
 impl SessionMetadata {
     fn new(kind: AgentKind, cwd: PathBuf, settings: RunSettings) -> Self {
+        let settings = RunSettings {
+            permission: PermissionMode::default(),
+            ..settings
+        };
         let created_at = now();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -716,7 +722,7 @@ pub struct AgentSession {
     editing_queued: Option<u64>,
     deleted: bool,
     pending_questions: Vec<PendingQuestion>,
-    auto_approve: bool,
+    noticed_auto_unavailable: bool,
     languages: Arc<LanguageRegistry>,
     save_metadata_task: Task<()>,
     save_entries_task: Task<()>,
@@ -781,7 +787,7 @@ impl AgentSession {
             editing_queued: None,
             deleted: false,
             pending_questions: Vec::new(),
-            auto_approve: false,
+            noticed_auto_unavailable: false,
             languages,
             save_metadata_task: Task::ready(()),
             save_entries_task: Task::ready(()),
@@ -868,10 +874,6 @@ impl AgentSession {
 
     pub fn pending_questions(&self) -> &[PendingQuestion] {
         &self.pending_questions
-    }
-
-    pub fn auto_approve(&self) -> bool {
-        self.auto_approve
     }
 
     pub fn settings(&self) -> &RunSettings {
@@ -1164,22 +1166,6 @@ impl AgentSession {
         cx.notify();
     }
 
-    pub fn set_auto_approve(&mut self, auto_approve: bool, cx: &mut Context<Self>) {
-        self.auto_approve = auto_approve;
-        if auto_approve {
-            let waiting: Vec<String> = self
-                .pending_questions
-                .iter()
-                .filter(|pending| pending.is_permission())
-                .map(|pending| pending.id().to_string())
-                .collect();
-            for id in waiting {
-                self.answer_permission(&id, true, cx);
-            }
-        }
-        cx.notify();
-    }
-
     pub fn answer_permission(&mut self, id: &str, allow: bool, cx: &mut Context<Self>) {
         let Some(pending) = self
             .pending_questions
@@ -1232,8 +1218,7 @@ impl AgentSession {
             reasoning: settings.reasoning,
             model_options: settings.options,
             cwd: self.metadata.cwd.to_string_lossy().into_owned(),
-            sandbox: SandboxLevel::WorkspaceWrite,
-            auto_approve: self.auto_approve,
+            permission: settings.permission,
             resume: self.metadata.native_session_id.clone(),
         };
         let (steering_tx, steering_rx) = tokio::sync::mpsc::channel(32);
@@ -1379,14 +1364,8 @@ impl AgentSession {
             questions,
             responder: Some(responder),
         };
-        let id = pending.id().to_string();
-        let allow_now = self.auto_approve && pending.is_permission();
         self.pending_questions.push(pending);
-        if allow_now {
-            self.answer_permission(&id, true, cx);
-        } else {
-            cx.emit(SessionEvent::NeedsInput);
-        }
+        cx.emit(SessionEvent::NeedsInput);
         cx.notify();
     }
 
@@ -1395,6 +1374,20 @@ impl AgentSession {
             AgentEvent::SessionStarted { session_id, .. } => {
                 if !session_id.is_empty() {
                     self.set_native_session_id(session_id, cx);
+                }
+            }
+            AgentEvent::PermissionModeReported { mode } => {
+                let asked_for_auto = self.metadata.kind == AgentKind::Claude
+                    && self.metadata.settings.permission == PermissionMode::Auto;
+                if asked_for_auto && mode != "auto" && !self.noticed_auto_unavailable {
+                    self.noticed_auto_unavailable = true;
+                    self.push_notice(
+                        "Auto mode isn't available here, so Claude will ask before acting. \
+                         It's off with fast mode, and on some plans and models."
+                            .into(),
+                        false,
+                        cx,
+                    );
                 }
             }
             AgentEvent::TextDelta { text } => self.append_text(&text, false, cx),
@@ -2518,6 +2511,7 @@ impl AgentStore {
                     parent_metadata.settings.clone(),
                 );
                 metadata.parent_id = Some(parent_metadata.id.clone());
+                metadata.settings.permission = parent_metadata.settings.permission;
                 metadata.side_chat = side_chat;
                 metadata.project_root = parent_metadata.project_root.clone();
                 metadata.branch = parent_metadata.branch.clone();
@@ -2842,6 +2836,73 @@ pub(crate) mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         panic!("the agent never reached the expected state");
+    }
+
+    #[gpui::test]
+    async fn says_once_when_claude_did_not_start_in_auto(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let notices = |cx: &mut TestAppContext| {
+            session.read_with(cx, |session, cx| {
+                summarize(session.entries(), cx)
+                    .into_iter()
+                    .filter(|entry| entry.starts_with("notice: Auto mode isn't available"))
+                    .count()
+            })
+        };
+        let reported = |mode: &str| {
+            vec![AgentEvent::PermissionModeReported {
+                mode: mode.to_string(),
+            }]
+        };
+        feed_events(&session, reported("auto"), cx);
+        assert_eq!(notices(cx), 0);
+        feed_events(&session, reported("default"), cx);
+        feed_events(&session, reported("default"), cx);
+        assert_eq!(notices(cx), 1);
+    }
+
+    #[gpui::test]
+    async fn a_chosen_permission_mode_stays_with_its_chat(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        assert_eq!(
+            session.read_with(cx, |session, _| session.settings().permission),
+            PermissionMode::Auto
+        );
+        session.update(cx, |session, cx| {
+            session.update_settings(
+                |settings| settings.permission = PermissionMode::FullAccess,
+                cx,
+            )
+        });
+        let id = session_id(&session, cx);
+        cx.run_until_parked();
+
+        let reopened_store = new_store(directory.path(), cx);
+        cx.run_until_parked();
+        let reopened = reopened_store
+            .update(cx, |store, cx| store.open_session(&id, cx))
+            .await
+            .expect("chat reopens");
+        assert_eq!(
+            reopened.read_with(cx, |session, _| session.settings().permission),
+            PermissionMode::FullAccess
+        );
+        let fresh = reopened_store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        assert_eq!(
+            fresh.read_with(cx, |session, _| session.settings().permission),
+            PermissionMode::Auto,
+            "new chats always start in auto"
+        );
     }
 
     #[gpui::test]
@@ -3945,6 +4006,12 @@ done
         });
         parent.update(cx, |session, cx| session.send_message("scenario:happy", cx));
         run_until(cx, |cx| parent.read_with(cx, |session, _| !session.is_working()));
+        parent.update(cx, |session, cx| {
+            session.update_settings(
+                |settings| settings.permission = PermissionMode::FullAccess,
+                cx,
+            )
+        });
         let parent_id = session_id(&parent, cx);
 
         let fork = store
@@ -3959,6 +4026,7 @@ done
             assert!(context.contains("scenario:happy") && context.contains("Hello"));
             assert_eq!(fork.metadata().parent_id.as_deref(), Some(parent_id.as_str()));
             assert!(!fork.metadata().side_chat);
+            assert_eq!(fork.settings().permission, PermissionMode::FullAccess);
         });
 
         let side = store

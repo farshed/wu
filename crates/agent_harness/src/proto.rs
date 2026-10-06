@@ -31,6 +31,52 @@ pub enum SandboxLevel {
     DangerFullAccess,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionMode {
+    Ask,
+    AcceptEdits,
+    #[default]
+    Auto,
+    DontAsk,
+    ReadOnly,
+    ApproveForMe,
+    FullAccess,
+}
+
+impl PermissionMode {
+    pub fn choices(harness: HarnessId) -> &'static [PermissionMode] {
+        match harness {
+            HarnessId::ClaudeCode => &[
+                Self::Ask,
+                Self::AcceptEdits,
+                Self::Auto,
+                Self::DontAsk,
+                Self::FullAccess,
+            ],
+            HarnessId::Codex => &[
+                Self::ReadOnly,
+                Self::Auto,
+                Self::ApproveForMe,
+                Self::FullAccess,
+            ],
+        }
+    }
+
+    /// Falls back to `Auto` for modes the harness doesn't offer.
+    pub fn for_harness(self, harness: HarnessId) -> Self {
+        if Self::choices(harness).contains(&self) {
+            self
+        } else {
+            Self::Auto
+        }
+    }
+
+    pub fn skips_prompts(self) -> bool {
+        self == Self::FullAccess
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SteeringMode {
@@ -77,9 +123,8 @@ pub struct RunRequest {
     #[serde(default)]
     pub model_options: serde_json::Map<String, serde_json::Value>,
     pub cwd: String,
-    pub sandbox: SandboxLevel,
     #[serde(default)]
-    pub auto_approve: bool,
+    pub permission: PermissionMode,
     /// Harness-native session id.
     pub resume: Option<String>,
     /// Absolute image file paths.
@@ -344,6 +389,10 @@ pub enum AgentEvent {
     },
     TextDelta {
         text: String,
+    },
+    /// The mode the CLI actually started in, which can differ from the one asked for.
+    PermissionModeReported {
+        mode: String,
     },
     #[serde(rename_all = "camelCase")]
     GeneratedImage {

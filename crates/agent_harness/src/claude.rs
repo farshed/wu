@@ -15,8 +15,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 use crate::{
-    AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SlashCommand,
-    SteeringMode, UserInputAnswer, UserInputQuestion,
+    AgentEvent, DoneStatus, HarnessId, Model, PermissionMode, ReasoningLevel, RunRequest,
+    SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
 };
 
 use crate::process::{Child, ChildStdin, Command, Stdio};
@@ -164,15 +164,7 @@ impl ClaudeHarness {
         if let Some(effort) = to_effort(request.reasoning, request.model.as_deref()) {
             cmd.args(["--effort", effort]);
         }
-        if request.auto_approve {
-            cmd.args([
-                "--permission-mode",
-                "bypassPermissions",
-                "--dangerously-skip-permissions",
-            ]);
-        } else {
-            cmd.args(["--permission-mode", "default"]);
-        }
+        cmd.args(permission_args(request.permission));
         if let Some(resume) = &request.resume {
             cmd.arg(format!("--resume={resume}"));
         }
@@ -459,7 +451,7 @@ impl ClaudeHarness {
         }
         tokio::spawn(run_session(Session {
             normalizer,
-            auto_approve: request.auto_approve,
+            skip_prompts: request.permission.skips_prompts(),
             child,
             stdout_lines: BufReader::new(stdout).lines(),
             stdin_tx,
@@ -571,7 +563,7 @@ async fn stdin_writer(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<Std
 
 struct Session {
     normalizer: Normalizer,
-    auto_approve: bool,
+    skip_prompts: bool,
     child: Child,
     stdout_lines: tokio::io::Lines<BufReader<crate::process::ChildStdout>>,
     stdin_tx: mpsc::UnboundedSender<StdinMsg>,
@@ -586,7 +578,7 @@ struct Session {
 async fn run_session(session: Session) {
     let Session {
         normalizer: mut norm,
-        auto_approve,
+        skip_prompts,
         mut child,
         mut stdout_lines,
         stdin_tx,
@@ -635,7 +627,7 @@ async fn run_session(session: Session) {
                         }
                     };
                     if let Frame::ControlRequest(req) = frame {
-                        handle_control_request(req, auto_approve, &request_input, &stdin_tx);
+                        handle_control_request(req, skip_prompts, &request_input, &stdin_tx);
                         continue;
                     }
                     if let Frame::User(ref user) = frame {
@@ -803,10 +795,26 @@ type RequestInputFn = Box<
         + Sync,
 >;
 
+fn permission_args(permission: PermissionMode) -> &'static [&'static str] {
+    match permission.for_harness(HarnessId::ClaudeCode) {
+        PermissionMode::Ask => &["--permission-mode", "default"],
+        PermissionMode::AcceptEdits => &["--permission-mode", "acceptEdits"],
+        PermissionMode::DontAsk => &["--permission-mode", "dontAsk"],
+        PermissionMode::FullAccess => &[
+            "--permission-mode",
+            "bypassPermissions",
+            "--dangerously-skip-permissions",
+        ],
+        PermissionMode::Auto | PermissionMode::ReadOnly | PermissionMode::ApproveForMe => {
+            &["--permission-mode", "auto"]
+        }
+    }
+}
+
 /// The CLI blocks until every `can_use_tool` request gets a response.
 fn handle_control_request(
     req: ControlRequestFrame,
-    auto_approve: bool,
+    skip_prompts: bool,
     request_input: &Arc<RequestInputFn>,
     stdin_tx: &mpsc::UnboundedSender<StdinMsg>,
 ) {
@@ -815,7 +823,7 @@ fn handle_control_request(
         return;
     }
     if req.request.tool_name != "AskUserQuestion" {
-        if auto_approve {
+        if skip_prompts {
             let line = control_response_line(&req.request_id, allow_response(req.request.input));
             stdin_tx.send(StdinMsg::Line(line)).ok();
             return;
@@ -931,6 +939,39 @@ fn updated_input_with_answers(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn each_permission_mode_maps_to_its_cli_flags() {
+        assert_eq!(
+            permission_args(PermissionMode::Auto),
+            ["--permission-mode", "auto"]
+        );
+        assert_eq!(
+            permission_args(PermissionMode::Ask),
+            ["--permission-mode", "default"]
+        );
+        assert_eq!(
+            permission_args(PermissionMode::AcceptEdits),
+            ["--permission-mode", "acceptEdits"]
+        );
+        assert_eq!(
+            permission_args(PermissionMode::DontAsk),
+            ["--permission-mode", "dontAsk"]
+        );
+        assert_eq!(
+            permission_args(PermissionMode::FullAccess),
+            [
+                "--permission-mode",
+                "bypassPermissions",
+                "--dangerously-skip-permissions"
+            ]
+        );
+        assert_eq!(
+            permission_args(PermissionMode::ReadOnly),
+            ["--permission-mode", "auto"],
+            "Codex-only modes fall back to auto"
+        );
+    }
 
     #[test]
     fn parses_questions_tolerantly() {

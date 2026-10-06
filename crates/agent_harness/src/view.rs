@@ -212,6 +212,44 @@ pub fn clamp_reasoning(
     }
 }
 
+pub fn permission_label(mode: crate::PermissionMode, harness: crate::HarnessId) -> &'static str {
+    use crate::PermissionMode;
+    match mode {
+        PermissionMode::Ask => "Ask",
+        PermissionMode::AcceptEdits => "Accept edits",
+        PermissionMode::Auto => "Auto",
+        PermissionMode::DontAsk => "Don't ask",
+        PermissionMode::ReadOnly => "Read only",
+        PermissionMode::ApproveForMe => "Approve for me",
+        PermissionMode::FullAccess => match harness {
+            crate::HarnessId::ClaudeCode => "Bypass",
+            crate::HarnessId::Codex => "Full access",
+        },
+    }
+}
+
+pub fn permission_description(
+    mode: crate::PermissionMode,
+    harness: crate::HarnessId,
+) -> &'static str {
+    use crate::{HarnessId, PermissionMode};
+    match (mode, harness) {
+        (PermissionMode::Ask, _) => "Asks before commands and file edits",
+        (PermissionMode::AcceptEdits, _) => "Edits files freely, asks before commands",
+        (PermissionMode::Auto, HarnessId::ClaudeCode) => {
+            "Approves routine actions, asks about risky ones"
+        }
+        (PermissionMode::Auto, HarnessId::Codex) => {
+            "Works freely in the project, asks to go beyond"
+        }
+        (PermissionMode::DontAsk, _) => "Never asks, denies anything not already allowed",
+        (PermissionMode::ReadOnly, _) => "Reads files, asks before changing anything",
+        (PermissionMode::ApproveForMe, _) => "An automatic reviewer answers approval requests",
+        (PermissionMode::FullAccess, HarnessId::ClaudeCode) => "Skips every permission check",
+        (PermissionMode::FullAccess, HarnessId::Codex) => "No sandbox and no approval requests",
+    }
+}
+
 pub fn reasoning_label(level: crate::ReasoningLevel) -> &'static str {
     match level {
         crate::ReasoningLevel::Minimal => "Minimal",
