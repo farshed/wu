@@ -12,9 +12,9 @@ const questions: { question: string; answer: ReactNode }[] = [
     answer: 'No. Wu has no telemetry, no crash reporting and no account. It never sends your usage data anywhere.'
   },
   {
-    question: 'Does Wu have AI features?',
+    question: 'Does Wu support AI coding agents?',
     answer:
-      "Yes. The Agent Chat panel runs Claude Code, Codex or OpenCode using the CLIs you already have installed and signed in, so you don't need API keys or a Wu account. Zed's own AI features, like the inline assistant and edit predictions, are not included."
+      "Yes. Wu has built-in support for coding agents like Claude Code, Codex, and OpenCode. However, Wu doesn't support Zed's AI features, like the inline assistant and edit predictions."
   },
   {
     question: 'Do Zed extensions work in Wu?',
@@ -42,16 +42,10 @@ const questions: { question: string; answer: ReactNode }[] = [
     )
   },
   {
-    question: 'Does Wu have Vim mode?',
-    answer: 'No. Vim and Helix modes are removed to keep Wu simple.'
-  },
-  {
     question: 'How is Wu different from Zed?',
     answer: (
       <>
-        Wu has its own agent chat built on the Claude Code, Codex and OpenCode CLIs, its own look, and an activity bar for
-        switching panels. It drops Zed's AI service, collaboration and telemetry. Everything else works the way it does
-        in Zed. The <a href="/docs/">docs</a> list every difference.
+        Wu drops Zed's AI service, collaboration and telemetry features. It has its own agent chat built on the Claude Code, Codex and OpenCode CLIs, its own look, and several other improvements over Zed. See <a href="/docs/">docs</a> for more.
       </>
     )
   },
