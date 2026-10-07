@@ -7,6 +7,7 @@ release body.
 
 ## Unreleased
 
+- Images dropped anywhere on an agent chat, including near its edges, are attached instead of opening in a split.
 ## 1.1.3 - 2026-10-06
 
 - Support for Intel Macs.

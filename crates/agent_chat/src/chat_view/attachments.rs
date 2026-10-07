@@ -263,6 +263,16 @@ impl ChatView {
         cx.notify();
     }
 
+    pub(super) fn dropped_paths(&self, dropped: &dyn std::any::Any, cx: &App) -> Vec<PathBuf> {
+        if let Some(paths) = dropped.downcast_ref::<ExternalPaths>() {
+            paths.paths().to_vec()
+        } else if let Some(selection) = dropped.downcast_ref::<workspace::DraggedSelection>() {
+            self.selection_paths(selection, cx)
+        } else {
+            Vec::new()
+        }
+    }
+
     pub(super) fn selection_paths(
         &self,
         selection: &workspace::DraggedSelection,
@@ -427,14 +437,25 @@ mod tests {
             chat
         });
         let pane = workspace.read_with(cx, |workspace, _| workspace.active_pane().clone());
-        let dropped = ExternalPaths([image.clone(), notes].into_iter().collect());
-        let drop = |cx: &mut gpui::VisualTestContext| {
+        let dropped = ExternalPaths([image.clone(), notes.clone()].into_iter().collect());
+        let text_only = ExternalPaths([notes].into_iter().collect());
+        let drop = |paths: &ExternalPaths, cx: &mut gpui::VisualTestContext| {
             pane.update_in(cx, |pane, window, cx| {
                 let item = pane.active_item().expect("chat tab");
-                item.handle_drop(pane, &dropped, window, cx)
+                item.handle_drop(pane, paths, window, cx)
             })
         };
-        assert!(drop(cx), "the chat takes the drop");
+        let claims = |paths: &ExternalPaths, cx: &mut gpui::VisualTestContext| {
+            pane.read_with(cx, |pane, cx| {
+                pane.active_item().expect("chat tab").claims_drop(paths, cx)
+            })
+        };
+        assert!(
+            claims(&dropped, cx),
+            "a drag with an image never splits the chat"
+        );
+        assert!(!claims(&text_only, cx));
+        assert!(drop(&dropped, cx), "the chat takes the drop");
         cx.run_until_parked();
         chat.read_with(cx, |chat, cx| {
             assert_eq!(chat.attachments, vec![image.clone()]);
@@ -444,7 +465,14 @@ mod tests {
         pane.update(cx, |pane, _| {
             pane.drag_split_direction = Some(workspace::SplitDirection::Right)
         });
-        assert!(!drop(cx), "edge drops still split the pane");
+        assert!(
+            drop(&dropped, cx),
+            "an image dropped on an edge still attaches"
+        );
+        assert!(
+            !drop(&text_only, cx),
+            "edge drops without an image still split the pane"
+        );
     }
 
     #[test]

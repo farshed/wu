@@ -2937,18 +2937,13 @@ impl Item for ChatView {
         window: &mut Window,
         cx: &mut App,
     ) -> bool {
-        // Drops on a pane edge split the pane; only drops on the chat itself attach.
-        if self.subagent.is_some() || active_pane.drag_split_direction().is_some() {
+        if self.subagent.is_some() {
             return false;
         }
-        let paths = if let Some(paths) = dropped.downcast_ref::<ExternalPaths>() {
-            paths.paths().to_vec()
-        } else if let Some(selection) = dropped.downcast_ref::<DraggedSelection>() {
-            self.selection_paths(selection, cx)
-        } else {
-            return false;
-        };
-        if paths.is_empty() {
+        let paths = self.dropped_paths(dropped, cx);
+        let has_image = paths.iter().any(|path| attachments::is_image_path(path));
+        // Drops on a pane edge split the pane, unless they carry an image to attach.
+        if paths.is_empty() || (active_pane.drag_split_direction().is_some() && !has_image) {
             return false;
         }
         // The pane calls this while it is already updating the chat.
@@ -2958,6 +2953,14 @@ impl Item for ChatView {
                 .log_err();
         });
         true
+    }
+
+    fn claims_drop(&self, dragged: &dyn std::any::Any, cx: &App) -> bool {
+        self.subagent.is_none()
+            && self
+                .dropped_paths(dragged, cx)
+                .iter()
+                .any(|path| attachments::is_image_path(path))
     }
 
     fn as_searchable(

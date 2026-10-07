@@ -3887,6 +3887,13 @@ impl Pane {
         if !can_split {
             return;
         }
+        if self
+            .active_item()
+            .is_some_and(|item| item.claims_drop(event.dragged_item(), cx))
+        {
+            self.drag_split_direction = None;
+            return;
+        }
 
         let rect = event.bounds.size;
 

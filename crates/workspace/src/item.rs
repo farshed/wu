@@ -401,6 +401,11 @@ pub trait Item: Focusable + EventEmitter<Self::Event> + Render + Sized {
         false
     }
 
+    /// Returns `true` to take the dragged item anywhere over the item, so the pane never splits for it.
+    fn claims_drop(&self, _dragged: &dyn Any, _cx: &App) -> bool {
+        false
+    }
+
     /// Returns additional actions to add to the tab's context menu.
     /// Each entry is a label and an action to dispatch.
     fn tab_extra_context_menu_actions(
@@ -583,6 +588,7 @@ pub trait ItemHandle: 'static + Send {
         window: &mut Window,
         cx: &mut App,
     ) -> bool;
+    fn claims_drop(&self, dragged: &dyn Any, cx: &App) -> bool;
     fn tab_extra_context_menu_actions(
         &self,
         window: &mut Window,
@@ -1095,6 +1101,10 @@ impl<T: Item> ItemHandle for Entity<T> {
         self.update(cx, |this, cx| {
             this.handle_drop(active_pane, dropped, window, cx)
         })
+    }
+
+    fn claims_drop(&self, dragged: &dyn Any, cx: &App) -> bool {
+        self.read(cx).claims_drop(dragged, cx)
     }
 
     fn tab_extra_context_menu_actions(
