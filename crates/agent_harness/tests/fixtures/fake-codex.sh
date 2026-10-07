@@ -53,6 +53,9 @@ if has "$line" '"method":"thread/resume"'; then
   else
     emit "{\"id\":$(rid "$line"),\"result\":{\"thread\":{\"id\":\"th-resumed\"}}}"
   fi
+elif has "$line" '"method":"thread/fork"'; then
+  has "$line" '"threadId":"fork-source"' || exit 1
+  emit "{\"id\":$(rid "$line"),\"result\":{\"thread\":{\"id\":\"th-forked\"}}}"
 elif has "$line" '"method":"thread/start"'; then
   emit "{\"id\":$(rid "$line"),\"result\":{\"thread\":{\"id\":\"th-1\"}}}"
 else

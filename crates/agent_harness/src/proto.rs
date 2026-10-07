@@ -129,6 +129,9 @@ pub struct RunRequest {
     pub permission: PermissionMode,
     /// Harness-native session id.
     pub resume: Option<String>,
+    /// Harness-native session id to copy into a new session; ignored when `resume` is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fork: Option<String>,
     /// Absolute image file paths.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<String>,

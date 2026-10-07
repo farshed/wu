@@ -162,15 +162,14 @@ pub struct SessionMetadata {
     #[serde(default)]
     pub pinned: bool,
     #[serde(default)]
-    pub archived: bool,
-    #[serde(default)]
-    pub section: Option<String>,
-    #[serde(default)]
     pub parent_id: Option<String>,
     #[serde(default)]
     pub side_chat: bool,
     #[serde(default)]
     pub fork_context: Option<String>,
+    /// The parent's agent session, copied by the agent itself on the fork's first run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fork_source: Option<String>,
     #[serde(default)]
     pub outcome: Option<ChatOutcome>,
     #[serde(default)]
@@ -199,11 +198,10 @@ impl SessionMetadata {
             settings,
             context: None,
             pinned: false,
-            archived: false,
-            section: None,
             parent_id: None,
             side_chat: false,
             fork_context: None,
+            fork_source: None,
             outcome: None,
             unseen: false,
             project_root: None,
@@ -717,6 +715,9 @@ pub struct AgentSession {
     run_failed: bool,
     harness: Arc<dyn Harness>,
     restart_on_next_send: bool,
+    native_fork_prompt: Option<Prompt>,
+    native_fork_failed: bool,
+    native_fork_errors: Vec<String>,
     metadata: SessionMetadata,
     transcript: Transcript,
     subagents: HashMap<String, Subagent>,
@@ -775,6 +776,9 @@ impl AgentSession {
             run_failed: false,
             harness,
             restart_on_next_send: false,
+            native_fork_prompt: None,
+            native_fork_failed: false,
+            native_fork_errors: Vec::new(),
             metadata,
             transcript,
             subagents,
@@ -1217,7 +1221,19 @@ impl AgentSession {
         if self.metadata.native_session_id.is_none() {
             self.metadata.context = None;
         }
+        let fork = self
+            .metadata
+            .native_session_id
+            .is_none()
+            .then(|| self.metadata.fork_source.clone())
+            .flatten();
+        self.native_fork_prompt = fork.is_some().then(|| prompt.clone());
+        self.native_fork_errors.clear();
         let text = match self.metadata.fork_context.take() {
+            context if fork.is_some() => {
+                self.metadata.fork_context = context;
+                prompt.text.clone()
+            }
             Some(context) if agent_harness::leading_command(&prompt.text).is_none() => {
                 self.save_metadata(cx);
                 format!(
@@ -1241,6 +1257,7 @@ impl AgentSession {
             cwd: self.metadata.cwd.to_string_lossy().into_owned(),
             permission: settings.permission,
             resume: self.metadata.native_session_id.clone(),
+            fork,
         };
         let (steering_tx, steering_rx) = tokio::sync::mpsc::channel(32);
         let interrupt = CancellationToken::new();
@@ -1312,12 +1329,24 @@ impl AgentSession {
     }
 
     fn fail_run(&mut self, message: String, cx: &mut Context<Self>) {
+        if self.native_fork_pending() {
+            log::warn!(
+                "native fork failed, sending the conversation as context instead: {message}"
+            );
+            self.native_fork_failed = true;
+            self.run_ended(cx);
+            return;
+        }
         self.run_failed = true;
         if let Some(Entry::User { undelivered, .. }) = self.transcript.entries.last_mut() {
             *undelivered = true;
         }
         self.push_notice(message, true, cx);
         self.run_ended(cx);
+    }
+
+    fn native_fork_pending(&self) -> bool {
+        self.native_fork_prompt.is_some() && self.metadata.native_session_id.is_none()
     }
 
     fn run_ended(&mut self, cx: &mut Context<Self>) {
@@ -1331,6 +1360,18 @@ impl AgentSession {
             subagent.status.get_or_insert(DoneStatus::Interrupted);
         }
         self.save_entries(cx);
+        if std::mem::take(&mut self.native_fork_failed)
+            && let Some(prompt) = self.native_fork_prompt.take()
+            && !self.deleted
+        {
+            self.native_fork_errors.clear();
+            self.metadata.fork_source = None;
+            self.save_metadata(cx);
+            self.working = true;
+            self.start_run(prompt, cx);
+            cx.notify();
+            return;
+        }
         match self.prompt_after_stop.take() {
             Some(prompt) if !self.deleted => {
                 self.working = true;
@@ -1441,7 +1482,21 @@ impl AgentSession {
                 self.transcript.finish_tool(&id, is_error, output, diff);
                 self.save_entries(cx);
             }
+            AgentEvent::Error { message } if self.native_fork_pending() => {
+                self.native_fork_errors.push(message);
+            }
             AgentEvent::Error { message } => self.push_notice(message, true, cx),
+            AgentEvent::Done {
+                status: DoneStatus::Errored,
+                error,
+                ..
+            } if self.native_fork_pending() => {
+                log::warn!(
+                    "native fork failed, sending the conversation as context instead: {error:?} {:?}",
+                    self.native_fork_errors
+                );
+                self.native_fork_failed = true;
+            }
             AgentEvent::Done {
                 status,
                 error,
@@ -1643,6 +1698,13 @@ impl AgentSession {
     fn set_native_session_id(&mut self, session_id: String, cx: &mut Context<Self>) {
         if self.metadata.native_session_id.as_deref() != Some(session_id.as_str()) {
             self.metadata.native_session_id = Some(session_id);
+            if self.native_fork_prompt.take().is_some() {
+                self.metadata.fork_source = None;
+                self.metadata.fork_context = None;
+                for message in std::mem::take(&mut self.native_fork_errors) {
+                    self.push_notice(message, true, cx);
+                }
+            }
             self.save_metadata(cx);
         }
     }
@@ -1726,8 +1788,6 @@ pub struct SessionSummary {
     pub working: bool,
     pub needs_input: bool,
     pub pinned: bool,
-    pub archived: bool,
-    pub section: Option<String>,
     pub parent_id: Option<String>,
     pub side_chat: bool,
     pub outcome: Option<ChatOutcome>,
@@ -1735,12 +1795,6 @@ pub struct SessionSummary {
     pub project_root: PathBuf,
     pub branch: Option<String>,
     pub native_session_id: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChatSection {
-    pub id: String,
-    pub name: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1754,7 +1808,6 @@ pub enum ChatSort {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChatListPrefs {
-    pub sections: Vec<ChatSection>,
     pub all_projects: bool,
     pub group_by_project: bool,
     pub sort: ChatSort,
@@ -2369,8 +2422,6 @@ impl AgentStore {
                     working: live.is_some_and(|session| session.is_working()),
                     needs_input: live.is_some_and(|session| !session.pending_questions.is_empty()),
                     pinned: metadata.pinned,
-                    archived: metadata.archived,
-                    section: metadata.section.clone(),
                     parent_id: metadata.parent_id.clone(),
                     side_chat: metadata.side_chat,
                     outcome: metadata.outcome,
@@ -2454,80 +2505,6 @@ impl AgentStore {
         self.update_session_metadata(id, |metadata| metadata.pinned = pinned, cx);
     }
 
-    pub fn set_archived(&mut self, id: &str, archived: bool, cx: &mut Context<Self>) {
-        self.update_session_metadata(
-            id,
-            |metadata| {
-                metadata.archived = archived;
-                if archived {
-                    metadata.pinned = false;
-                }
-            },
-            cx,
-        );
-    }
-
-    pub fn move_to_section(&mut self, id: &str, section: Option<String>, cx: &mut Context<Self>) {
-        self.update_session_metadata(
-            id,
-            |metadata| {
-                metadata.section = section;
-                metadata.archived = false;
-            },
-            cx,
-        );
-    }
-
-    pub fn create_section(&mut self, name: String, cx: &mut Context<Self>) -> String {
-        let id = uuid::Uuid::new_v4().to_string();
-        let section = ChatSection {
-            id: id.clone(),
-            name: name.trim().to_string(),
-        };
-        self.update_list_prefs(|prefs| prefs.sections.push(section), cx);
-        id
-    }
-
-    pub fn rename_section(&mut self, id: &str, name: String, cx: &mut Context<Self>) {
-        let name = name.trim().to_string();
-        if name.is_empty() {
-            return;
-        }
-        self.update_list_prefs(
-            |prefs| {
-                if let Some(section) = prefs.sections.iter_mut().find(|section| section.id == id) {
-                    section.name = name;
-                }
-            },
-            cx,
-        );
-    }
-
-    pub fn delete_section(&mut self, id: &str, cx: &mut Context<Self>) {
-        let members: Vec<String> = self
-            .sessions
-            .iter()
-            .filter(|metadata| metadata.section.as_deref() == Some(id))
-            .map(|metadata| metadata.id.clone())
-            .collect();
-        for member in members {
-            self.update_session_metadata(&member, |metadata| metadata.section = None, cx);
-        }
-        self.update_list_prefs(|prefs| prefs.sections.retain(|section| section.id != id), cx);
-    }
-
-    pub fn archive_section(&mut self, id: &str, cx: &mut Context<Self>) {
-        let members: Vec<String> = self
-            .sessions
-            .iter()
-            .filter(|metadata| metadata.section.as_deref() == Some(id) && !metadata.archived)
-            .map(|metadata| metadata.id.clone())
-            .collect();
-        for member in members {
-            self.set_archived(&member, true, cx);
-        }
-    }
-
     pub fn fork_session(
         &mut self,
         id: &str,
@@ -2538,17 +2515,18 @@ impl AgentStore {
         cx.spawn(async move |this, cx| {
             let parent = opening.await?;
             this.update(cx, |this, cx| {
-                let (parent_metadata, mut entries) = parent.read_with(cx, |parent, cx| {
-                    let mut entries = parent.transcript.serialize(cx);
-                    if parent.is_working()
-                        && let Some(last_user) = entries
-                            .iter()
-                            .rposition(|entry| matches!(entry, SerializedEntry::User { .. }))
-                    {
-                        entries.truncate(last_user);
-                    }
-                    (parent.metadata.clone(), entries)
-                });
+                let (parent_metadata, mut entries, parent_working) =
+                    parent.read_with(cx, |parent, cx| {
+                        let mut entries = parent.transcript.serialize(cx);
+                        if parent.is_working()
+                            && let Some(last_user) = entries
+                                .iter()
+                                .rposition(|entry| matches!(entry, SerializedEntry::User { .. }))
+                        {
+                            entries.truncate(last_user);
+                        }
+                        (parent.metadata.clone(), entries, parent.is_working())
+                    });
                 let mut metadata = SessionMetadata::new(
                     parent_metadata.kind,
                     parent_metadata.cwd.clone(),
@@ -2560,6 +2538,9 @@ impl AgentStore {
                 metadata.project_root = parent_metadata.project_root.clone();
                 metadata.branch = parent_metadata.branch.clone();
                 metadata.fork_context = fork_context(&entries);
+                if !parent_working {
+                    metadata.fork_source = parent_metadata.native_session_id.clone();
+                }
                 let parent_title = if parent_metadata.title.is_empty() {
                     "New chat".to_string()
                 } else {
@@ -2743,12 +2724,27 @@ impl AgentStore {
         cx.subscribe(&session, |this, session, event, cx| match event {
             SessionEvent::MetadataChanged => {
                 let metadata = session.read(cx).metadata.clone();
+                // A native fork copies the parent as it is at the fork's first run, so it must not have moved on.
+                let stale_forks: Vec<String> = this
+                    .sessions
+                    .iter()
+                    .filter(|fork| {
+                        fork.parent_id.as_deref() == Some(metadata.id.as_str())
+                            && fork.fork_source.is_some()
+                            && fork.native_session_id.is_none()
+                            && metadata.updated_at >= fork.created_at
+                    })
+                    .map(|fork| fork.id.clone())
+                    .collect();
                 if let Some(known) = this
                     .sessions
                     .iter_mut()
                     .find(|known| known.id == metadata.id)
                 {
                     *known = metadata;
+                }
+                for fork in stale_forks {
+                    this.update_session_metadata(&fork, |fork| fork.fork_source = None, cx);
                 }
                 this.sort();
                 cx.notify();
@@ -4109,7 +4105,7 @@ done
     }
 
     #[gpui::test]
-    async fn pins_sections_and_archive_are_saved_without_opening_the_chat(cx: &mut TestAppContext) {
+    async fn pins_and_names_are_saved_without_opening_the_chat(cx: &mut TestAppContext) {
         let directory = tempfile::tempdir().expect("temporary directory");
         let store = new_store(directory.path(), cx);
         let id = store.update(cx, |store, cx| {
@@ -4118,12 +4114,9 @@ done
             session.read(cx).metadata().id.clone()
         });
         store.update(cx, |store, _| store.live.clear());
-        let section = store.update(cx, |store, cx| {
+        store.update(cx, |store, cx| {
             store.rename_session(&id, "  Renamed  ".into(), cx);
             store.set_pinned(&id, true, cx);
-            let section = store.create_section("Later".into(), cx);
-            store.move_to_section(&id, Some(section.clone()), cx);
-            section
         });
         cx.run_until_parked();
         let reopened = new_store(directory.path(), cx);
@@ -4132,20 +4125,31 @@ done
             let summary = &store.sessions_in(&[directory.path().to_path_buf()], cx)[0];
             assert_eq!(summary.title.as_ref(), "Renamed");
             assert!(summary.pinned);
-            assert_eq!(summary.section.as_deref(), Some(section.as_str()));
-            assert_eq!(store.list_prefs().sections[0].name, "Later");
         });
-        reopened.update(cx, |store, cx| {
-            store.set_archived(&id, true, cx);
-            store.delete_section(&section, cx);
-        });
-        reopened.read_with(cx, |store, cx| {
-            let summary = &store.sessions_in(&[directory.path().to_path_buf()], cx)[0];
-            assert!(summary.archived);
-            assert!(!summary.pinned);
-            assert_eq!(summary.section, None);
-            assert!(store.list_prefs().sections.is_empty());
-        });
+    }
+
+    #[test]
+    fn chats_and_list_settings_saved_with_sections_or_archived_still_load() {
+        let metadata: SessionMetadata = serde_json::from_value(serde_json::json!({
+            "id": "a",
+            "kind": "claude",
+            "title": "",
+            "cwd": "/tmp",
+            "created_at": 1,
+            "updated_at": 1,
+            "native_session_id": null,
+            "settings": {},
+            "section": "old-section",
+            "archived": true,
+        }))
+        .expect("old metadata loads");
+        assert_eq!(metadata.id, "a");
+        let prefs: ChatListPrefs = serde_json::from_value(serde_json::json!({
+            "sections": [{ "id": "old-section", "name": "Later" }],
+            "compact_rows": true,
+        }))
+        .expect("old list settings load");
+        assert!(prefs.compact_rows);
     }
 
     #[gpui::test]
@@ -4192,6 +4196,107 @@ done
         side.update(cx, |side, cx| side.send_message("scenario:happy", cx));
         run_until(cx, |cx| side.read_with(cx, |session, _| !session.is_working()));
         side.read_with(cx, |side, _| assert!(side.metadata().fork_context.is_none()));
+    }
+
+    async fn forked_from_finished_parent(
+        cx: &mut TestAppContext,
+    ) -> (tempfile::TempDir, Entity<AgentSession>) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let parent = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        parent.update(cx, |session, cx| session.send_message("scenario:happy", cx));
+        run_until(cx, |cx| {
+            parent.read_with(cx, |session, _| !session.is_working())
+        });
+        let parent_id = session_id(&parent, cx);
+        let fork = store
+            .update(cx, |store, cx| store.fork_session(&parent_id, false, cx))
+            .await
+            .expect("fork");
+        fork.read_with(cx, |fork, _| {
+            assert_eq!(fork.metadata().fork_source.as_deref(), Some("sess-1"));
+            assert!(fork.metadata().fork_context.is_some());
+        });
+        (directory, fork)
+    }
+
+    #[gpui::test]
+    async fn forks_continue_a_copy_of_the_agents_own_session(cx: &mut TestAppContext) {
+        let (_directory, fork) = forked_from_finished_parent(cx).await;
+        fork.update(cx, |fork, cx| fork.send_message("scenario:fork", cx));
+        run_until(cx, |cx| {
+            fork.read_with(cx, |session, _| !session.is_working())
+        });
+        fork.read_with(cx, |fork, cx| {
+            assert!(!fork.run_failed(), "{:?}", summarize(fork.entries(), cx));
+            assert_eq!(
+                fork.metadata().native_session_id.as_deref(),
+                Some("sess-forked")
+            );
+            assert!(fork.metadata().fork_source.is_none());
+            assert!(fork.metadata().fork_context.is_none());
+        });
+    }
+
+    #[gpui::test]
+    async fn a_fork_drops_the_native_copy_once_its_parent_moves_on(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let parent = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        parent.update(cx, |session, cx| session.send_message("scenario:happy", cx));
+        run_until(cx, |cx| {
+            parent.read_with(cx, |session, _| !session.is_working())
+        });
+        let parent_id = session_id(&parent, cx);
+        let fork = store
+            .update(cx, |store, cx| store.fork_session(&parent_id, false, cx))
+            .await
+            .expect("fork");
+        fork.read_with(cx, |fork, _| assert!(fork.metadata().fork_source.is_some()));
+
+        parent.update(cx, |session, cx| session.send_message("scenario:happy", cx));
+        run_until(cx, |cx| {
+            parent.read_with(cx, |session, _| !session.is_working())
+        });
+        fork.read_with(cx, |fork, _| {
+            assert!(fork.metadata().fork_source.is_none());
+            assert!(
+                fork.metadata().fork_context.is_some(),
+                "the fork keeps its own history"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn a_failed_native_fork_falls_back_to_sending_the_history(cx: &mut TestAppContext) {
+        let (_directory, fork) = forked_from_finished_parent(cx).await;
+        fork.update(cx, |fork, cx| {
+            fork.send_message("scenario:fork-fallback", cx)
+        });
+        run_until(cx, |cx| {
+            fork.read_with(cx, |session, _| !session.is_working())
+        });
+        fork.read_with(cx, |fork, cx| {
+            let summary = summarize(fork.entries(), cx);
+            assert!(!fork.run_failed(), "{summary:?}");
+            assert!(
+                !fork
+                    .entries()
+                    .iter()
+                    .any(|entry| matches!(entry, Entry::Notice { is_error: true, .. })),
+                "the failed attempt stays out of the chat: {summary:?}"
+            );
+            assert_eq!(
+                fork.metadata().native_session_id.as_deref(),
+                Some("sess-fallback")
+            );
+            assert!(fork.metadata().fork_source.is_none());
+            assert!(fork.metadata().fork_context.is_none());
+        });
     }
 
     #[gpui::test]

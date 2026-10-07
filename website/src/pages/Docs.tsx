@@ -72,7 +72,7 @@ export function Docs() {
             The rings next to it show how full the context is and, for Claude Code and Codex, your plan usage, where you
             can also switch accounts.
           </li>
-          <li>Chats can be pinned, archived, sorted into sections, forked, or opened as side chats.</li>
+          <li>Chats can be pinned or forked.</li>
           <li>
             Press <code>Cmd-D</code> (<code>Ctrl-D</code> on Windows and Linux) in the chat box to dictate. The speech
             model runs on your machine and downloads the first time you use it. Dictation works on macOS 14 or later

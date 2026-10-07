@@ -788,8 +788,8 @@ async fn run_session(session: Session) {
         let protocol = server.protocol().await;
         let forced = forced_asks(permission);
         let mut rules_warning = None;
-        let rules = if protocol == Protocol::V1 && (!forced.is_empty() || request.resume.is_some())
-        {
+        let continues = request.resume.is_some() || request.fork.is_some();
+        let rules = if protocol == Protocol::V1 && (!forced.is_empty() || continues) {
             match agent_session_rules(&server, dir, agent, permission).await {
                 Ok(rules) => Some(rules),
                 Err(error) => {
@@ -806,7 +806,11 @@ async fn run_session(session: Session) {
             }
             None
         };
-        let resumed = match &request.resume {
+        let resume = match (&request.resume, &request.fork) {
+            (None, Some(fork)) => Some(fork_session(&server, fork, dir).await?),
+            (resume, _) => resume.clone(),
+        };
+        let resumed = match &resume {
             Some(resume) => find_session(&server, resume, dir).await?,
             None => None,
         };
@@ -815,7 +819,7 @@ async fn run_session(session: Session) {
                 let id = info
                     .get("id")
                     .and_then(Value::as_str)
-                    .or(request.resume.as_deref())
+                    .or(resume.as_deref())
                     .unwrap_or_default()
                     .to_owned();
                 if protocol == Protocol::V2
@@ -1455,6 +1459,26 @@ fn is_own_idle(event: &Value, session_id: &str) -> bool {
                 .pointer("/properties/status/type")
                 .and_then(Value::as_str)
                 == Some("idle")))
+}
+
+async fn fork_session(
+    server: &Server,
+    session_id: &str,
+    dir: Option<&str>,
+) -> Result<String, HarnessError> {
+    if server.protocol().await == Protocol::V2 {
+        return Err(HarnessError::Protocol(
+            "OpenCode 2.x can't fork a session".into(),
+        ));
+    }
+    let forked = server
+        .post_json(&format!("/session/{session_id}/fork"), dir, &json!({}))
+        .await?;
+    forked
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| HarnessError::Protocol("opencode session fork returned no id".into()))
 }
 
 async fn create_session(

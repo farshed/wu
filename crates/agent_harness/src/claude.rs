@@ -167,6 +167,9 @@ impl ClaudeHarness {
         cmd.args(permission_args(request.permission));
         if let Some(resume) = &request.resume {
             cmd.arg(format!("--resume={resume}"));
+        } else if let Some(fork) = &request.fork {
+            cmd.arg(format!("--resume={fork}"));
+            cmd.arg("--fork-session");
         }
         let mut settings = serde_json::Map::new();
         if option_is_on(&request.model_options, "fastMode") {
@@ -396,7 +399,8 @@ impl ClaudeHarness {
         let exe = self.resolve_executable()?;
         let discovered = self.models_cache.peek();
         let mut cmd = self.build_command(&exe, &request, discovered.as_deref());
-        let normalizer = if let Some(session_id) = &request.resume {
+        let normalizer = if let Some(session_id) = request.resume.as_ref().or(request.fork.as_ref())
+        {
             let config = std::env::var_os("CLAUDE_CONFIG_DIR")
                 .filter(|dir| !dir.is_empty())
                 .map(PathBuf::from)

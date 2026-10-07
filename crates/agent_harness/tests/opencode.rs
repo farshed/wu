@@ -234,6 +234,7 @@ impl FakeOpencode {
             ),
             ("GET", "/session/ses_resume") => ("200 OK", json!({ "id": "ses_resume" })),
             ("GET", path) if path.starts_with("/session/") => ("404 Not Found", json!({})),
+            ("POST", "/session/ses_resume/fork") => ("200 OK", json!({ "id": "ses_resume" })),
             ("POST", path) if path.ends_with("/prompt_async") => ("204 No Content", json!({})),
             ("POST", path) if path.ends_with("/abort") => ("200 OK", json!(true)),
             ("POST", path) if path.contains("/permission/") || path.contains("/question/") => {
@@ -253,6 +254,7 @@ fn request(prompt: &str) -> RunRequest {
         cwd: "/tmp".into(),
         permission: PermissionMode::FullAccess,
         resume: None,
+        fork: None,
         attachments: Vec::new(),
         skills: Vec::new(),
     }
@@ -807,6 +809,41 @@ async fn resume_reuses_the_durable_session() {
     assistant_message(&fake, "ses_resume", "msg_1");
     idle(&fake, "ses_resume");
     drain_to_done(&mut stream).await;
+}
+
+#[tokio::test]
+async fn fork_continues_in_the_copy_opencode_makes() {
+    let fake = FakeOpencode::start().await;
+    let (unforkable_controls, _steer, _token) = controls();
+    let mut run = request("continue");
+    run.fork = Some("ses_parent".into());
+    let mut stream = harness(&fake).run(run, unforkable_controls).await.unwrap();
+    assert!(
+        matches!(
+            next_event(&mut stream).await,
+            AgentEvent::Error { .. }
+                | AgentEvent::Done {
+                    status: DoneStatus::Errored,
+                    ..
+                }
+        ),
+        "a session opencode can't fork fails instead of silently starting fresh"
+    );
+
+    let fake = FakeOpencode::start().await;
+    let (controls, _steer, _token) = controls();
+    let mut run = request("continue");
+    run.fork = Some("ses_resume".into());
+    let mut stream = harness(&fake).run(run, controls).await.unwrap();
+    assert!(matches!(
+        next_event(&mut stream).await,
+        AgentEvent::SessionStarted { session_id, .. } if session_id == "ses_resume"
+    ));
+    assert_eq!(fake.posts_to("/session/ses_resume/fork").len(), 1);
+    assert!(
+        fake.posts_to("/session").is_empty(),
+        "no fresh session is created"
+    );
 }
 
 #[tokio::test]

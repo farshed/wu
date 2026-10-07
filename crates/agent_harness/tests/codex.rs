@@ -44,6 +44,7 @@ fn request(prompt: &str) -> RunRequest {
         cwd: String::new(),
         permission: PermissionMode::FullAccess,
         resume: None,
+        fork: None,
         attachments: Vec::new(),
         skills: Vec::new(),
     }
@@ -571,6 +572,22 @@ async fn resume_reuses_the_existing_thread() {
             AgentEvent::SessionStarted { session_id, .. } if session_id == "th-resumed"
         )),
         "resumed thread expected: {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn fork_copies_the_thread_into_a_new_one() {
+    let (controls, _steer, _token) = controls("Yes");
+    let mut req = request("scenario:resumed");
+    req.fork = Some("fork-source".into());
+    let events = run_to_end(&harness(), req, controls).await;
+
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentEvent::SessionStarted { session_id, .. } if session_id == "th-forked"
+        )),
+        "forked thread expected: {events:?}"
     );
 }
 

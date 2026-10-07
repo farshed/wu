@@ -497,6 +497,7 @@ impl CodexHarness {
             .as_ref()
             .is_some_and(|(method, _)| *method == "thread/compact/start")
             && request.resume.is_none()
+            && request.fork.is_none()
         {
             return Err(HarnessError::Protocol(
                 "/compact needs an existing Codex conversation".into(),
@@ -850,6 +851,10 @@ async fn run_session(session: Session) {
                         .await?
                 }
             }
+        } else if let Some(fork) = &request.fork {
+            let mut p = start_params.clone();
+            p.insert("threadId".into(), Value::String(fork.clone()));
+            client.request("thread/fork", Value::Object(p)).await?
         } else {
             client
                 .request("thread/start", Value::Object(start_params.clone()))

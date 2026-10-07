@@ -13,6 +13,28 @@ emit() { printf '%s\n' "$1"; }
 
 case "$first" in
 
+*scenario:fork-fallback*)
+  for arg in "$@"; do [ "$arg" = "--fork-session" ] && exit 1; done
+  case "$first" in *'<conversation>'*) ;; *) exit 1 ;; esac
+  emit '{"type":"system","subtype":"init","model":"claude-fable-5","tools":[],"cwd":"/tmp","session_id":"sess-fallback"}'
+  emit '{"type":"result","subtype":"success","result":"from the history","errors":[],"usage":{"input_tokens":1,"output_tokens":1},"session_id":"sess-fallback"}'
+  ;;
+
+*scenario:fork*)
+  forked=false
+  resumed=false
+  for arg in "$@"; do
+    case "$arg" in
+      --fork-session) forked=true ;;
+      --resume=sess-1) resumed=true ;;
+    esac
+  done
+  [ "$forked" = true ] && [ "$resumed" = true ] || exit 1
+  case "$first" in *'<conversation>'*) exit 1 ;; esac
+  emit '{"type":"system","subtype":"init","model":"claude-fable-5","tools":[],"cwd":"/tmp","session_id":"sess-forked"}'
+  emit '{"type":"result","subtype":"success","result":"forked","errors":[],"usage":{"input_tokens":1,"output_tokens":1},"session_id":"sess-forked"}'
+  ;;
+
 *scenario:command-echo*)
   content=$(printf '%s\n' "$first" | sed 's/.*"content":"\([^"]*\)".*/\1/')
   emit "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"$content\"}}}"

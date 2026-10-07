@@ -9,11 +9,10 @@ use collections::HashSet;
 use editor::{Editor, EditorEvent};
 use gpui::{
     Action, Animation, AnimationExt as _, AnyElement, App, AsyncWindowContext, Bounds, ClickEvent,
-    ClipboardItem, Context, CursorStyle, DismissEvent, Div, EdgeFade, Element, ElementId, Entity,
+    ClipboardItem, Context, CursorStyle, DismissEvent, EdgeFade, Element, ElementId, Entity,
     EventEmitter, FocusHandle, Focusable, FontWeight, GlobalElementId, Hsla, InspectorElementId,
     IntoElement, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, PromptLevel,
-    Render, RenderOnce, ScrollHandle, SharedString, Stateful, Styled, Subscription, Svg,
-    TextStyleRefinement,
+    Render, RenderOnce, ScrollHandle, SharedString, Styled, Subscription, Svg, TextStyleRefinement,
     Transformation, WeakEntity, Window, anchored, deferred, div, percentage, point, px, rgb, svg,
 };
 use project::Project;
@@ -23,10 +22,7 @@ use std::{
     time::Duration,
 };
 use time::OffsetDateTime;
-use ui::{
-    Clickable, ContextMenu, IconName, IconPosition, Label, PopoverMenu, Toggleable, Tooltip,
-    prelude::*,
-};
+use ui::{Clickable, ContextMenu, IconName, PopoverMenu, Toggleable, Tooltip, prelude::*};
 use util::ResultExt as _;
 use workspace::{
     SaveIntent, SplitDirection, Toast, Workspace,
@@ -151,37 +147,8 @@ fn open_chat_in(
     }
 }
 
-#[derive(Clone)]
-struct DraggedChat {
-    id: SharedString,
-    title: SharedString,
-    project_root: PathBuf,
-    archived: bool,
-}
-
-impl DraggedChat {
-    fn can_drop_on_project(&self, project: &Path) -> bool {
-        !self.archived && self.project_root == project
-    }
-}
-
-impl Render for DraggedChat {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .border_1()
-            .border_color(cx.theme().colors().border)
-            .bg(cx.theme().colors().elevated_surface_background)
-            .shadow_md()
-            .child(Label::new(self.title.clone()).size(LabelSize::Small))
-    }
-}
-
 enum Renaming {
     Chat(SharedString),
-    Section(String),
 }
 
 struct RenameField {
@@ -205,7 +172,6 @@ pub struct AgentPanel {
     search: Entity<Editor>,
     renaming: Option<RenameField>,
     row_menu: Option<RowMenu>,
-    show_archived: bool,
     hovered_row: Option<SharedString>,
     list_scroll: ScrollHandle,
     _subscriptions: Vec<Subscription>,
@@ -254,7 +220,6 @@ impl AgentPanel {
                     search,
                     renaming: None,
                     row_menu: None,
-                    show_archived: false,
                     hovered_row: None,
                     list_scroll: ScrollHandle::new(),
                 }
@@ -276,21 +241,15 @@ impl AgentPanel {
         .detach_and_log_err(cx);
     }
 
-    fn fork(
-        &mut self,
-        id: SharedString,
-        side_chat: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn fork(&mut self, id: SharedString, window: &mut Window, cx: &mut Context<Self>) {
         let task = self
             .store
-            .update(cx, |store, cx| store.fork_session(&id, side_chat, cx));
+            .update(cx, |store, cx| store.fork_session(&id, false, cx));
         let workspace = self.workspace.clone();
         cx.spawn_in(window, async move |_, cx| {
             let session = task.await?;
             workspace.update_in(cx, |workspace, window, cx| {
-                open_chat_in(workspace, session, side_chat, window, cx)
+                open_chat_in(workspace, session, false, window, cx)
             })
         })
         .detach_and_log_err(cx);
@@ -359,7 +318,6 @@ impl AgentPanel {
     ) {
         let font_size = match target {
             Renaming::Chat(_) => ui(13.),
-            Renaming::Section(_) => ui(12.),
         };
         let editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
@@ -397,7 +355,6 @@ impl AgentPanel {
             let text = field.editor.read(cx).text(cx);
             self.store.update(cx, |store, cx| match &field.target {
                 Renaming::Chat(id) => store.rename_session(id, text, cx),
-                Renaming::Section(id) => store.rename_section(id, text, cx),
             });
         }
         window.focus(&self.focus_handle, cx);
@@ -414,10 +371,7 @@ impl AgentPanel {
         let id: SharedString = session.id.clone().into();
         let title = session.title.clone();
         let pinned = session.pinned;
-        let archived = session.archived;
-        let current_section = session.section.clone();
         let native_id = session.native_session_id.clone();
-        let sections = self.store.read(cx).list_prefs().sections.clone();
         let panel = cx.entity().downgrade();
         let menu = ContextMenu::build(window, cx, move |menu, _, _| {
             let action = |panel: &WeakEntity<AgentPanel>,
@@ -457,84 +411,12 @@ impl AgentPanel {
                         }),
                     )
                 })
-                .entry(if archived { "Unarchive" } else { "Archive" }, None, {
-                    let id = id.clone();
-                    action(
-                        &panel,
-                        Box::new(move |panel, _, cx| {
-                            panel
-                                .store
-                                .update(cx, |store, cx| store.set_archived(&id, !archived, cx))
-                        }),
-                    )
-                })
-                .submenu("Move to Section", {
-                    let (id, sections, current_section, panel) = (
-                        id.clone(),
-                        sections.clone(),
-                        current_section.clone(),
-                        panel.clone(),
-                    );
-                    move |menu, _, _| {
-                        let mut menu = menu.toggleable_entry(
-                            "No Section",
-                            current_section.is_none(),
-                            IconPosition::Start,
-                            None,
-                            {
-                                let (id, panel) = (id.clone(), panel.clone());
-                                move |_, cx| {
-                                    panel
-                                        .update(cx, |panel, cx| {
-                                            panel.store.update(cx, |store, cx| {
-                                                store.move_to_section(&id, None, cx)
-                                            })
-                                        })
-                                        .log_err();
-                                }
-                            },
-                        );
-                        for section in &sections {
-                            let (id, panel, section_id) =
-                                (id.clone(), panel.clone(), section.id.clone());
-                            menu = menu.toggleable_entry(
-                                section.name.clone(),
-                                current_section.as_deref() == Some(section.id.as_str()),
-                                IconPosition::Start,
-                                None,
-                                move |_, cx| {
-                                    panel
-                                        .update(cx, |panel, cx| {
-                                            panel.store.update(cx, |store, cx| {
-                                                store.move_to_section(
-                                                    &id,
-                                                    Some(section_id.clone()),
-                                                    cx,
-                                                )
-                                            })
-                                        })
-                                        .log_err();
-                                },
-                            );
-                        }
-                        menu
-                    }
-                })
                 .separator()
                 .entry("Fork Chat", None, {
                     let id = id.clone();
                     action(
                         &panel,
-                        Box::new(move |panel, window, cx| {
-                            panel.fork(id.clone(), false, window, cx)
-                        }),
-                    )
-                })
-                .entry("New Side Chat", None, {
-                    let id = id.clone();
-                    action(
-                        &panel,
-                        Box::new(move |panel, window, cx| panel.fork(id.clone(), true, window, cx)),
+                        Box::new(move |panel, window, cx| panel.fork(id.clone(), window, cx)),
                     )
                 });
             let menu = match native_id.clone() {
@@ -739,17 +621,6 @@ impl AgentPanel {
                 false,
                 if pinned { colors.text } else { text_muted },
             ),
-            RowAction::Archive { archived } => (
-                "archive",
-                if archived {
-                    IconName::AgentUnarchive
-                } else {
-                    IconName::AgentArchive
-                },
-                if archived { "Unarchive" } else { "Archive" },
-                !compact,
-                text_muted,
-            ),
         };
         let rest = wash(0.10, cx);
         let pressed = wash(0.18, cx);
@@ -786,7 +657,6 @@ impl AgentPanel {
                 this.hovered_row = None;
                 this.store.update(cx, |store, cx| match action {
                     RowAction::Pin { pinned } => store.set_pinned(&id, !pinned, cx),
-                    RowAction::Archive { archived } => store.set_archived(&id, !archived, cx),
                 });
             }))
             .tooltip(Tooltip::text(text))
@@ -807,8 +677,6 @@ impl AgentPanel {
         let text = colors.text;
         let subline = colors.text_muted.opacity(0.5);
         let hovered = self.hovered_row.as_ref() == Some(&id);
-        let archived = session.archived;
-        let archived_muted = archived && !selected && !hovered;
         let status = RowStatus::of(&session);
         let status_color = status.color(cx);
         let time_ago: SharedString = format_time_ago(session.updated_at, now).into();
@@ -857,7 +725,6 @@ impl AgentPanel {
                     compact,
                     cx,
                 ))
-                .child(self.row_action(&id, RowAction::Archive { archived }, compact, cx))
                 .into_any_element()
         } else {
             match status.label() {
@@ -902,10 +769,7 @@ impl AgentPanel {
             None => faded_label(
                 SharedString::from(format!("agent-session-title-{id}")),
                 true,
-                div()
-                    .text_size(ui(13.))
-                    .line_height(px(17.))
-                    .child(title.clone()),
+                div().text_size(ui(13.)).line_height(px(17.)).child(title),
             )
             .into_any_element(),
         };
@@ -914,13 +778,7 @@ impl AgentPanel {
         } else {
             colors.element_hover
         };
-        let rest_text = if selected {
-            text
-        } else if archived {
-            text.opacity(0.55)
-        } else {
-            text.opacity(0.8)
-        };
+        let rest_text = if selected { text } else { text.opacity(0.8) };
         let row = div()
             .id(SharedString::from(format!("agent-session-row-{id}")))
             .h(px(row_height))
@@ -958,15 +816,6 @@ impl AgentPanel {
                     this.show_row_menu(&menu_session, event.position, window, cx)
                 }),
             )
-            .on_drag(
-                DraggedChat {
-                    id: id.clone(),
-                    title,
-                    project_root: session.project_root,
-                    archived,
-                },
-                |dragged, _, _, cx| cx.new(|_| dragged.clone()),
-            )
             .child(
                 h_flex()
                     .w_full()
@@ -975,11 +824,7 @@ impl AgentPanel {
                     .child(glyph(
                         harness_icon,
                         HARNESS_ICON_SIZE,
-                        harness_tint.unwrap_or(subline).opacity(if archived_muted {
-                            0.4
-                        } else {
-                            0.8
-                        }),
+                        harness_tint.unwrap_or(subline).opacity(0.8),
                     ))
                     .child(title_content)
                     .when(!compact || hovered, |this| this.children(corner.take()))
@@ -1028,85 +873,33 @@ impl AgentPanel {
         &self,
         key: SharedString,
         label: SharedString,
-        custom_section: Option<String>,
         collapsed: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
         let colors = cx.theme().colors();
         let faint = colors.text_muted.opacity(0.5);
-        let renaming = self.renaming.as_ref().filter(|field| {
-            matches!((&field.target, &custom_section), (Renaming::Section(id), Some(section)) if id == section)
-        });
-        let hover = colors.element_hover;
-        let group = SharedString::from(format!("{key}-header"));
-        let label_element = match renaming {
-            Some(field) => self.rename_field(&field.editor, cx),
-            None if custom_section.is_some() => div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_size(ui(12.))
-                .text_color(faint)
-                .child(label.clone())
-                .into_any_element(),
-            None => faded_label(
-                SharedString::from(format!("{key}-label")),
-                false,
-                div()
-                    .text_size(ui(12.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(faint)
-                    .child(label.clone()),
-            )
-            .into_any_element(),
-        };
-        let menu_button = custom_section.clone().map(|section| {
-            let label = label.to_string();
+        let label_element = faded_label(
+            SharedString::from(format!("{key}-label")),
+            false,
             div()
-                .id(SharedString::from(format!("{key}-menu")))
-                .size(px(20.))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.))
-                .opacity(0.)
-                .group_hover(group.clone(), |style| style.opacity(1.))
-                .hover(move |style| style.bg(hover))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
-                    cx.stop_propagation();
-                    this.show_section_menu(
-                        section.clone(),
-                        label.clone(),
-                        event.position(),
-                        window,
-                        cx,
-                    )
-                }))
-                .tooltip(Tooltip::text("Section Options"))
-                .child(glyph(IconName::Ellipsis, 14., colors.text_muted))
-        });
+                .text_size(ui(12.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(faint)
+                .child(label),
+        );
         h_flex()
             .id(key.clone())
-            .group(group)
             .h(px(DISCLOSURE_HEADER_HEIGHT))
             .px(px(SPACE_SM))
             .gap(px(SPACE_SM))
             .cursor_pointer()
             .child(label_element)
-            .when(custom_section.is_none(), |this| this.child(div().flex_1()))
-            .children(menu_button)
+            .child(div().flex_1())
             .child(disclosure_chevron(!collapsed, faint))
             .on_click(cx.listener({
                 let key = key.to_string();
                 move |this, _, _, cx| {
                     let key = key.clone();
-                    if key == ARCHIVED_KEY {
-                        this.show_archived = !this.show_archived;
-                        cx.notify();
-                        return;
-                    }
                     this.store.update(cx, |store, cx| {
                         store.update_list_prefs(
                             |prefs| {
@@ -1123,89 +916,7 @@ impl AgentPanel {
                     })
                 }
             }))
-            .when_some(custom_section, |this, section| {
-                let label = label.to_string();
-                this.on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                        this.show_section_menu(
-                            section.clone(),
-                            label.clone(),
-                            event.position,
-                            window,
-                            cx,
-                        )
-                    }),
-                )
-            })
             .into_any_element()
-    }
-
-    fn show_section_menu(
-        &mut self,
-        section: String,
-        name: String,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let panel = cx.entity().downgrade();
-        let menu = ContextMenu::build(window, cx, move |menu, _, _| {
-            let rename = {
-                let (panel, section, name) = (panel.clone(), section.clone(), name.clone());
-                move |window: &mut Window, cx: &mut App| {
-                    panel
-                        .update(cx, |panel, cx| {
-                            panel.start_rename(
-                                Renaming::Section(section.clone()),
-                                name.clone(),
-                                window,
-                                cx,
-                            )
-                        })
-                        .log_err();
-                }
-            };
-            let archive = {
-                let (panel, section) = (panel.clone(), section.clone());
-                move |_: &mut Window, cx: &mut App| {
-                    panel
-                        .update(cx, |panel, cx| {
-                            panel
-                                .store
-                                .update(cx, |store, cx| store.archive_section(&section, cx))
-                        })
-                        .log_err();
-                }
-            };
-            let delete = {
-                let (panel, section) = (panel.clone(), section);
-                move |_: &mut Window, cx: &mut App| {
-                    panel
-                        .update(cx, |panel, cx| {
-                            panel
-                                .store
-                                .update(cx, |store, cx| store.delete_section(&section, cx))
-                        })
-                        .log_err();
-                }
-            };
-            menu.entry("Rename Section", None, rename)
-                .entry("Archive All", None, archive)
-                .separator()
-                .entry("Delete Section", None, delete)
-        });
-        let dismiss = cx.subscribe_in(&menu, window, |this, _, _: &DismissEvent, _, cx| {
-            this.row_menu = None;
-            cx.notify();
-        });
-        window.focus(&menu.focus_handle(cx), cx);
-        self.row_menu = Some(RowMenu {
-            menu,
-            position,
-            _dismiss: dismiss,
-        });
-        cx.notify();
     }
 
     fn matches_search(session: &SessionSummary, query: &str) -> bool {
@@ -1236,11 +947,10 @@ impl AgentPanel {
             .into_iter()
             .filter(|session| Self::matches_search(session, &query))
             .collect();
-        let layout = layout_list(&sessions, &prefs, searching, self.show_archived);
+        let layout = layout_list(&sessions, &prefs, searching);
         let rendered_rows: HashSet<String> = layout
             .active
             .iter()
-            .chain(&layout.archived)
             .flat_map(|group| group.rows.iter().map(|row| row.session.id.clone()))
             .collect();
         let row_context = RowContext {
@@ -1254,12 +964,8 @@ impl AgentPanel {
             .enumerate()
             .map(|(index, group)| self.render_group(group, index > 0, &row_context, cx))
             .collect();
-        let archived = layout
-            .archived
-            .map(|group| self.render_group(group, false, &row_context, cx));
         ChatList {
             active,
-            archived,
             searching,
             rendered_rows,
         }
@@ -1279,7 +985,6 @@ impl AgentPanel {
                 disclosure_label("Pinned", collapsed, group.total),
                 false,
             ),
-            GroupKind::Section { id, name } => (id.clone().into(), name.clone().into(), true),
             GroupKind::Project(project) => (
                 project_key(project).into(),
                 disclosure_label(&project_name(project), collapsed, group.total),
@@ -1290,18 +995,9 @@ impl AgentPanel {
                 disclosure_label("Chats", collapsed, group.total),
                 follows_group,
             ),
-            GroupKind::Archived => (
-                ARCHIVED_KEY.into(),
-                disclosure_label("Archived", collapsed, group.total),
-                false,
-            ),
         };
-        let custom_section = match &group.kind {
-            GroupKind::Section { id, .. } => Some(id.clone()),
-            _ => None,
-        };
-        let header = self.section_header(key.clone(), label, custom_section, collapsed, cx);
-        let mut body: Vec<AnyElement> = group
+        let header = self.section_header(key.clone(), label, collapsed, cx);
+        let body: Vec<AnyElement> = group
             .rows
             .iter()
             .map(|row| {
@@ -1316,19 +1012,6 @@ impl AgentPanel {
                 )
             })
             .collect();
-        let colors = cx.theme().colors();
-        if body.is_empty() && !collapsed && matches!(group.kind, GroupKind::Section { .. }) {
-            body.push(
-                h_flex()
-                    .h(px(40.))
-                    .px(px(SPACE_SM))
-                    .text_size(ui(12.))
-                    .text_color(colors.text_muted.opacity(0.5))
-                    .child("Drop chats here")
-                    .into_any_element(),
-            );
-        }
-        let highlight = colors.drop_target_background;
         let section = v_flex()
             .id(SharedString::from(format!("{key}-section")))
             .w_full()
@@ -1343,28 +1026,6 @@ impl AgentPanel {
                         .children(body),
                 )
             });
-        let drop_into = |section: Stateful<Div>, target: Option<String>| {
-            section
-                .drag_over::<DraggedChat>(move |style, _, _, _| style.bg(highlight))
-                .on_drop(cx.listener(move |this, dragged: &DraggedChat, _, cx| {
-                    let target = target.clone();
-                    this.store
-                        .update(cx, |store, cx| store.move_to_section(&dragged.id, target, cx))
-                }))
-        };
-        let section = match group.kind {
-            GroupKind::Pinned | GroupKind::Archived => section,
-            GroupKind::Section { id, .. } => drop_into(section, Some(id)),
-            GroupKind::Chats => drop_into(section, None),
-            GroupKind::Project(project) => drop_into(
-                section.can_drop(move |dragged, _, _| {
-                    dragged
-                        .downcast_ref::<DraggedChat>()
-                        .is_some_and(|dragged| dragged.can_drop_on_project(&project))
-                }),
-                None,
-            ),
-        };
         div()
             .w_full()
             .when(top_gap, |this| this.pt(px(SECTION_GAP)))
@@ -1375,7 +1036,6 @@ impl AgentPanel {
 
 struct ChatList {
     active: Vec<AnyElement>,
-    archived: Option<AnyElement>,
     searching: bool,
     rendered_rows: HashSet<String>,
 }
@@ -1389,10 +1049,8 @@ struct RowContext {
 #[derive(Clone, Debug, PartialEq)]
 enum GroupKind {
     Pinned,
-    Section { id: String, name: String },
     Project(PathBuf),
     Chats,
-    Archived,
 }
 
 struct ListGroup<'a> {
@@ -1409,7 +1067,6 @@ struct ListRow<'a> {
 
 struct ListLayout<'a> {
     active: Vec<ListGroup<'a>>,
-    archived: Option<ListGroup<'a>>,
 }
 
 fn needs_attention(session: &SessionSummary) -> bool {
@@ -1420,31 +1077,22 @@ fn layout_list<'a>(
     sessions: &'a [SessionSummary],
     prefs: &ChatListPrefs,
     searching: bool,
-    show_archived: bool,
 ) -> ListLayout<'a> {
-    let known_sections: HashSet<&str> = prefs
-        .sections
-        .iter()
-        .map(|section| section.id.as_str())
-        .collect();
     let is_collapsed = |key: &str| prefs.collapsed_sections.iter().any(|id| id == key);
     let children_of = |parent: &SessionSummary| -> Vec<&'a SessionSummary> {
         sessions
             .iter()
             .filter(|session| {
-                session.side_chat
-                    && session.archived == parent.archived
-                    && session.parent_id.as_deref() == Some(parent.id.as_str())
+                session.side_chat && session.parent_id.as_deref() == Some(parent.id.as_str())
             })
             .collect()
     };
     let is_top_level = |session: &SessionSummary| {
         !(session.side_chat
-            && session.parent_id.as_ref().is_some_and(|parent| {
-                sessions
-                    .iter()
-                    .any(|other| other.id == *parent && other.archived == session.archived)
-            }))
+            && session
+                .parent_id
+                .as_ref()
+                .is_some_and(|parent| sessions.iter().any(|other| other.id == *parent)))
     };
     let group = |kind: GroupKind, members: &[&'a SessionSummary], collapsed: bool| {
         let collapsed = collapsed && !searching;
@@ -1475,7 +1123,7 @@ fn layout_list<'a>(
     };
     let live: Vec<&SessionSummary> = sessions
         .iter()
-        .filter(|session| !session.archived && is_top_level(session))
+        .filter(|session| is_top_level(session))
         .collect();
     let mut active = Vec::new();
     let pinned: Vec<&SessionSummary> = live
@@ -1486,36 +1134,10 @@ fn layout_list<'a>(
     if !pinned.is_empty() {
         active.push(group(GroupKind::Pinned, &pinned, is_collapsed(PINNED_KEY)));
     }
-    for section in &prefs.sections {
-        let members: Vec<&SessionSummary> = live
-            .iter()
-            .copied()
-            .filter(|session| {
-                !session.pinned && session.section.as_deref() == Some(section.id.as_str())
-            })
-            .collect();
-        if searching && members.is_empty() {
-            continue;
-        }
-        active.push(group(
-            GroupKind::Section {
-                id: section.id.clone(),
-                name: section.name.clone(),
-            },
-            &members,
-            is_collapsed(&section.id),
-        ));
-    }
     let rest: Vec<&SessionSummary> = live
         .iter()
         .copied()
-        .filter(|session| {
-            !session.pinned
-                && session
-                    .section
-                    .as_deref()
-                    .is_none_or(|section| !known_sections.contains(section))
-        })
+        .filter(|session| !session.pinned)
         .collect();
     if prefs.group_by_project && !rest.is_empty() {
         let mut projects: Vec<&Path> = Vec::new();
@@ -1536,26 +1158,14 @@ fn layout_list<'a>(
                 is_collapsed(&project_key(project)),
             ));
         }
-    } else if !rest.is_empty() || (!searching && !prefs.sections.is_empty()) {
+    } else if !rest.is_empty() {
         active.push(group(GroupKind::Chats, &rest, is_collapsed(CHATS_KEY)));
     }
-    let archived: Vec<&SessionSummary> = sessions
-        .iter()
-        .filter(|session| session.archived && is_top_level(session))
-        .collect();
-    let archived = (!archived.is_empty()).then(|| {
-        let mut archived = group(GroupKind::Archived, &archived, !show_archived);
-        if archived.collapsed {
-            archived.rows.clear();
-        }
-        archived
-    });
-    ListLayout { active, archived }
+    ListLayout { active }
 }
 
 const PINNED_KEY: &str = "agent-pinned";
 const CHATS_KEY: &str = "agent-chats";
-const ARCHIVED_KEY: &str = "agent-archived";
 
 fn project_key(project: &Path) -> String {
     format!("agent-project:{}", project.to_string_lossy())
@@ -1664,7 +1274,6 @@ impl RowStatus {
 #[derive(Clone, Copy)]
 enum RowAction {
     Pin { pinned: bool },
-    Archive { archived: bool },
 }
 
 fn glyph_rows(cx: &App) -> [Hsla; 3] {
@@ -1978,9 +1587,8 @@ impl Render for AgentPanel {
             .sessions_in(&chat_roots(&self.project, cx), cx)
             .is_empty();
         let body: AnyElement = if has_any {
-            let only_archived_matches = list.searching && list.archived.is_some();
             let active: Option<AnyElement> = if list.active.is_empty() {
-                (!only_archived_matches).then(|| {
+                Some(
                     div()
                         .px(px(SPACE_SM))
                         .pb(px(SPACE_SM))
@@ -1991,8 +1599,8 @@ impl Render for AgentPanel {
                         } else {
                             "No chats yet"
                         })
-                        .into_any_element()
-                })
+                        .into_any_element(),
+                )
             } else {
                 Some(
                     v_flex()
@@ -2011,8 +1619,7 @@ impl Render for AgentPanel {
                     .track_scroll(&self.list_scroll)
                     .px(px(SPACE_SM))
                     .pt(px(LIST_PAD_TOP))
-                    .children(active)
-                    .children(list.archived),
+                    .children(active),
             )
             .into_any_element()
         } else {
@@ -2086,7 +1693,6 @@ impl Panel for AgentPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::ChatSection;
 
     #[test]
     fn time_ago_uses_compact_units() {
@@ -2136,8 +1742,6 @@ mod tests {
             working: false,
             needs_input: false,
             pinned: false,
-            archived: false,
-            section: None,
             parent_id: None,
             side_chat: false,
             outcome: None,
@@ -2176,7 +1780,7 @@ mod tests {
             ..ChatListPrefs::default()
         };
 
-        let layout = layout_list(&sessions, &prefs, false, false);
+        let layout = layout_list(&sessions, &prefs, false);
         let [chats] = layout.active.as_slice() else {
             panic!("expected only the Chats group");
         };
@@ -2185,7 +1789,7 @@ mod tests {
         assert_eq!(chats.total, 4);
         assert_eq!(row_ids(chats), ["working", "waiting", "unseen"]);
 
-        let layout = layout_list(&sessions, &prefs, true, false);
+        let layout = layout_list(&sessions, &prefs, true);
         let [chats] = layout.active.as_slice() else {
             panic!("expected only the Chats group");
         };
@@ -2194,66 +1798,16 @@ mod tests {
     }
 
     #[test]
-    fn search_expands_archived_group() {
-        let archived = SessionSummary {
-            archived: true,
-            ..session("old", "/a")
-        };
-        let sessions = vec![archived];
+    fn search_hides_the_chats_group_without_matches() {
         let prefs = ChatListPrefs::default();
-
-        let hidden = layout_list(&sessions, &prefs, false, false);
-        assert!(hidden.archived.as_ref().is_some_and(|group| group.rows.is_empty()));
-
-        let searched = layout_list(&sessions, &prefs, true, false);
-        let archived = searched.archived.as_ref().map(row_ids);
-        assert_eq!(archived, Some(vec!["old".to_string()]));
-    }
-
-    #[test]
-    fn search_hides_sections_without_matches() {
-        let prefs = ChatListPrefs {
-            sections: vec![ChatSection {
-                id: "work".to_string(),
-                name: "Work".to_string(),
-            }],
-            ..ChatListPrefs::default()
-        };
         let sessions = vec![session("loose", "/a")];
 
-        let browsing = layout_list(&sessions, &prefs, false, false);
-        let kinds: Vec<&GroupKind> = browsing.active.iter().map(|group| &group.kind).collect();
-        assert_eq!(
-            kinds,
-            [
-                &GroupKind::Section {
-                    id: "work".to_string(),
-                    name: "Work".to_string(),
-                },
-                &GroupKind::Chats,
-            ]
-        );
-
-        let matching = layout_list(&sessions, &prefs, true, false);
+        let matching = layout_list(&sessions, &prefs, true);
         let kinds: Vec<&GroupKind> = matching.active.iter().map(|group| &group.kind).collect();
         assert_eq!(kinds, [&GroupKind::Chats]);
 
-        let no_match = layout_list(&[], &prefs, true, false);
+        let no_match = layout_list(&[], &prefs, true);
         assert!(no_match.active.is_empty());
-        assert!(no_match.archived.is_none());
-    }
-
-    #[test]
-    fn project_drop_accepts_only_live_chats_from_that_project() {
-        let dragged = |project: &str, archived: bool| DraggedChat {
-            id: "chat".into(),
-            title: "Chat".into(),
-            project_root: PathBuf::from(project),
-            archived,
-        };
-        assert!(dragged("/a", false).can_drop_on_project(Path::new("/a")));
-        assert!(!dragged("/b", false).can_drop_on_project(Path::new("/a")));
-        assert!(!dragged("/a", true).can_drop_on_project(Path::new("/a")));
     }
 
     #[test]

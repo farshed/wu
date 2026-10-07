@@ -45,6 +45,7 @@ fn request(prompt: &str) -> RunRequest {
         cwd: String::new(),
         permission: PermissionMode::FullAccess,
         resume: None,
+        fork: None,
         attachments: Vec::new(),
         skills: Vec::new(),
     }
