@@ -7,7 +7,7 @@ const formatMib = (mib: number) => `${Math.round(mib).toLocaleString('en-US')} M
 
 export function MemoryChart() {
   return (
-    <div className={`${mediaFrame} flex items-center px-[6%] py-10 max-sm:px-4 max-sm:py-6`}>
+    <div className={`${mediaFrame} flex items-center card-raised px-[6%] py-10 max-sm:px-4 max-sm:py-6`}>
       <figure className="m-0 flex w-full flex-col gap-7" aria-label="Memory use in MiB, lower is better">
         {memoryScenarios.map((scenario) => (
           <div key={scenario.title} className="grid gap-2.5">

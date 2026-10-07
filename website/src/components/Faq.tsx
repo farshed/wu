@@ -69,7 +69,7 @@ export function Faq() {
       <p className="text-lg text-secondary">Questions people ask about Wu</p>
       <div className="grid w-[min(760px,100%)] gap-1.5">
         {questions.map(({ question, answer }) => (
-          <details key={question} className="group rounded-xl bg-elevated/5">
+          <details key={question} className="group rounded-xl card-raised">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-5 py-[18px] text-[17px] outline-offset-2 outline-primary select-none focus-visible:outline-2 max-sm:px-[18px] max-sm:py-4 max-sm:text-base [&::-webkit-details-marker]:hidden">
               {question}
               <ChevronDown

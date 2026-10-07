@@ -4,10 +4,10 @@ import { Faq } from '../components/Faq';
 import { Footer } from '../components/Footer';
 import { Header } from '../components/Header';
 import { AppIcon, GithubIcon } from '../components/icons';
-import { InkBackground } from '../components/InkBackground';
+import { HeroBackground } from '../components/HeroBackground';
 import { MemoryChart } from '../components/MemoryChart';
 import { RaycastWindow } from '../components/RaycastWindow';
-import { CenterSection, MediaSection, mediaFrame, sectionBody, sectionTitle } from '../components/Section';
+import { CenterSection, MediaSection, frameOutline, mediaFrame, sectionBody, sectionTitle } from '../components/Section';
 import { WuWindowFrame } from '../components/WuWindow';
 import { INSTALL_GUIDE_URL, MEMORY_BENCHMARK_URL, RAYCAST_URL, RELEASES_URL, REPO_URL } from '../consts';
 import { detectPlatform, directDownload, downloads, platformNames, type Platform } from '../data/downloads';
@@ -24,31 +24,39 @@ export function Home() {
     <>
       <Header downloadHref={downloadHref} />
       <main>
-        <section className="relative isolate m-1 overflow-hidden rounded-xl bg-linear-to-b from-hero-start to-hero-end px-8 pt-42 pb-26 max-sm:px-4 max-sm:pt-30 max-sm:pb-14">
-          <InkBackground />
-          <div className="mx-auto flex max-w-[1240px] flex-col items-start gap-5">
-            <h1 className="max-w-[800px] text-[clamp(36px,5.2vw,60px)] leading-[1.1] font-medium tracking-[-0.03em]">
-              The fast, native code&nbsp;editor
-            </h1>
-            <p className="max-w-[600px] text-xl leading-[1.35] text-secondary max-sm:text-lg">
-              Written in Rust. Batteries included: coding agents, a beautiful design and everything you need from day
-              one.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <a className="btn btn-lg btn-primary" href={downloadHref}>
-                <Download size={18} aria-hidden="true" />
-                {direct && platform ? `Download for ${platformNames[platform]}` : 'Download Wu'}
-              </a>
-              <a className="btn btn-lg btn-ghost" href="#download">
-                All platforms
-              </a>
-            </div>
+        <div className="relative isolate m-1 mb-40 overflow-hidden rounded-xl max-sm:mb-18">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 -z-10 bg-linear-to-b from-hero-start to-hero-end"
+            style={{ maskImage: 'linear-gradient(to bottom, black 40%, transparent)' }}
+          >
+            <HeroBackground />
           </div>
-        </section>
+          <section className="px-8 pt-42 pb-26 max-sm:px-4 max-sm:pt-30 max-sm:pb-14">
+            <div className="mx-auto flex max-w-[1240px] flex-col items-start gap-5">
+              <h1 className="max-w-[800px] text-[clamp(36px,5.2vw,60px)] leading-[1.1] font-medium tracking-[-0.03em]">
+                The fast, native code&nbsp;editor
+              </h1>
+              <p className="max-w-[600px] text-xl leading-[1.35] max-sm:text-lg">
+                Written in Rust. Batteries included: coding agents, a beautiful design and everything you need from day
+                one.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <a className="btn btn-lg btn-light" href={downloadHref}>
+                  <Download size={18} aria-hidden="true" />
+                  {direct && platform ? `Download for ${platformNames[platform]}` : 'Download Wu'}
+                </a>
+                <a className="btn btn-lg btn-primary" href="#download">
+                  All platforms
+                </a>
+              </div>
+            </div>
+          </section>
 
-        <section className="mx-auto mt-28 mb-40 max-w-[1240px] px-8 max-sm:my-18 max-sm:px-4">
-          <WuWindowFrame className={mediaFrame} />
-        </section>
+          <section className="mx-auto mt-28 max-w-[1240px] px-8 max-sm:mt-18 max-sm:px-4">
+            <WuWindowFrame className={`${mediaFrame} ${frameOutline}`} />
+          </section>
+        </div>
 
         <MediaSection
           mediaFirst
@@ -60,8 +68,8 @@ export function Home() {
                 Sitting idle, it uses about half as much as VS Code. Searching a whole repository, it uses 58% less
                 than Zed.
               </p>
-              <a className="btn btn-md btn-soft mt-2" href={MEMORY_BENCHMARK_URL} target="_blank" rel="noopener">
-                See the full benchmark
+              <a className="btn btn-md btn-light mt-2" href={MEMORY_BENCHMARK_URL} target="_blank" rel="noopener">
+                See benchmark
                 <ArrowUpRight size={18} aria-hidden="true" />
               </a>
             </>
@@ -93,11 +101,11 @@ export function Home() {
             extension works in Wu.
           </p>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
-            <a className="btn btn-md btn-primary" href={REPO_URL} target="_blank" rel="noopener">
+            <a className="btn btn-md btn-light" href={REPO_URL} target="_blank" rel="noopener">
               <GithubIcon />
               Check out the source
             </a>
-            <a className="btn btn-md btn-soft" href="/docs/">
+            <a className="btn btn-md btn-primary" href="/docs/">
               <BookOpen size={18} aria-hidden="true" />
               Read the docs
             </a>

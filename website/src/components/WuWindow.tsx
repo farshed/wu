@@ -1243,7 +1243,7 @@ export function WuWindow() {
   const symbols = activeFile && cursor ? symbolPath(activeFile, cursor.line) : [];
 
   return (
-    <div className="flex flex-col overflow-hidden bg-[#19191b] font-wu text-[14px] tracking-normal select-none" style={{ width: WIDTH, height: HEIGHT, color: text }}>
+    <div className="flex flex-col overflow-hidden bg-[#0d0d0dcc] font-wu text-[14px] tracking-normal backdrop-blur-2xl select-none" style={{ width: WIDTH, height: HEIGHT, color: text }}>
       <div className="relative flex h-[34px] shrink-0 items-center gap-0.5 pl-[71px] text-[12px]">
         <span className="absolute top-1/2 left-[13px] flex -translate-y-1/2 gap-2" aria-hidden="true">
           <span className="size-3 rounded-full bg-[#ff5f57]" />
@@ -1264,7 +1264,7 @@ export function WuWindow() {
         </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 border-y border-[#ffffff1a] bg-[#0d0d0dcc]">
+      <div className="flex min-h-0 flex-1 border-y border-[#ffffff1a]">
         <div className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-[#ffffff1a] py-1">
           {panels.map((item) => {
             const isActive = panel === item.key;

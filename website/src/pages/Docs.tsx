@@ -17,7 +17,7 @@ export function Docs() {
       <main className="doc mx-auto max-w-[760px] px-8 pt-32 pb-16 max-sm:px-4">
         <h1>Docs</h1>
 
-        <div className="mb-6 rounded-xl bg-elevated/5 px-5 py-[18px] text-[17px] leading-normal text-secondary [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2">
+        <div className="mb-6 rounded-xl card-raised px-5 py-[18px] text-[17px] leading-normal text-secondary [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2">
           This page covers what is specific to Wu. Wu shares its editor core with Zed, so for settings, key bindings,
           languages, extensions, tasks, debugging, and remote development, the{' '}
           <a href={ZED_DOCS_URL} target="_blank" rel="noopener">

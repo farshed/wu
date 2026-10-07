@@ -51,18 +51,16 @@
 }
 
 :root {
-  --primary: #ece7f7;
-  --secondary: #9c92b5;
-  --tertiary: #5d5178;
-  --accent: #8b7cf6;
-  --accent-hover: #9d90f8;
-  --accent-press: #7a6ad9;
-  --on-accent: #06040a;
+  --primary: #ffffff;
+  --secondary: #ffffff;
+  --tertiary: #ffffff;
+  --accent: #7c5cff;
   --background: #06040a;
   --elevated: #ece7f7;
   --hero-start: #06040a;
   --hero-end: #0c0913;
   --tile: #0c0913;
+  --card: #040405;
   color-scheme: dark;
 }
 
@@ -76,14 +74,12 @@
   --color-secondary: var(--secondary);
   --color-tertiary: var(--tertiary);
   --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-press: var(--accent-press);
-  --color-on-accent: var(--on-accent);
   --color-background: var(--background);
   --color-elevated: var(--elevated);
   --color-hero-start: var(--hero-start);
   --color-hero-end: var(--hero-end);
   --color-tile: var(--tile);
+  --color-card: var(--card);
   --animate-fill: fill 9s linear forwards;
   --animate-blink: blink 1s steps(1) infinite;
 
@@ -154,8 +150,16 @@
   @apply bg-transparent text-primary hover:bg-elevated/7;
 }
 
+@utility card-raised {
+  @apply bg-card shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_0_0_1px_rgb(255_255_255/0.07),0_2px_4px_rgb(0_0_0/0.5),0_16px_40px_rgb(0_0_0/0.55)];
+}
+
+@utility btn-light {
+  @apply bg-white text-black shadow-[inset_0_-1px_0_rgb(0_0_0/0.12),0_2px_4px_rgb(0_0_0/0.5),0_8px_20px_rgb(0_0_0/0.45)] hover:bg-[#ececef] active:bg-[#dededf];
+}
+
 @utility btn-primary {
-  @apply bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-press;
+  @apply bg-black text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_0_0_1px_rgb(255_255_255/0.1),0_2px_4px_rgb(0_0_0/0.5),0_8px_20px_rgb(0_0_0/0.45)] hover:bg-[#141418] active:bg-[#0a0a0c];
 }
 
 @utility doc {

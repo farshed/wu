@@ -74,7 +74,7 @@ void main() {
 const RESOLUTION_SCALE = 0.6;
 
 function readInkColor(): [number, number, number] {
-  const hex = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim().replace('#', '');
+  const hex = getComputedStyle(document.documentElement).getPropertyValue('--elevated').trim().replace('#', '');
   return [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255) as [number, number, number];
 }
 
