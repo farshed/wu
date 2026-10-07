@@ -10,14 +10,28 @@ import { RaycastWindow } from '../components/RaycastWindow';
 import { CenterSection, MediaSection, frameOutline, mediaFrame, sectionBody, sectionTitle } from '../components/Section';
 import { WuWindowFrame } from '../components/WuWindow';
 import { INSTALL_GUIDE_URL, MEMORY_BENCHMARK_URL, RAYCAST_URL, RELEASES_URL, REPO_URL } from '../consts';
-import { detectPlatform, directDownload, downloads, platformNames, type Platform } from '../data/downloads';
+import {
+  detectMacArchitecture,
+  detectPlatform,
+  directDownload,
+  downloads,
+  isSuggested,
+  platformNames,
+  type MacArchitecture,
+  type Platform
+} from '../data/downloads';
 
 export function Home() {
   const [platform, setPlatform] = useState<Platform | null>(null);
+  const [macArchitecture, setMacArchitecture] = useState<MacArchitecture>('arm');
 
-  useEffect(() => setPlatform(detectPlatform()), []);
+  useEffect(() => {
+    const detected = detectPlatform();
+    setPlatform(detected);
+    if (detected === 'mac') detectMacArchitecture().then(setMacArchitecture);
+  }, []);
 
-  const direct = directDownload(platform);
+  const direct = directDownload(platform, macArchitecture);
   const downloadHref = direct?.href ?? '#download';
 
   return (
@@ -64,10 +78,6 @@ export function Home() {
             <>
               <h2 className={sectionTitle}>Light on memory</h2>
               <p className={sectionBody}>Wu used less memory than Zed and VS Code in every test we ran.</p>
-              <p className={sectionBody}>
-                Sitting idle, it uses about half as much as VS Code. Searching a whole repository, it uses 58% less
-                than Zed.
-              </p>
               <a className="btn btn-md btn-light mt-2" href={MEMORY_BENCHMARK_URL} target="_blank" rel="noopener">
                 See benchmark
                 <ArrowUpRight size={18} aria-hidden="true" />
@@ -120,7 +130,7 @@ export function Home() {
             {downloads.map((download) => (
               <a
                 key={download.label}
-                className={`btn btn-md ${download.platform && download.platform === platform ? 'btn-primary' : 'btn-soft'}`}
+                className={`btn btn-md ${isSuggested(download, platform, macArchitecture) ? 'btn-light' : 'btn-soft'}`}
                 href={download.href}
               >
                 {download.label}

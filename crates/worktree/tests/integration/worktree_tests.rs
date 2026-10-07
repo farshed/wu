@@ -5496,6 +5496,54 @@ fn drain_git_repo_updates(events: &mut futures::channel::mpsc::UnboundedReceiver
     found
 }
 
+#[gpui::test(iterations = 50)]
+async fn test_refresh_entry_during_initial_scan(cx: &mut TestAppContext) {
+    init_test(cx);
+    let fs = FakeFs::new(cx.background_executor.clone());
+    let mut tree = serde_json::Map::new();
+    for crate_index in 0..40 {
+        tree.insert(
+            format!("crate{crate_index}"),
+            json!({ "src": { "lib.rs": "", "main.rs": "", "util": { "mod_a.rs": "", "mod_b.rs": "" } } }),
+        );
+    }
+    tree.insert(
+        "deep".into(),
+        json!({ "nested": { "providers": { "github.rs": "", "gitlab.rs": "" } } }),
+    );
+    fs.insert_tree("/root", serde_json::Value::Object(tree)).await;
+
+    let tree = Worktree::local(
+        Path::new("/root"),
+        true,
+        fs.clone(),
+        Default::default(),
+        true,
+        WorktreeId::from_proto(0),
+        &mut cx.to_async(),
+    )
+    .await
+    .unwrap();
+
+    for path in [
+        "deep/nested/providers/github.rs",
+        "crate39/src/util/mod_b.rs",
+        "deep/nested/providers/gitlab.rs",
+        "crate20/src/util/mod_a.rs",
+    ] {
+        cx.background_executor.simulate_random_delay().await;
+        let refresh = tree.update(cx, |tree, cx| {
+            tree.as_local()
+                .unwrap()
+                .refresh_entry(rel_path(path).into(), None, cx)
+        });
+        let entry = refresh
+            .await
+            .expect("the entry is found while the first scan is running");
+        assert!(entry.is_some());
+    }
+}
+
 fn init_test(cx: &mut gpui::TestAppContext) {
     zlog::init_test();
 

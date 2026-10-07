@@ -4682,6 +4682,16 @@ impl BackgroundScanner {
         )
         .await;
 
+        // Entries loaded mid-scan are never diffed again; that phase would flag every unchanged entry.
+        if scanning && self.phase != BackgroundScannerPhase::EventsReceivedDuringInitialScan {
+            let mut state = self.state.lock().await;
+            for path in &request.relative_paths {
+                if let Err(ix) = state.changed_paths.binary_search(path) {
+                    state.changed_paths.insert(ix, path.clone());
+                }
+            }
+        }
+
         self.send_status_update(scanning, request.done, &[]).await
     }
 
@@ -5316,7 +5326,11 @@ impl BackgroundScanner {
         event_roots: &[EventRoot],
     ) -> bool {
         let mut state = self.state.lock().await;
-        if state.changed_paths.is_empty() && event_roots.is_empty() && scanning {
+        if state.changed_paths.is_empty()
+            && event_roots.is_empty()
+            && scanning
+            && barrier.is_empty()
+        {
             return true;
         }
 

@@ -39,7 +39,7 @@ use gpui::{
     UnderlineStyle, WeakEntity, Window, canvas, div, img, point, px, radians, size, svg,
 };
 use markdown::{
-    CodeBlockRenderer, HeadingLevelStyles, MarkdownElement, MarkdownFont, MarkdownStyle,
+    CodeBlockRenderer, HeadingLevelStyles, Markdown, MarkdownElement, MarkdownFont, MarkdownStyle,
     parser::CodeBlockKind,
 };
 use project::Project;
@@ -145,6 +145,7 @@ pub struct ChatView {
     expanded_rows: HashSet<String>,
     group_overrides: HashMap<String, bool>,
     expanded_users: HashSet<usize>,
+    user_markdown: HashMap<usize, Entity<Markdown>>,
     selected_options: HashMap<String, Vec<String>>,
     question_pages: HashMap<String, usize>,
     answer_editors: HashMap<String, (Entity<Editor>, Subscription)>,
@@ -308,6 +309,7 @@ impl ChatView {
             expanded_rows: HashSet::default(),
             group_overrides: HashMap::default(),
             expanded_users: HashSet::default(),
+            user_markdown: HashMap::default(),
             selected_options: HashMap::default(),
             question_pages: HashMap::default(),
             answer_editors: HashMap::default(),
@@ -1006,6 +1008,8 @@ impl ChatView {
                 && matches!(entries.get(*index), Some(Entry::User { undelivered: true, .. }))
         });
         let message_style = Self::message_style(window, cx);
+        let user_text = user.and_then(|index| self.user_markdown(index, cx));
+        let user_style = Self::user_style(window, cx);
         let painted_turns = self.painted_turns.clone();
         let turn = v_flex()
             .relative()
@@ -1027,7 +1031,7 @@ impl ChatView {
             }))
             .when(is_last_turn, |this| this.pb(px(TRANSCRIPT_BOTTOM_PAD)))
             .when_some(user, |this, index| {
-                this.child(self.render_user_message(index, cx))
+                this.child(self.render_user_message(index, user_text, user_style, cx))
             })
             .when(
                 !items.is_empty() || (is_last_turn && is_working),
@@ -1116,7 +1120,39 @@ impl ChatView {
             )
     }
 
-    fn render_user_message(&self, index: usize, cx: &Context<Self>) -> AnyElement {
+    fn user_markdown(&mut self, index: usize, cx: &mut Context<Self>) -> Option<Entity<Markdown>> {
+        let Some(Entry::User { text, .. }) = self.entries(cx).get(index) else {
+            return None;
+        };
+        let text = text.clone();
+        if let Some(markdown) = self.user_markdown.get(&index)
+            && markdown.read(cx).source() == text.as_ref()
+        {
+            return Some(markdown.clone());
+        }
+        let markdown = cx.new(|cx| Markdown::new_text(text, cx));
+        self.highlight_new_message(index, &markdown, cx);
+        self.user_markdown.insert(index, markdown.clone());
+        Some(markdown)
+    }
+
+    fn user_style(window: &Window, cx: &App) -> MarkdownStyle {
+        let mut style = Self::message_style(window, cx);
+        style.base_text_style.line_height = ui(USER_LINE_HEIGHT).into();
+        style.container_style.text.font_size = Some(ui(14.).into());
+        style.container_style.text.line_height = Some(ui(USER_LINE_HEIGHT).into());
+        style.container_style.margin.bottom = None;
+        style.paragraph_spacing = px(0.);
+        style
+    }
+
+    fn render_user_message(
+        &self,
+        index: usize,
+        markdown: Option<Entity<Markdown>>,
+        style: MarkdownStyle,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let Some(Entry::User {
             text,
             at,
@@ -1141,6 +1177,7 @@ impl ChatView {
         } else {
             wash(0.08, cx)
         };
+        let user_text = markdown.map(|markdown| MarkdownElement::new(markdown, style));
         let copy = (!text.trim().is_empty()).then(|| {
             (
                 SharedString::from(format!("copy-user-{index}")),
@@ -1209,11 +1246,11 @@ impl ChatView {
                                 div()
                                     .max_h(ui(USER_LINE_HEIGHT * USER_COLLAPSED_LINES as f32))
                                     .overflow_hidden()
-                                    .child(self.render_user_text(index, text.clone(), cx)),
+                                    .children(user_text),
                             )
                             .child(div().h(ui(USER_LINE_HEIGHT)).child("..."))
                         } else {
-                            this.child(self.render_user_text(index, text.clone(), cx))
+                            this.children(user_text)
                         }
                     })
                     .when(collapsible, |this| {

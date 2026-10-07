@@ -28,13 +28,13 @@ Wu is a fast, native code editor written in Rust, with a clean, modern design an
 
 See [INSTALL.md](https://github.com/farshed/wu/blob/main/docs/INSTALL.md) for more.
 
-## Docs
-
-See [docs](https://wu.farshed.me).
-
 ---
 
 ![Wu screenshot](https://wu.farshed.me/screenshot.png)
+
+## Docs
+
+See [docs](https://wu.farshed.me).
 
 ## Building
 
@@ -48,4 +48,4 @@ Wu is a derivative work of [Zed](https://github.com/zed-industries/zed) and shar
 
 ## Acknowledgements
 
-Wu is a fork of [Zed](https://github.com/zed-industries/zed). Thanks to the Zed team for building an excellent editor and releasing it as open source. Wu would not exist without their work.
+Thanks to the Zed team for building an excellent editor and releasing it as open source. Wu would not exist without their work.

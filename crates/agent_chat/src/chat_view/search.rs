@@ -1,13 +1,9 @@
 use super::ChatView;
 use crate::session::Entry;
-use gpui::{
-    AnyElement, App, AppContext as _, Context, Entity, Focusable as _, HighlightStyle, IntoElement, ListOffset,
-    SharedString, StyledText, Task, Window,
-};
+use gpui::{App, AppContext as _, Context, Entity, Focusable as _, ListOffset, Task, Window};
 use markdown::Markdown;
 use project::search::SearchQuery;
 use std::{ops::Range, sync::Arc};
-use theme::ActiveTheme as _;
 use workspace::searchable::{Direction, SearchOptions, SearchToken, SearchableItem};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,53 +32,42 @@ impl SearchState {
 }
 
 impl ChatView {
-    fn assistant_markdown(&self, entry: usize, cx: &App) -> Option<Entity<Markdown>> {
+    fn message_markdown(&self, entry: usize, cx: &App) -> Option<Entity<Markdown>> {
         match self.entries(cx).get(entry) {
             Some(Entry::Assistant { markdown, .. }) => Some(markdown.clone()),
+            Some(Entry::User { .. }) => self.user_markdown.get(&entry).cloned(),
             _ => None,
         }
+    }
+
+    /// User messages get their text element on first render, after the search may have run.
+    pub(super) fn highlight_new_message(
+        &mut self,
+        entry: usize,
+        markdown: &Entity<Markdown>,
+        cx: &mut App,
+    ) {
+        let Some(start) = self.search.matches.iter().position(|found| found.entry == entry) else {
+            return;
+        };
+        let ranges: Vec<_> = self.search.matches[start..]
+            .iter()
+            .take_while(|found| found.entry == entry)
+            .map(|found| found.range.clone())
+            .collect();
+        let active = self
+            .search
+            .active
+            .and_then(|active| active.checked_sub(start))
+            .filter(|active| *active < ranges.len());
+        markdown.update(cx, |markdown, cx| markdown.set_search_highlights(ranges, active, cx));
+        self.search.highlighted.push(markdown.clone());
     }
 
     fn turn_for_entry(&self, entry: usize) -> Option<usize> {
         self.turns
             .iter()
             .position(|turn| turn.user == Some(entry) || turn.items.contains(&entry))
-    }
-
-    pub(super) fn render_user_text(
-        &self,
-        entry: usize,
-        text: SharedString,
-        cx: &App,
-    ) -> AnyElement {
-        let colors = cx.theme().colors();
-        let highlights: Vec<(Range<usize>, HighlightStyle)> = self
-            .search
-            .matches
-            .iter()
-            .enumerate()
-            .filter(|(_, found)| found.entry == entry && found.range.end <= text.len())
-            .map(|(index, found)| {
-                let color = if self.search.active == Some(index) {
-                    colors.search_active_match_background
-                } else {
-                    colors.search_match_background
-                };
-                (
-                    found.range.clone(),
-                    HighlightStyle {
-                        background_color: Some(color),
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect();
-        if highlights.is_empty() {
-            return text.into_any_element();
-        }
-        StyledText::new(text)
-            .with_highlights(highlights)
-            .into_any_element()
     }
 
     pub(super) fn clear_search_highlights(&mut self, cx: &mut App) {
@@ -159,7 +144,7 @@ impl SearchableItem for ChatView {
                     .iter()
                     .take_while(|found| found.entry == first.entry)
                     .count();
-            if let Some(markdown) = self.assistant_markdown(first.entry, cx) {
+            if let Some(markdown) = self.message_markdown(first.entry, cx) {
                 let ranges = matches[start..end]
                     .iter()
                     .map(|found| found.range.clone())
@@ -185,14 +170,13 @@ impl SearchableItem for ChatView {
     ) -> String {
         self.entries(cx)
             .iter()
-            .find_map(|entry| match entry {
-                Entry::Assistant { markdown, .. }
-                    if markdown.focus_handle(cx).is_focused(window) =>
-                {
-                    markdown.read(cx).selected_source().map(str::to_owned)
-                }
+            .filter_map(|entry| match entry {
+                Entry::Assistant { markdown, .. } => Some(markdown),
                 _ => None,
             })
+            .chain(self.user_markdown.values())
+            .find(|markdown| markdown.focus_handle(cx).is_focused(window))
+            .and_then(|markdown| markdown.read(cx).selected_source().map(str::to_owned))
             .filter(|selected| !selected.contains('\n'))
             .unwrap_or_default()
     }
@@ -225,22 +209,20 @@ impl SearchableItem for ChatView {
                 offset_in_item: gpui::px(0.),
             });
         }
-        match self.assistant_markdown(found.entry, cx) {
-            Some(markdown) => {
-                let local = matches[..index]
-                    .iter()
-                    .rev()
-                    .take_while(|earlier| earlier.entry == found.entry)
-                    .count();
-                let start = found.range.start;
-                markdown.update(cx, |markdown, cx| {
-                    markdown.set_active_search_highlight(Some(local), cx);
-                    markdown.request_autoscroll_to_source_index(start, cx);
-                });
-            }
-            None => {
-                self.expanded_users.insert(found.entry);
-            }
+        if matches!(self.entries(cx).get(found.entry), Some(Entry::User { .. })) {
+            self.expanded_users.insert(found.entry);
+        }
+        if let Some(markdown) = self.message_markdown(found.entry, cx) {
+            let local = matches[..index]
+                .iter()
+                .rev()
+                .take_while(|earlier| earlier.entry == found.entry)
+                .count();
+            let start = found.range.start;
+            markdown.update(cx, |markdown, cx| {
+                markdown.set_active_search_highlight(Some(local), cx);
+                markdown.request_autoscroll_to_source_index(start, cx);
+            });
         }
         cx.notify();
     }
@@ -431,17 +413,17 @@ mod tests {
         let reply_entry = found[0].entry;
         let message_entry = found[1].entry;
         let reply_markdown = chat
-            .read_with(cx, |chat, cx| chat.assistant_markdown(reply_entry, cx))
+            .read_with(cx, |chat, cx| chat.message_markdown(reply_entry, cx))
             .expect("first match is in a reply");
         assert_eq!(
             reply_markdown.read_with(cx, |markdown, _| markdown.source()[found[0].range.clone()]
                 .to_string()),
             "needle"
         );
-        assert!(
-            chat.read_with(cx, |chat, cx| chat.assistant_markdown(message_entry, cx))
-                .is_none()
-        );
+        assert!(chat.read_with(cx, |chat, cx| matches!(
+            chat.entries(cx).get(message_entry),
+            Some(Entry::User { .. })
+        )));
 
         chat.update_in(cx, |chat, window, cx| {
             chat.update_matches(&found, Some(0), SearchToken::default(), window, cx);
@@ -458,6 +440,17 @@ mod tests {
         assert_eq!(
             reply_markdown.read_with(cx, |markdown, _| markdown.search_highlights().len()),
             1
+        );
+        let message_markdown = chat
+            .read_with(cx, |chat, cx| chat.message_markdown(message_entry, cx))
+            .expect("a drawn message has selectable text");
+        assert_eq!(
+            message_markdown.read_with(cx, |markdown, _| (
+                markdown.search_highlights().len(),
+                markdown.active_search_highlight()
+            )),
+            (1, Some(0)),
+            "a message drawn after the search still shows its match"
         );
 
         chat.update_in(cx, |chat, window, cx| {

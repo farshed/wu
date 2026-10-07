@@ -7,7 +7,9 @@ release body.
 
 ## Unreleased
 
-- Images dropped anywhere on an agent chat, including near its edges, are attached instead of opening in a split.
+- Your own messages in agent chats can now be selected and copied in part, like the agent's replies.
+- Fixed open files sometimes not coming back when reopening a project right after starting the computer, which also left the file tree collapsed.
+
 ## 1.1.3 - 2026-10-06
 
 - Support for Intel Macs.

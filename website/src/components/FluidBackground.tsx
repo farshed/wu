@@ -12,6 +12,7 @@ const DYE_FADE = 0.5;
 const CYCLE_PER_STAMP = 0.006;
 const CYCLE_PER_SECOND = 0.06;
 const IDLE_AFTER_MS = 10_000;
+const AUTO_PATH_SPEED = 0.65;
 const MAX_PIXEL_RATIO = 1.5;
 const COLORS = ['#2216f7', '#55bdff', '#a702ff'];
 
@@ -286,7 +287,15 @@ function createPingPong(gl: WebGL2RenderingContext, width: number, height: numbe
   return pair;
 }
 
-export function FluidBackground({ onUnavailable }: { onUnavailable: () => void }) {
+function autoPathPoint(seconds: number, width: number, height: number) {
+  const t = seconds * AUTO_PATH_SPEED;
+  return {
+    x: width * (0.5 + 0.34 * Math.sin(t * 1.1) * Math.cos(t * 0.37)),
+    y: height * (0.5 + 0.32 * Math.sin(t * 0.83 + 1.3) * Math.cos(t * 0.29 + 0.6))
+  };
+}
+
+export function FluidBackground({ auto, onUnavailable }: { auto: boolean; onUnavailable: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const unavailableRef = useRef(onUnavailable);
   unavailableRef.current = onUnavailable;
@@ -434,9 +443,14 @@ export function FluidBackground({ onUnavailable }: { onUnavailable: () => void }
       const dt = lastFrame === null ? 1 / 60 : Math.min((now - lastFrame) / 1000, 1 / 30);
       lastFrame = now;
       colorCycle += dt * CYCLE_PER_SECOND;
+      if (auto) {
+        const from = autoPathPoint(autoSeconds, gridWidth, gridHeight);
+        autoSeconds += dt;
+        addStroke(from, autoPathPoint(autoSeconds, gridWidth, gridHeight), dt);
+      }
       step(dt);
       render();
-      if (now - lastActivity < IDLE_AFTER_MS && onScreen && !document.hidden) {
+      if ((auto || now - lastActivity < IDLE_AFTER_MS) && onScreen && !document.hidden) {
         animationFrame = requestAnimationFrame(tick);
       } else {
         animationFrame = 0;
@@ -449,23 +463,11 @@ export function FluidBackground({ onUnavailable }: { onUnavailable: () => void }
       if (!animationFrame && onScreen && !document.hidden) animationFrame = requestAnimationFrame(tick);
     };
 
-    const movePointer = (clientX: number, clientY: number) => {
-      const rect = canvas.getBoundingClientRect();
-      const inside = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
-      const now = performance.now();
-      const x = ((clientX - rect.left) / rect.width) * gridWidth;
-      const y = (1 - (clientY - rect.top) / rect.height) * gridHeight;
-      const previous = pointer;
-      pointer = { x, y, time: now };
-      if (!inside || !previous || now - previous.time > 100) {
-        smoothedVelocity = { x: 0, y: 0 };
-        return;
-      }
-      const dx = x - previous.x;
-      const dy = y - previous.y;
+    const addStroke = (from: { x: number; y: number }, to: { x: number; y: number }, seconds: number) => {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
       const distance = Math.hypot(dx, dy);
-      if (distance === 0 || distance > Math.max(gridWidth, gridHeight) * 0.3) return;
-      const seconds = Math.max((now - previous.time) / 1000, 1 / 240);
+      if (distance === 0 || distance > Math.max(gridWidth, gridHeight) * 0.3) return false;
       smoothedVelocity = {
         x: smoothedVelocity.x * 0.4 + (dx / seconds) * 0.6,
         y: smoothedVelocity.y * 0.4 + (dy / seconds) * 0.6
@@ -474,14 +476,34 @@ export function FluidBackground({ onUnavailable }: { onUnavailable: () => void }
       for (let index = 1; index <= count; index++) {
         const t = index / count;
         pendingStamps.push({
-          x: previous.x + dx * t,
-          y: previous.y + dy * t,
+          x: from.x + dx * t,
+          y: from.y + dy * t,
           impulseX: smoothedVelocity.x * IMPULSE,
           impulseY: smoothedVelocity.y * IMPULSE
         });
       }
-      wake();
+      return true;
     };
+
+    const movePointer = (clientX: number, clientY: number) => {
+      const rect = canvas.getBoundingClientRect();
+      const inside = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+      const now = performance.now();
+      const next = {
+        x: ((clientX - rect.left) / rect.width) * gridWidth,
+        y: (1 - (clientY - rect.top) / rect.height) * gridHeight,
+        time: now
+      };
+      const previous = pointer;
+      pointer = next;
+      if (!inside || !previous || now - previous.time > 100) {
+        smoothedVelocity = { x: 0, y: 0 };
+        return;
+      }
+      if (addStroke(previous, next, Math.max((now - previous.time) / 1000, 1 / 240))) wake();
+    };
+
+    let autoSeconds = Math.random() * 100;
 
     const onMouseMove = (event: MouseEvent) => movePointer(event.clientX, event.clientY);
     const onTouchMove = (event: TouchEvent) => {
@@ -513,8 +535,12 @@ export function FluidBackground({ onUnavailable }: { onUnavailable: () => void }
     resize();
     resizeObserver.observe(canvas);
     intersectionObserver.observe(canvas);
-    window.addEventListener('mousemove', onMouseMove, { passive: true });
-    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    if (auto) {
+      wake();
+    } else {
+      window.addEventListener('mousemove', onMouseMove, { passive: true });
+      window.addEventListener('touchmove', onTouchMove, { passive: true });
+    }
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
@@ -525,7 +551,7 @@ export function FluidBackground({ onUnavailable }: { onUnavailable: () => void }
       window.removeEventListener('touchmove', onTouchMove);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, []);
+  }, [auto]);
 
   return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 size-full" />;
 }
