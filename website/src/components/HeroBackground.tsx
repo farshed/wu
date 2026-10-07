@@ -1,7 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { FluidBackground } from './FluidBackground';
 import { InkBackground } from './InkBackground';
-
-const FluidShader = lazy(() => import('./FluidShader'));
 
 type Effect = 'fluid' | 'ink';
 
@@ -9,15 +8,10 @@ export function HeroBackground() {
   const [effect, setEffect] = useState<Effect | null>(null);
 
   useEffect(() => {
-    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    setEffect('gpu' in navigator && !reducedMotion ? 'fluid' : 'ink');
+    setEffect(matchMedia('(prefers-reduced-motion: reduce)').matches ? 'ink' : 'fluid');
   }, []);
 
   if (effect === null) return null;
   if (effect === 'ink') return <InkBackground />;
-  return (
-    <Suspense fallback={null}>
-      <FluidShader onUnavailable={() => setEffect('ink')} />
-    </Suspense>
-  );
+  return <FluidBackground onUnavailable={() => setEffect('ink')} />;
 }

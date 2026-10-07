@@ -12,7 +12,6 @@
     "lucide-react": "^1.49.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "shaders": "4.0.1",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
