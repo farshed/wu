@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+## 1.1.4 - 2026-10-08
+
 - Made the time on agent chats in the sidebar easier to read.
 - Fixed error and warning popups in the editor being see-through and hard to read in Wu Dark.
 - Cleaned up the context menu options in the agent chat sidebar.
