@@ -27,7 +27,7 @@ use std::{
 use std::{ops::Range, sync::Arc, time::Duration};
 use std::{path::PathBuf, rc::Rc};
 use theme_settings::ThemeSettings;
-use ui::{CopyButton, Scrollbars, WithScrollbar, prelude::*, theme_is_transparent};
+use ui::{CopyButton, Scrollbars, WithScrollbar, prelude::*};
 use url::Url;
 use util::TryFutureExt;
 use workspace::{OpenOptions, OpenVisible, Workspace};
@@ -1387,11 +1387,6 @@ impl DiagnosticPopover {
                 .absolute()
                 .size_full(),
             )
-            // Don't draw the background color if the theme
-            // allows transparent surfaces.
-            .when(theme_is_transparent(cx), |this| {
-                this.bg(gpui::transparent_black())
-            })
             // Prevent a mouse move on the popover from being propagated to the editor,
             // because that would dismiss the popover.
             .on_mouse_move({
