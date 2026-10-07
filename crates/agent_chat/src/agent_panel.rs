@@ -676,6 +676,7 @@ impl AgentPanel {
         let colors = cx.theme().colors();
         let text = colors.text;
         let subline = colors.text_muted.opacity(0.5);
+        let time_color = colors.text_muted.opacity(0.8);
         let hovered = self.hovered_row.as_ref() == Some(&id);
         let status = RowStatus::of(&session);
         let status_color = status.color(cx);
@@ -742,6 +743,7 @@ impl AgentPanel {
                 None => div()
                     .text_size(ui(10.))
                     .font_weight(FontWeight::MEDIUM)
+                    .text_color(time_color)
                     .child(time_ago.clone())
                     .into_any_element(),
             }
@@ -836,7 +838,7 @@ impl AgentPanel {
                                 .whitespace_nowrap()
                                 .text_right()
                                 .text_size(ui(11.))
-                                .text_color(subline)
+                                .text_color(time_color)
                                 .child(time_ago.clone()),
                         )
                     }),

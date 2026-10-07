@@ -7,6 +7,7 @@ release body.
 
 ## Unreleased
 
+- Made the time on agent chats in the sidebar easier to read.
 - Fixed error and warning popups in the editor being see-through and hard to read in Wu Dark.
 - Claude chat tabs show the orange Claude icon, and Codex and OpenCode icons in the chat sidebar are easier to see.
 - Removed sections and the archive from the agent chat sidebar, along with New Side Chat in the chat context menu. Archived chats show up in the main list again.
