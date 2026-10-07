@@ -7,6 +7,7 @@ release body.
 
 ## Unreleased
 
+- Claude chat tabs show the orange Claude icon, and Codex and OpenCode icons in the chat sidebar are easier to see.
 - Removed sections and the archive from the agent chat sidebar, along with New Side Chat in the chat context menu. Archived chats show up in the main list again.
 - Forked chats now continue from a real copy of the agent's own session when Claude Code, Codex or OpenCode supports it, so the fork remembers everything the original did and starts without re-sending the whole conversation.
 - Your own messages in agent chats can now be selected and copied in part, like the agent's replies.

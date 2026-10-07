@@ -824,7 +824,7 @@ impl AgentPanel {
                     .child(glyph(
                         harness_icon,
                         HARNESS_ICON_SIZE,
-                        harness_tint.unwrap_or(subline).opacity(0.8),
+                        harness_tint.map_or(colors.text_muted, |tint| tint.opacity(0.8)),
                     ))
                     .child(title_content)
                     .when(!compact || hovered, |this| this.children(corner.take()))

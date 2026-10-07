@@ -199,6 +199,14 @@ impl Icon {
         self
     }
 
+    /// Keeps a color the icon's owner already chose, such as a brand color.
+    pub fn color_if_unset(mut self, color: Color) -> Self {
+        if self.color == Color::Default {
+            self.color = color;
+        }
+        self
+    }
+
     pub fn size(mut self, size: IconSize) -> Self {
         self.size = size.rems();
         self
