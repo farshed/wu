@@ -1543,6 +1543,65 @@ fn handle_server_request(
         });
         return;
     }
+    if method == "mcpServer/elicitation/request" {
+        let Some((question, replies)) = elicitation_question(params) else {
+            client.respond(&id, json!({ "action": "decline" }));
+            return;
+        };
+        let client = client.clone();
+        let request_input = Arc::clone(request_input);
+        tokio::spawn(async move {
+            let answers = (request_input)(vec![question.clone()])
+                .await
+                .unwrap_or_default();
+            let reply = answers
+                .iter()
+                .filter(|answer| answer.question_id == question.id)
+                .flat_map(|answer| &answer.labels)
+                .find_map(|label| {
+                    replies
+                        .iter()
+                        .find(|(choice, _)| choice.eq_ignore_ascii_case(label))
+                        .map(|(_, reply)| reply.clone())
+                })
+                .unwrap_or_else(|| json!({ "action": "decline" }));
+            client.respond(&id, reply);
+        });
+        return;
+    }
+    if method == "item/permissions/requestApproval" {
+        let granted = json!({
+            "permissions": params.get("permissions").cloned().unwrap_or_else(|| json!({})),
+            "scope": "turn",
+        });
+        if skip_prompts {
+            client.respond(&id, granted);
+            return;
+        }
+        let question = permissions_question(params);
+        let client = client.clone();
+        let request_input = Arc::clone(request_input);
+        tokio::spawn(async move {
+            let answers = (request_input)(vec![question.clone()])
+                .await
+                .unwrap_or_default();
+            let allow = answers.iter().any(|a| {
+                a.question_id == question.id
+                    && a.labels
+                        .iter()
+                        .any(|l| l.eq_ignore_ascii_case(crate::claude::PERMISSION_ALLOW))
+            });
+            client.respond(
+                &id,
+                if allow {
+                    granted
+                } else {
+                    json!({ "permissions": {} })
+                },
+            );
+        });
+        return;
+    }
     let is_approval = matches!(
         method,
         "item/commandExecution/requestApproval" | "item/fileChange/requestApproval"
@@ -1639,6 +1698,124 @@ fn user_input_questions(params: &Value) -> Vec<(String, UserInputQuestion)> {
         .collect()
 }
 
+const ELICITATION_ALLOW_FOR_CHAT: &str = "Allow for this chat";
+const ELICITATION_ALWAYS_ALLOW: &str = "Always allow";
+
+/// Forms and links are declined because the chat can't show them.
+fn elicitation_question(params: &Value) -> Option<(UserInputQuestion, Vec<(String, Value)>)> {
+    if params.get("mode").and_then(Value::as_str) != Some("form") {
+        return None;
+    }
+    let has_fields = params
+        .pointer("/requestedSchema/properties")
+        .and_then(Value::as_object)
+        .is_some_and(|properties| !properties.is_empty());
+    if has_fields {
+        return None;
+    }
+    let message = params
+        .get("message")
+        .and_then(Value::as_str)
+        .filter(|message| !message.trim().is_empty())?;
+    let meta = params.get("_meta");
+    let header = meta
+        .and_then(|meta| meta.get("connector_name"))
+        .or_else(|| params.get("serverName"))
+        .and_then(Value::as_str)
+        .unwrap_or("Codex")
+        .to_owned();
+    let persist: Vec<&str> = meta
+        .and_then(|meta| meta.get("persist"))
+        .and_then(Value::as_array)
+        .map(|choices| choices.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+
+    let accept = |persist: Option<&str>| match persist {
+        Some(persist) => {
+            json!({ "action": "accept", "content": {}, "_meta": { "persist": persist } })
+        }
+        None => json!({ "action": "accept", "content": {} }),
+    };
+    let mut replies = vec![(crate::claude::PERMISSION_ALLOW.to_owned(), accept(None))];
+    if persist.contains(&"session") {
+        replies.push((
+            ELICITATION_ALLOW_FOR_CHAT.to_owned(),
+            accept(Some("session")),
+        ));
+    }
+    if persist.contains(&"always") {
+        replies.push((ELICITATION_ALWAYS_ALLOW.to_owned(), accept(Some("always"))));
+    }
+    replies.push((
+        crate::claude::PERMISSION_DENY.to_owned(),
+        json!({ "action": "decline" }),
+    ));
+    let question = UserInputQuestion {
+        id: new_message_id(),
+        header,
+        question: message.to_owned(),
+        options: replies.iter().map(|(choice, _)| choice.clone()).collect(),
+        prefill: None,
+        multiline: false,
+        multi_select: false,
+    };
+    Some((question, replies))
+}
+
+fn permissions_question(params: &Value) -> UserInputQuestion {
+    let permissions = params.get("permissions");
+    let mut wants = Vec::new();
+    if permissions
+        .and_then(|permissions| permissions.pointer("/network/enabled"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        wants.push("network access".to_owned());
+    }
+    let file_system = permissions.and_then(|permissions| permissions.get("fileSystem"));
+    for (key, access) in [("read", "read"), ("write", "write")] {
+        let paths: Vec<&str> = file_system
+            .and_then(|file_system| file_system.get(key))
+            .and_then(Value::as_array)
+            .map(|paths| paths.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        if !paths.is_empty() {
+            wants.push(format!("{access} access to {}", paths.join(", ")));
+        }
+    }
+    let has_entries = file_system
+        .and_then(|file_system| file_system.get("entries"))
+        .and_then(Value::as_array)
+        .is_some_and(|entries| !entries.is_empty());
+    if has_entries && wants.iter().all(|want| want == "network access") {
+        wants.push("more file access".to_owned());
+    }
+    let mut question = if wants.is_empty() {
+        "Codex wants more access. Allow it?".to_owned()
+    } else {
+        format!("Codex wants {}. Allow it?", wants.join(" and "))
+    };
+    if let Some(reason) = params
+        .get("reason")
+        .and_then(Value::as_str)
+        .filter(|reason| !reason.trim().is_empty())
+    {
+        question = format!("{question}\n\n{reason}");
+    }
+    UserInputQuestion {
+        id: new_message_id(),
+        header: crate::claude::PERMISSION_HEADER.to_owned(),
+        question,
+        options: vec![
+            crate::claude::PERMISSION_ALLOW.into(),
+            crate::claude::PERMISSION_DENY.into(),
+        ],
+        prefill: None,
+        multiline: false,
+        multi_select: false,
+    }
+}
+
 fn approval_question(method: &str, params: &Value) -> UserInputQuestion {
     let (header, question) = if method.contains("commandExecution") {
         let command = match params.get("command") {
@@ -1695,6 +1872,83 @@ use crate::shutdown_child;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn computer_use_app_approval_offers_allow_remember_and_deny() {
+        let params = json!({
+            "threadId": "t",
+            "turnId": "u",
+            "serverName": "cua_repl",
+            "mode": "form",
+            "message": "Allow Computer Use to use \"Google Chrome\"?",
+            "requestedSchema": { "type": "object", "properties": {} },
+            "_meta": {
+                "codex_approval_kind": "mcp_tool_call",
+                "connector_name": "Computer Use",
+                "persist": ["session", "always"],
+            },
+        });
+        let (question, replies) = elicitation_question(&params).expect("a confirmation");
+        assert_eq!(question.header, "Computer Use");
+        assert_eq!(
+            question.question,
+            "Allow Computer Use to use \"Google Chrome\"?"
+        );
+        assert_eq!(
+            question.options,
+            ["Allow", "Allow for this chat", "Always allow", "Deny"]
+        );
+        let reply = |choice: &str| {
+            replies
+                .iter()
+                .find(|(label, _)| label == choice)
+                .map(|(_, reply)| reply.clone())
+        };
+        assert_eq!(
+            reply("Allow"),
+            Some(json!({ "action": "accept", "content": {} }))
+        );
+        assert_eq!(
+            reply("Allow for this chat"),
+            Some(json!({ "action": "accept", "content": {}, "_meta": { "persist": "session" } }))
+        );
+        assert_eq!(
+            reply("Always allow"),
+            Some(json!({ "action": "accept", "content": {}, "_meta": { "persist": "always" } }))
+        );
+        assert_eq!(reply("Deny"), Some(json!({ "action": "decline" })));
+    }
+
+    #[test]
+    fn elicitations_the_chat_cannot_show_are_not_asked() {
+        let form = json!({
+            "mode": "form",
+            "message": "Pick a project",
+            "requestedSchema": { "type": "object", "properties": { "name": { "type": "string" } } },
+        });
+        assert!(elicitation_question(&form).is_none());
+        let link = json!({ "mode": "url", "message": "Sign in", "url": "https://example.com", "elicitationId": "e" });
+        assert!(elicitation_question(&link).is_none());
+        let plain = json!({ "mode": "form", "message": "Continue?", "requestedSchema": { "type": "object", "properties": {} } });
+        let (question, _) = elicitation_question(&plain).expect("a confirmation");
+        assert_eq!(question.options, ["Allow", "Deny"]);
+    }
+
+    #[test]
+    fn permission_requests_describe_what_is_asked() {
+        let question = permissions_question(&json!({
+            "permissions": {
+                "network": { "enabled": true },
+                "fileSystem": { "write": ["/tmp/out"] },
+            },
+            "reason": "Needs to download a file",
+        }));
+        assert_eq!(question.header, crate::claude::PERMISSION_HEADER);
+        assert_eq!(
+            question.question,
+            "Codex wants network access and write access to /tmp/out. Allow it?\n\nNeeds to download a file"
+        );
+    }
 
     #[test]
     fn permission_modes_pick_the_sandbox() {

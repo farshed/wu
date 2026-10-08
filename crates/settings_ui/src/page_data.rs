@@ -7499,9 +7499,31 @@ fn agent_chat_page() -> SettingsPage {
         ]
     }
 
-    fn agents_section() -> [SettingsPageItem; 4] {
+    fn agents_section() -> [SettingsPageItem; 5] {
         [
             SettingsPageItem::SectionHeader("Agents"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Claude in Chrome",
+                description: "Let Claude Code chats use your Chrome browser through the Claude in Chrome extension. Applies from the next message.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.claude_in_chrome"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .claude_in_chrome
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .claude_in_chrome = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
             SettingsPageItem::SettingItem(SettingItem {
                 title: "Claude Code",
                 description: "Show Claude Code in the new chat menu and in Continue Saved Chat. At least one agent stays shown.",

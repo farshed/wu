@@ -140,6 +140,8 @@
     // "queue" waits for the agent to finish; "steer" sends the message right away.
     "while_working": "queue",
     "confirm_quit_while_working": true,
+    // Lets Claude Code chats use Chrome through the Claude in Chrome extension.
+    "claude_in_chrome": true,
   },
   // Image viewer settings
   "image_viewer": {

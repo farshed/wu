@@ -51,6 +51,7 @@ fn request(prompt: &str) -> RunRequest {
         attachments: Vec::new(),
         skills: Vec::new(),
         auto_compact_tokens: None,
+        chrome: false,
     }
 }
 

@@ -100,6 +100,10 @@ export function Docs() {
             Turn off Enable Agent Chat in settings to hide the agent panel, its commands, and everything else
             agent-related. Running agents stop, and your saved chats come back when you turn it on again.
           </li>
+          <li>
+            Claude Code chats can use your Chrome browser through the Claude in Chrome extension, like Claude Code in
+            the terminal. Turn off Claude in Chrome in settings to keep them out of your browser.
+          </li>
           <li>You can hide agents you don't use from the new chat menu and Continue Saved Chat. At least one stays shown.</li>
           <li>
             Auto-Compact compacts a Claude Code or Codex chat once its context reaches the limit you pick, from 100K to

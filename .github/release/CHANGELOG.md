@@ -7,18 +7,17 @@ release body.
 
 ## Unreleased
 
-- Opening an empty folder in the file tree now shows an "Empty" line under it, so it's clear the folder opened and has nothing in it.
+- Fixed Codex computer use being blocked.
+- Claude Code chats can now use your Chrome browser through the Claude in Chrome extension.
+- Opening an empty folder in the file tree now shows an "Empty" line under it.
 - Claude Code skills in the chat's / menu now have their own icon, so they're easy to tell apart from commands.
-- Added an Enable Agent Chat setting. Turn it off to hide the agent panel, its commands and everything else agent-related. Wu asks first if an agent is still working, since turning it off stops it.
-- Added settings for new agent chats: a fixed starting effort, and a starting permission mode for each agent.
-- Added a While Working setting. Set it to Steer and a message you send while the agent works goes out right away instead of waiting in the queue.
-- Wu now asks before quitting or restarting while an agent is working, since that stops it. You can turn this off in the Agent Chat settings.
-- Added settings to hide Claude Code, Codex or OpenCode from the new chat menu and Continue Saved Chat.
-- Added Auto-Compact to the Agent Chat settings. Turn it on and pick a context limit, and Claude Code and Codex chats compact once they reach it.
-- Desktop notifications for agent chats are now off by default. On macOS, turning them on asks to allow Wu's notifications, and opens System Settings if they're turned off there.
-- Added Continue Saved Chat to the new chat menu, which picks up a chat you started in Claude Code, Codex or OpenCode for the current project. Wu copies it into a new chat with its history, so the original stays as it was.
-- Removed Claude Code's settings and info commands like /model, /usage and /context from the chat's / menu, since Wu has its own controls for them and their answers never showed up in the chat. Typing /clear now starts a new chat, /model and /effort open the model picker, and the rest explain that they only work in the terminal. Skills, your own commands, /review, /init and /compact are still there.
-- Fixed Codex /review showing the review twice.
+- Added an Enable Agent Chat setting. Turn it off to hide the agent panel and everything agent-releated.
+- Added more configuration options for agent chats to Settings.
+- Wu now asks before quitting or restarting while an agent is working.
+- Added "Continue Saved Chat" to the new chat menu, which picks up a chat you started in a CLI.
+- Added settings to hide Claude Code, Codex or OpenCode from the new chat menu.
+- Desktop notifications for agent chats are now off by default. On macOS, turning them on opens system preferences to allow Wu's notifications.
+- Removed Claude Code's settings and info commands like /model, /usage and /context from the chat's / menu.
 
 
 ## 1.1.4 - 2026-10-08

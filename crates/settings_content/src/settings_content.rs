@@ -1107,6 +1107,10 @@ pub struct AgentChatSettingsContent {
     ///
     /// Default: true
     pub confirm_quit_while_working: Option<bool>,
+    /// Let Claude Code chats use your Chrome browser through the Claude in Chrome extension.
+    ///
+    /// Default: true
+    pub claude_in_chrome: Option<bool>,
 }
 
 #[with_fallible_options]

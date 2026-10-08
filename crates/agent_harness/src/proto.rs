@@ -140,6 +140,9 @@ pub struct RunRequest {
     /// Context size in tokens at which the agent compacts; `None` keeps the agent's own default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_compact_tokens: Option<u64>,
+    /// Lets Claude Code use the browser through the Claude in Chrome extension.
+    #[serde(default)]
+    pub chrome: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

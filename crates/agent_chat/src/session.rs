@@ -1271,6 +1271,7 @@ impl AgentSession {
             resume: self.metadata.native_session_id.clone(),
             fork,
             auto_compact_tokens: self.auto_compact_tokens(cx),
+            chrome: AgentChatSettings::get_global(cx).claude_in_chrome,
         };
         let (steering_tx, steering_rx) = tokio::sync::mpsc::channel(32);
         let interrupt = CancellationToken::new();

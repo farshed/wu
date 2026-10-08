@@ -180,6 +180,12 @@ impl ClaudeHarness {
             cmd.args(["--effort", effort]);
         }
         cmd.args(permission_args(request.permission));
+        // Headless sessions only connect the Chrome extension when asked to.
+        cmd.arg(if request.chrome {
+            "--chrome"
+        } else {
+            "--no-chrome"
+        });
         if let Some(resume) = &request.resume {
             cmd.arg(format!("--resume={resume}"));
         } else if let Some(fork) = &request.fork {
@@ -1193,6 +1199,7 @@ mod tests {
             attachments: Vec::new(),
             skills: Vec::new(),
             auto_compact_tokens: None,
+            chrome: false,
         };
         assert!(flag_settings(&request).is_empty());
         request.auto_compact_tokens = Some(150_000);
@@ -1200,6 +1207,40 @@ mod tests {
             Value::Object(flag_settings(&request)),
             json!({ "autoCompactEnabled": true, "autoCompactWindow": 150_000 })
         );
+    }
+
+    #[test]
+    fn chrome_is_connected_only_when_asked() {
+        let mut request = RunRequest {
+            prompt: "hi".into(),
+            model: None,
+            reasoning: None,
+            model_options: serde_json::Map::new(),
+            cwd: String::new(),
+            permission: PermissionMode::FullAccess,
+            resume: None,
+            fork: None,
+            attachments: Vec::new(),
+            skills: Vec::new(),
+            auto_compact_tokens: None,
+            chrome: true,
+        };
+        let harness = ClaudeHarness::new();
+        let args = |request: &RunRequest| -> Vec<String> {
+            harness
+                .build_command(&PathBuf::from("claude"), request, None)
+                .as_std()
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect()
+        };
+        let with_chrome = args(&request);
+        assert!(with_chrome.contains(&"--chrome".to_string()));
+        assert!(!with_chrome.contains(&"--no-chrome".to_string()));
+        request.chrome = false;
+        let without_chrome = args(&request);
+        assert!(without_chrome.contains(&"--no-chrome".to_string()));
+        assert!(!without_chrome.contains(&"--chrome".to_string()));
     }
 
     #[test]
