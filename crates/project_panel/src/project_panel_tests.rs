@@ -1508,6 +1508,169 @@ async fn test_adding_directory_via_file(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
+async fn test_open_empty_folder_shows_an_empty_row(cx: &mut gpui::TestAppContext) {
+    init_test(cx);
+
+    let fs = FakeFs::new(cx.executor());
+    fs.insert_tree(
+        "/root",
+        json!({
+            "empty": {},
+            "full": { "file.txt": "" },
+            "z.txt": ""
+        }),
+    )
+    .await;
+
+    let project = Project::test(fs.clone(), ["/root".as_ref()], cx).await;
+    let window = cx.add_window(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
+    let workspace = window
+        .read_with(cx, |mw, _| mw.workspace().clone())
+        .unwrap();
+    let cx = &mut VisualTestContext::from_window(window.into(), cx);
+    let panel = workspace.update_in(cx, ProjectPanel::new);
+    cx.run_until_parked();
+
+    select_path(&panel, "root/empty", cx);
+    toggle_expand_dir(&panel, "root/empty", cx);
+    assert_eq!(
+        visible_entries_with_empty_rows(&panel, 0..10, cx),
+        &[
+            "v root",
+            "    v empty  <== selected",
+            "          <empty>",
+            "    > full",
+            "      z.txt",
+        ]
+    );
+
+    panel.update_in(cx, |panel, window, cx| {
+        panel.expand_selected_entry(&Default::default(), window, cx);
+    });
+    assert_eq!(
+        visible_entries_with_empty_rows(&panel, 0..10, cx)[1],
+        "    v empty  <== selected",
+        "moving into an empty folder stays on the folder"
+    );
+
+    panel.update_in(cx, |panel, window, cx| {
+        panel.select_next(&Default::default(), window, cx);
+    });
+    assert_eq!(
+        visible_entries_with_empty_rows(&panel, 0..10, cx)[3],
+        "    > full  <== selected",
+        "moving down skips the empty row"
+    );
+
+    panel.update_in(cx, |panel, window, cx| {
+        panel.select_previous(&Default::default(), window, cx);
+    });
+    assert_eq!(
+        visible_entries_with_empty_rows(&panel, 0..10, cx)[1],
+        "    v empty  <== selected",
+        "moving up skips the empty row"
+    );
+
+    fs.insert_file("/root/empty/new.txt", Vec::new()).await;
+    cx.run_until_parked();
+    assert_eq!(
+        visible_entries_with_empty_rows(&panel, 0..10, cx),
+        &[
+            "v root",
+            "    v empty  <== selected",
+            "          new.txt",
+            "    > full",
+            "      z.txt",
+        ]
+    );
+}
+
+#[gpui::test]
+async fn test_dragging_over_an_empty_row_keeps_its_own_target(cx: &mut gpui::TestAppContext) {
+    init_test(cx);
+
+    let fs = FakeFs::new(cx.executor());
+    fs.insert_tree("/root", json!({ "empty": {} })).await;
+
+    let project = Project::test(fs.clone(), ["/root".as_ref()], cx).await;
+    let window = cx.add_window(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
+    let workspace = window
+        .read_with(cx, |mw, _| mw.workspace().clone())
+        .unwrap();
+    let cx = &mut VisualTestContext::from_window(window.into(), cx);
+    let panel = workspace.update_in(cx, ProjectPanel::new);
+    cx.run_until_parked();
+    toggle_expand_dir(&panel, "root/empty", cx);
+
+    panel.update(cx, |panel, _| {
+        let (row_id, folder_id) = panel
+            .state
+            .empty_folder_rows
+            .iter()
+            .map(|(row, folder)| (*row, *folder))
+            .next()
+            .expect("the open empty folder has an Empty row");
+        let bounds = Bounds::new(point(px(0.), px(20.)), size(px(200.), px(20.)));
+        let inside = point(px(10.), px(30.));
+        let outside = point(px(10.), px(5.));
+
+        assert!(panel.track_empty_folder_row_drag(row_id, bounds, inside));
+        panel.drag_target_entry = Some(DragTarget::Entry {
+            entry_id: row_id,
+            highlight_entry_id: folder_id,
+        });
+        assert!(!panel.track_empty_folder_row_drag(row_id, bounds, inside));
+        assert!(panel.drag_target_entry.is_some());
+
+        assert!(!panel.track_empty_folder_row_drag(row_id, bounds, outside));
+        assert!(panel.drag_target_entry.is_none());
+
+        panel.drag_target_entry = Some(DragTarget::Entry {
+            entry_id: folder_id,
+            highlight_entry_id: folder_id,
+        });
+        assert!(!panel.track_empty_folder_row_drag(row_id, bounds, outside));
+        assert!(
+            panel.drag_target_entry.is_some(),
+            "leaving the Empty row doesn't clear another row's target"
+        );
+    });
+}
+
+#[gpui::test]
+async fn test_last_entry_skips_a_trailing_empty_row(cx: &mut gpui::TestAppContext) {
+    init_test(cx);
+
+    let fs = FakeFs::new(cx.executor());
+    fs.insert_tree("/root", json!({ "a": { "b.txt": "" }, "zz": {} }))
+        .await;
+
+    let project = Project::test(fs.clone(), ["/root".as_ref()], cx).await;
+    let window = cx.add_window(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
+    let workspace = window
+        .read_with(cx, |mw, _| mw.workspace().clone())
+        .unwrap();
+    let cx = &mut VisualTestContext::from_window(window.into(), cx);
+    let panel = workspace.update_in(cx, ProjectPanel::new);
+    cx.run_until_parked();
+
+    toggle_expand_dir(&panel, "root/zz", cx);
+    panel.update_in(cx, |panel, window, cx| {
+        panel.select_last(&Default::default(), window, cx);
+        panel.select_next(&Default::default(), window, cx);
+    });
+    assert_eq!(
+        visible_entries_with_empty_rows(&panel, 0..10, cx),
+        &[
+            "v root",
+            "    > a",
+            "    v zz  <== selected",
+            "          <empty>",
+        ]
+    );
+}
+
+#[gpui::test]
 async fn test_copy_paste(cx: &mut gpui::TestAppContext) {
     init_test(cx);
 
@@ -10687,12 +10850,35 @@ fn visible_entries_as_strings(
     range: Range<usize>,
     cx: &mut VisualTestContext,
 ) -> Vec<String> {
+    entries_as_strings(panel, range, false, cx)
+}
+
+fn visible_entries_with_empty_rows(
+    panel: &Entity<ProjectPanel>,
+    range: Range<usize>,
+    cx: &mut VisualTestContext,
+) -> Vec<String> {
+    entries_as_strings(panel, range, true, cx)
+}
+
+fn entries_as_strings(
+    panel: &Entity<ProjectPanel>,
+    range: Range<usize>,
+    show_empty_folder_rows: bool,
+    cx: &mut VisualTestContext,
+) -> Vec<String> {
     let mut result = Vec::new();
     let mut project_entries = HashSet::default();
     let mut has_editor = false;
 
     panel.update_in(cx, |panel, window, cx| {
         panel.for_each_visible_entry(range, window, cx, &mut |project_entry, details, _, _| {
+            if details.is_empty_folder_row {
+                if show_empty_folder_rows {
+                    result.push(format!("{}  <empty>", "    ".repeat(details.depth)));
+                }
+                return;
+            }
             if details.is_editing {
                 assert!(!has_editor, "duplicate editor entry");
                 has_editor = true;

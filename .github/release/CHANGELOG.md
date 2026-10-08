@@ -7,6 +7,7 @@ release body.
 
 ## Unreleased
 
+- Opening an empty folder in the file tree now shows an "Empty" line under it, so it's clear the folder opened and has nothing in it.
 - Claude Code skills in the chat's / menu now have their own icon, so they're easy to tell apart from commands.
 - Added an Enable Agent Chat setting. Turn it off to hide the agent panel, its commands and everything else agent-related. Wu asks first if an agent is still working, since turning it off stops it.
 - Added settings for new agent chats: a fixed starting effort, and a starting permission mode for each agent.

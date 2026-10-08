@@ -111,6 +111,8 @@ struct State {
     temporarily_unfolded_pending_state: Option<TemporaryUnfoldedPendingState>,
     unfolded_dir_ids: HashSet<ProjectEntryId>,
     expanded_dir_ids: HashMap<WorktreeId, Vec<ProjectEntryId>>,
+    /// The "Empty" rows shown under open folders with nothing in them, keyed to their folder.
+    empty_folder_rows: HashMap<ProjectEntryId, ProjectEntryId>,
 }
 
 impl State {
@@ -131,7 +133,18 @@ impl State {
             temporarily_unfolded_pending_state: None,
             unfolded_dir_ids: old.unfolded_dir_ids.clone(),
             expanded_dir_ids: old.expanded_dir_ids.clone(),
+            empty_folder_rows: Default::default(),
         }
+    }
+
+    fn is_empty_folder_row(&self, entry_id: ProjectEntryId) -> bool {
+        self.empty_folder_rows.contains_key(&entry_id)
+    }
+
+    fn is_empty_folder(&self, entry_id: ProjectEntryId) -> bool {
+        self.empty_folder_rows
+            .values()
+            .any(|folder| *folder == entry_id)
     }
 }
 
@@ -280,6 +293,7 @@ struct EntryDetails {
     is_editing: bool,
     is_processing: bool,
     is_cut: bool,
+    is_empty_folder_row: bool,
     sticky: Option<StickyDetails>,
     filename_text_color: Color,
     diagnostic_severity: Option<DiagnosticSeverity>,
@@ -895,6 +909,7 @@ impl ProjectPanel {
                     ancestors: Default::default(),
                     expanded_dir_ids: Default::default(),
                     unfolded_dir_ids: Default::default(),
+                    empty_folder_rows: Default::default(),
                 },
                 update_visible_entries_task: Default::default(),
                 undo_manager: UndoManager::new(workspace.weak_handle(), weak_project_panel, &cx),
@@ -1331,6 +1346,7 @@ impl ProjectPanel {
             if entry.is_dir() {
                 let worktree_id = worktree.id();
                 let entry_id = entry.id;
+                let is_empty_folder = self.state.is_empty_folder(entry_id);
                 let expanded_dir_ids = if let Some(expanded_dir_ids) =
                     self.state.expanded_dir_ids.get_mut(&worktree_id)
                 {
@@ -1340,6 +1356,7 @@ impl ProjectPanel {
                 };
 
                 match expanded_dir_ids.binary_search(&entry_id) {
+                    Ok(_) if is_empty_folder => {}
                     Ok(_) => self.select_next(&SelectNext, window, cx),
                     Err(ix) => {
                         self.project.update(cx, |project, cx| {
@@ -1737,6 +1754,15 @@ impl ProjectPanel {
                 entry_ix = self.state.visible_entries[worktree_ix].entries.len() - 1;
             } else {
                 return;
+            }
+            let lands_on_empty_folder_row = self
+                .state
+                .visible_entries
+                .get(worktree_ix)
+                .and_then(|visible| visible.entries.get(entry_ix))
+                .is_some_and(|entry| self.state.is_empty_folder_row(entry.id));
+            if lands_on_empty_folder_row {
+                entry_ix = entry_ix.saturating_sub(1);
             }
 
             let VisibleEntriesForWorktree {
@@ -3041,17 +3067,28 @@ impl ProjectPanel {
         if let Some(selection) = self.selection {
             let (mut worktree_ix, mut entry_ix, _) =
                 self.index_for_selection(selection).unwrap_or_default();
-            if let Some(worktree_entries) = self
-                .state
-                .visible_entries
-                .get(worktree_ix)
-                .map(|v| &v.entries)
-            {
-                if entry_ix + 1 < worktree_entries.len() {
-                    entry_ix += 1;
-                } else {
-                    worktree_ix += 1;
-                    entry_ix = 0;
+            loop {
+                if let Some(worktree_entries) = self
+                    .state
+                    .visible_entries
+                    .get(worktree_ix)
+                    .map(|v| &v.entries)
+                {
+                    if entry_ix + 1 < worktree_entries.len() {
+                        entry_ix += 1;
+                    } else {
+                        worktree_ix += 1;
+                        entry_ix = 0;
+                    }
+                }
+                let lands_on_empty_folder_row = self
+                    .state
+                    .visible_entries
+                    .get(worktree_ix)
+                    .and_then(|visible| visible.entries.get(entry_ix))
+                    .is_some_and(|entry| self.state.is_empty_folder_row(entry.id));
+                if !lands_on_empty_folder_row {
+                    break;
                 }
             }
 
@@ -3334,7 +3371,11 @@ impl ProjectPanel {
         }) = self.state.visible_entries.last()
         {
             let worktree = self.project.read(cx).worktree_for_id(*worktree_id, cx);
-            if let (Some(worktree), Some(entry)) = (worktree, entries.last()) {
+            let last = entries
+                .iter()
+                .rev()
+                .find(|entry| !self.state.is_empty_folder_row(entry.id));
+            if let (Some(worktree), Some(entry)) = (worktree, last) {
                 let worktree = worktree.read(cx);
                 if let Some(entry) = worktree.entry_for_id(entry.id) {
                     let selection = SelectedEntry {
@@ -4411,6 +4452,37 @@ impl ProjectPanel {
         }
     }
 
+    fn add_empty_folder_rows(
+        entries: Vec<GitEntry>,
+        expanded_dir_ids: &[ProjectEntryId],
+        empty_folder_rows: &mut HashMap<ProjectEntryId, ProjectEntryId>,
+    ) -> Vec<GitEntry> {
+        let Ok(row_name) = RelPath::from_unix_str("\0empty") else {
+            return entries;
+        };
+        let mut with_rows = Vec::with_capacity(entries.len());
+        let mut entries = entries.into_iter().peekable();
+        while let Some(entry) = entries.next() {
+            let is_empty_open_folder = entry.kind == EntryKind::Dir
+                && expanded_dir_ids.binary_search(&entry.id).is_ok()
+                && !entries.peek().is_some_and(|next| {
+                    next.path != entry.path && next.path.starts_with(&entry.path)
+                });
+            if is_empty_open_folder {
+                let mut row =
+                    Self::create_new_git_entry(&entry, entry.git_summary, EntryKind::File);
+                row.entry.id = ProjectEntryId::from_usize(usize::MAX - 1 - entry.id.to_usize());
+                row.entry.path = entry.path.join(row_name).into();
+                empty_folder_rows.insert(row.id, entry.id);
+                with_rows.push(entry);
+                with_rows.push(row);
+            } else {
+                with_rows.push(entry);
+            }
+        }
+        with_rows
+    }
+
     fn update_visible_entries(
         &mut self,
         new_selected_entry: Option<(WorktreeId, ProjectEntryId)>,
@@ -4661,6 +4733,15 @@ impl ProjectPanel {
                             &mut visible_worktree_entries,
                             sort_mode,
                             sort_order,
+                        );
+                        let visible_worktree_entries = Self::add_empty_folder_rows(
+                            visible_worktree_entries,
+                            new_state
+                                .expanded_dir_ids
+                                .get(&worktree_id)
+                                .map(Vec::as_slice)
+                                .unwrap_or_default(),
+                            &mut new_state.empty_folder_rows,
                         );
                         new_state.visible_entries.push(VisibleEntriesForWorktree {
                             worktree_id,
@@ -5793,6 +5874,152 @@ impl ProjectPanel {
         false
     }
 
+    /// The row records itself as the target, so the folder's row doesn't clear it when the pointer leaves.
+    fn track_empty_folder_row_drag(
+        &mut self,
+        row_id: ProjectEntryId,
+        bounds: Bounds<Pixels>,
+        position: Point<Pixels>,
+    ) -> bool {
+        let is_current_target = matches!(
+            self.drag_target_entry,
+            Some(DragTarget::Entry { entry_id, .. }) if entry_id == row_id
+        );
+        if !bounds.contains(&position) {
+            if is_current_target {
+                self.drag_target_entry = None;
+            }
+            return false;
+        }
+        !is_current_target
+    }
+
+    fn render_empty_folder_row(
+        &self,
+        row_id: ProjectEntryId,
+        folder_id: ProjectEntryId,
+        details: EntryDetails,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let settings = ProjectPanelSettings::get_global(cx);
+        let item_colors = get_item_color(false, cx);
+        let worktree_id = details.worktree_id;
+        let id: ElementId = (row_id.to_proto() as usize).into();
+        let is_highlighted = self
+            .drag_target_entry
+            .as_ref()
+            .and_then(|drag_target| match drag_target {
+                DragTarget::Entry {
+                    highlight_entry_id, ..
+                } => Some(*highlight_entry_id),
+                DragTarget::Background => self.state.last_worktree_root_id,
+            })
+            .and_then(|highlight_entry_id| {
+                let worktree = self.project.read(cx).worktree_for_id(worktree_id, cx)?;
+                let highlight_entry = worktree.read(cx).entry_for_id(highlight_entry_id)?;
+                Some(details.path.starts_with(&highlight_entry.path))
+            })
+            .unwrap_or(false);
+
+        div()
+            .id(id.clone())
+            .border_1()
+            .border_r_2()
+            .border_color(transparent_white())
+            .when(is_highlighted, |this| this.bg(item_colors.drag_over))
+            .when(settings.drag_and_drop, |this| {
+                this.on_drag_move::<ExternalPaths>(cx.listener(
+                    move |this, event: &DragMoveEvent<ExternalPaths>, _, cx| {
+                        if !this.track_empty_folder_row_drag(
+                            row_id,
+                            event.bounds,
+                            event.event.position,
+                        ) {
+                            return;
+                        }
+                        let Some(highlight_entry_id) = maybe!({
+                            let worktree = this
+                                .project
+                                .read(cx)
+                                .worktree_for_id(worktree_id, cx)?
+                                .read(cx);
+                            let folder = worktree.entry_for_id(folder_id)?;
+                            this.highlight_entry_for_external_drag(folder, worktree)
+                        }) else {
+                            return;
+                        };
+                        this.marked_entries.clear();
+                        this.drag_target_entry = Some(DragTarget::Entry {
+                            entry_id: row_id,
+                            highlight_entry_id,
+                        });
+                    },
+                ))
+                .on_drop(
+                    cx.listener(move |this, external_paths: &ExternalPaths, window, cx| {
+                        this.clear_drag_state(cx);
+                        this.drop_external_files(external_paths.paths(), folder_id, window, cx);
+                        cx.stop_propagation();
+                    }),
+                )
+                .on_drag_move::<DraggedSelection>(cx.listener(
+                    move |this, event: &DragMoveEvent<DraggedSelection>, _, cx| {
+                        if !this.track_empty_folder_row_drag(
+                            row_id,
+                            event.bounds,
+                            event.event.position,
+                        ) {
+                            return;
+                        }
+                        let drag_state = event.drag(cx);
+                        let Some(highlight_entry_id) = maybe!({
+                            let worktree = this
+                                .project
+                                .read(cx)
+                                .worktree_for_id(worktree_id, cx)?
+                                .read(cx);
+                            let folder = worktree.entry_for_id(folder_id)?;
+                            this.highlight_entry_for_selection_drag(
+                                folder, worktree, drag_state, cx,
+                            )
+                        }) else {
+                            return;
+                        };
+                        this.drag_target_entry = Some(DragTarget::Entry {
+                            entry_id: row_id,
+                            highlight_entry_id,
+                        });
+                    },
+                ))
+                .on_drop(cx.listener(
+                    move |this, selections: &DraggedSelection, window, cx| {
+                        this.clear_drag_state(cx);
+                        this.drag_onto(selections, folder_id, false, window, cx);
+                    },
+                ))
+            })
+            .on_click(|_, _, cx| cx.stop_propagation())
+            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+            .child(
+                ListItem::new(id)
+                    .indent_level(details.depth)
+                    .indent_step_size(px(settings.indent_size))
+                    .spacing(match settings.entry_spacing {
+                        ProjectPanelEntrySpacing::Comfortable => ListItemSpacing::Dense,
+                        ProjectPanelEntrySpacing::Standard => ListItemSpacing::ExtraDense,
+                    })
+                    .selectable(false)
+                    .child(
+                        h_flex().h_6().child(
+                            Label::new("Empty")
+                                .single_line()
+                                .italic()
+                                .color(Color::Placeholder),
+                        ),
+                    ),
+            )
+    }
+
     fn render_entry(
         &self,
         entry_id: ProjectEntryId,
@@ -5802,6 +6029,10 @@ impl ProjectPanel {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         const GROUP_NAME: &str = "project_entry";
+
+        if let Some(folder_id) = self.state.empty_folder_rows.get(&entry_id).copied() {
+            return self.render_empty_folder_row(entry_id, folder_id, details, cx);
+        }
 
         let kind = details.kind;
         let is_sticky = details.sticky.is_some();
@@ -6196,10 +6427,12 @@ impl ProjectPanel {
                                 window,
                                 cx,
                                 &mut |entry_id, details, _, _| {
-                                    new_selections.push(SelectedEntry {
-                                        entry_id,
-                                        worktree_id: details.worktree_id,
-                                    });
+                                    if !details.is_empty_folder_row {
+                                        new_selections.push(SelectedEntry {
+                                            entry_id,
+                                            worktree_id: details.worktree_id,
+                                        });
+                                    }
                                 },
                             );
 
@@ -6847,6 +7080,7 @@ impl ProjectPanel {
             is_editing: false,
             is_processing: false,
             is_cut,
+            is_empty_folder_row: self.state.is_empty_folder_row(entry.id),
             sticky,
             filename_text_color,
             diagnostic_severity,
