@@ -3,11 +3,20 @@ use crate::NoopTextSystem;
 #[cfg(any(test, feature = "test-support"))]
 use crate::PathPromptOptions;
 use crate::{
+<<<<<<< b20281218875039747bf4eacbb9cedf1242a1cf3
     AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, DummyKeyboardMapper,
     ForegroundExecutor, Keymap, Platform, PlatformDisplay, PlatformHeadlessRenderer,
     PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem, PromptButton, SharedString,
     SystemNotification, SystemNotificationResponse, Task, TestDisplay, TestWindow, ThermalState,
     WindowAppearance, WindowParams,
+=======
+    ActivityGuard, AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, DevicePixels,
+    DummyKeyboardMapper, ForegroundExecutor, Keymap, OwnedMenu, Platform, PlatformDisplay,
+    PlatformHeadlessRenderer, PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem,
+    PromptButton, ScreenCaptureFrame, ScreenCaptureSource, ScreenCaptureStream, SharedString,
+    SourceMetadata, SystemNotification, SystemNotificationResponse, Task, TestDisplay, TestWindow,
+    ThermalState, WindowAppearance, WindowParams, size,
+>>>>>>> 81c811a8d22e640e2fdd0fce092ddcffbc360b68
 };
 use anyhow::Result;
 #[cfg(any(test, feature = "test-support"))]
@@ -15,10 +24,14 @@ use collections::VecDeque;
 use futures::channel::oneshot;
 use parking_lot::Mutex;
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     path::{Path, PathBuf},
     rc::{Rc, Weak},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
 };
 
 /// TestPlatform implements the Platform trait for use in tests.
@@ -41,8 +54,13 @@ pub(crate) struct TestPlatform {
     pub text_system: Arc<dyn PlatformTextSystem>,
     pub expect_restart:
         RefCell<Option<oneshot::Sender<(Option<PathBuf>, Vec<std::ffi::OsString>)>>>,
-    headless_renderer_factory: Option<Box<dyn Fn() -> Option<Box<dyn PlatformHeadlessRenderer>>>>,
+    idle_sleep_prevention_count: Arc<AtomicUsize>,
+    idle_sleep_prevention_delay: Cell<Duration>,
+    idle_sleep_prevention_fails: Cell<bool>,
+    headless_renderer_factory:
+        Option<Box<dyn Fn() -> anyhow::Result<Option<Box<dyn PlatformHeadlessRenderer>>>>>,
     weak: Weak<Self>,
+    menus: RefCell<Vec<OwnedMenu>>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -98,7 +116,7 @@ impl TestPlatform {
         foreground_executor: ForegroundExecutor,
         text_system: Arc<dyn PlatformTextSystem>,
         headless_renderer_factory: Option<
-            Box<dyn Fn() -> Option<Box<dyn PlatformHeadlessRenderer>>>,
+            Box<dyn Fn() -> anyhow::Result<Option<Box<dyn PlatformHeadlessRenderer>>>>,
         >,
     ) -> Rc<Self> {
         Rc::new_cyclic(|weak| TestPlatform {
@@ -115,11 +133,15 @@ impl TestPlatform {
             current_primary_item: Mutex::new(None),
             #[cfg(target_os = "macos")]
             current_find_pasteboard_item: Mutex::new(None),
+            idle_sleep_prevention_count: Arc::new(AtomicUsize::new(0)),
+            idle_sleep_prevention_delay: Cell::new(Duration::ZERO),
+            idle_sleep_prevention_fails: Cell::new(false),
             weak: weak.clone(),
             opened_url: Default::default(),
             system_notifications: Default::default(),
             text_system,
             headless_renderer_factory,
+            menus: Default::default(),
         })
     }
 
@@ -263,6 +285,21 @@ impl TestPlatform {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn active_idle_sleep_preventions(&self) -> usize {
+        self.idle_sleep_prevention_count.load(Ordering::SeqCst)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_idle_sleep_prevention_delay(&self, delay: Duration) {
+        self.idle_sleep_prevention_delay.set(delay);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_idle_sleep_prevention_fails(&self, fails: bool) {
+        self.idle_sleep_prevention_fails.set(fails);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn app_identity(&self) -> Option<(SharedString, SharedString)> {
         self.system_notifications.borrow().app_identity.clone()
     }
@@ -331,8 +368,39 @@ impl Platform for TestPlatform {
         ThermalState::Nominal
     }
 
+<<<<<<< b20281218875039747bf4eacbb9cedf1242a1cf3
     fn run(&self, on_finish_launching: Box<dyn FnOnce()>) {
         on_finish_launching();
+=======
+    fn prevent_idle_sleep(&self, reason: &str) -> Task<Result<ActivityGuard>> {
+        let count = self.idle_sleep_prevention_count.clone();
+        let fails = self.idle_sleep_prevention_fails.get();
+        let reason = reason.to_owned();
+        let acquire = move || {
+            if fails {
+                anyhow::bail!("Idle sleep prevention for {reason:?} is set to fail in this test");
+            }
+            count.fetch_add(1, Ordering::SeqCst);
+            Ok(ActivityGuard::new(move || {
+                count.fetch_sub(1, Ordering::SeqCst);
+            }))
+        };
+
+        let delay = self.idle_sleep_prevention_delay.get();
+        if delay.is_zero() {
+            Task::ready(acquire())
+        } else {
+            let delay = self.background_executor.timer(delay);
+            self.foreground_executor.spawn(async move {
+                delay.await;
+                acquire()
+            })
+        }
+    }
+
+    fn run(&self, _on_finish_launching: Box<dyn FnOnce()>) {
+        unimplemented!()
+>>>>>>> 81c811a8d22e640e2fdd0fce092ddcffbc360b68
     }
 
     fn quit(&self) {}
@@ -384,7 +452,10 @@ impl Platform for TestPlatform {
         handle: AnyWindowHandle,
         params: WindowParams,
     ) -> anyhow::Result<Box<dyn crate::PlatformWindow>> {
-        let renderer = self.headless_renderer_factory.as_ref().and_then(|f| f());
+        let renderer = match self.headless_renderer_factory.as_ref() {
+            Some(factory) => factory()?,
+            None => None,
+        };
         let window = TestWindow::new(
             handle,
             params,
@@ -474,6 +545,8 @@ impl Platform for TestPlatform {
         unimplemented!()
     }
 
+    fn on_system_sleep(&self, _callback: Box<dyn FnMut()>) {}
+
     fn on_system_wake(&self, _callback: Box<dyn FnMut()>) {}
 
     fn set_app_identity(&self, identifier: &str, name: &str) {
@@ -516,7 +589,14 @@ impl Platform for TestPlatform {
         self.system_notifications.borrow_mut().response_callback = Some(callback);
     }
 
-    fn set_menus(&self, _menus: Vec<crate::Menu>, _keymap: &Keymap) {}
+    fn set_menus(&self, menus: Vec<crate::Menu>, _keymap: &Keymap) {
+        *self.menus.borrow_mut() = menus.into_iter().map(|menu| menu.owned()).collect()
+    }
+
+    fn get_menus(&self) -> Option<Vec<OwnedMenu>> {
+        Some(self.menus.borrow().clone())
+    }
+
     fn set_dock_menu(&self, _menu: Vec<crate::MenuItem>, _keymap: &Keymap) {}
 
     fn add_recent_document(&self, _paths: &Path) {}

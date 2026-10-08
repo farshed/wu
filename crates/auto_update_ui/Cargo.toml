@@ -10,6 +10,8 @@ workspace = true
 
 [lib]
 path = "src/auto_update_ui.rs"
+test = false
+doctest = false
 
 [dependencies]
 anyhow.workspace = true
@@ -19,10 +21,15 @@ db.workspace = true
 editor.workspace = true
 gpui.workspace = true
 markdown_preview.workspace = true
+<<<<<<< b20281218875039747bf4eacbb9cedf1242a1cf3
+=======
+project.workspace = true
+>>>>>>> 81c811a8d22e640e2fdd0fce092ddcffbc360b68
 release_channel.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+settings.workspace = true
 smol.workspace = true
 ui.workspace = true
 util.workspace = true

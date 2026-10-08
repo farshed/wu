@@ -9,7 +9,13 @@ license = "GPL-3.0-or-later"
 workspace = true
 
 [lib]
+<<<<<<< b20281218875039747bf4eacbb9cedf1242a1cf3:crates/wu_env_vars/Cargo.toml
 path = "src/wu_env_vars.rs"
+=======
+path = "src/zed_env_vars.rs"
+test = false
+doctest = false
+>>>>>>> 81c811a8d22e640e2fdd0fce092ddcffbc360b68:crates/zed_env_vars/Cargo.toml
 
 [features]
 default = []
