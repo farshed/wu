@@ -7,6 +7,8 @@ release body.
 
 ## Unreleased
 
+## 1.1.5 - 2026-10-09
+
 - Fixed Codex computer use being blocked.
 - Claude Code chats can now use your Chrome browser through the Claude in Chrome extension.
 - Opening an empty folder in the file tree now shows an "Empty" line under it.
