@@ -10,6 +10,7 @@ workspace = true
 
 [lib]
 path = "src/gpui_linux.rs"
+doctest = false
 
 [features]
 default = ["wayland", "x11"]
@@ -39,7 +40,6 @@ x11 = [
     "x11rb",
     "xkbcommon/x11",
     "xim",
-    "x11-clipboard",
     "filedescriptor",
     "open",
 ]
@@ -119,7 +119,13 @@ xim = { git = "https://github.com/zed-industries/xim-rs.git", rev = "16f35a2c881
     "x11rb-xcb",
     "x11rb-client",
 ], package = "zed-xim", version = "0.4.0-zed", optional = true }
-x11-clipboard = { version = "0.9.3", optional = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
 
 [package.metadata.cargo-shear]
+<<<<<<< b20281218875039747bf4eacbb9cedf1242a1cf3
 ignored = ["bitflags", "x11-clipboard"]
+=======
+ignored = ["bitflags", "scap"]
+>>>>>>> 81c811a8d22e640e2fdd0fce092ddcffbc360b68

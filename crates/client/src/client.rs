@@ -495,6 +495,460 @@ impl Client {
 
         Ok(())
     }
+<<<<<<< b20281218875039747bf4eacbb9cedf1242a1cf3
+=======
+
+    fn authenticate(self: &Arc<Self>, cx: &AsyncApp) -> Task<Result<Credentials>> {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(callback) = self.authenticate.read().as_ref() {
+            return callback(cx);
+        }
+
+        self.authenticate_with_browser(cx)
+    }
+
+    fn establish_connection(
+        self: &Arc<Self>,
+        credentials: &Credentials,
+        cx: &AsyncApp,
+    ) -> Task<Result<Connection, EstablishConnectionError>> {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(callback) = self.establish_connection.read().as_ref() {
+            return callback(credentials, cx);
+        }
+
+        self.establish_websocket_connection(credentials, cx)
+    }
+
+    fn rpc_url(
+        &self,
+        http: Arc<HttpClientWithUrl>,
+        release_channel: Option<ReleaseChannel>,
+    ) -> impl Future<Output = Result<url::Url>> + use<> {
+        #[cfg(any(test, feature = "test-support"))]
+        let url_override = self.rpc_url.read().clone();
+
+        async move {
+            #[cfg(any(test, feature = "test-support"))]
+            if let Some(url) = url_override {
+                return Ok(url);
+            }
+
+            if let Some(url) = &*ZED_RPC_URL {
+                return Url::parse(url).context("invalid rpc url");
+            }
+
+            let mut url = http.build_url("/rpc");
+            if let Some(preview_param) =
+                release_channel.and_then(|channel| channel.release_query_param())
+            {
+                url += "?";
+                url += preview_param;
+            }
+
+            let response = http.get(&url, Default::default(), false).await?;
+            anyhow::ensure!(
+                response.status().is_redirection(),
+                "unexpected /rpc response status {}",
+                response.status()
+            );
+            let collab_url = response
+                .headers()
+                .get("Location")
+                .context("missing location header in /rpc response")?
+                .to_str()
+                .map_err(EstablishConnectionError::other)?
+                .to_string();
+            Url::parse(&collab_url).with_context(|| format!("parsing collab rpc url {collab_url}"))
+        }
+    }
+
+    fn establish_websocket_connection(
+        self: &Arc<Self>,
+        credentials: &Credentials,
+        cx: &AsyncApp,
+    ) -> Task<Result<Connection, EstablishConnectionError>> {
+        let release_channel = cx.update(|cx| ReleaseChannel::try_global(cx));
+        let app_version = cx.update(|cx| AppVersion::global(cx).to_string());
+
+        let http = self.http.clone();
+        let proxy = http.proxy().cloned();
+        let user_agent = http.user_agent().cloned();
+        let credentials = credentials.clone();
+        let rpc_url = self.rpc_url(http, release_channel);
+        let system_id = self.telemetry.system_id();
+        let metrics_id = self.telemetry.metrics_id();
+        cx.spawn(async move |cx| {
+            use HttpOrHttps::*;
+
+            #[derive(Debug)]
+            enum HttpOrHttps {
+                Http,
+                Https,
+            }
+
+            let mut rpc_url = rpc_url.await?;
+            let url_scheme = match rpc_url.scheme() {
+                "https" => Https,
+                "http" => Http,
+                _ => Err(anyhow!("invalid rpc url: {}", rpc_url))?,
+            };
+
+            let stream = gpui_tokio::Tokio::spawn_result(cx, {
+                let rpc_url = rpc_url.clone();
+                async move {
+                    let rpc_host = rpc_url
+                        .host_str()
+                        .zip(rpc_url.port_or_known_default())
+                        .context("missing host in rpc url")?;
+                    Ok(match proxy {
+                        Some(proxy) if !excluded_from_proxy(rpc_host.0) => {
+                            connect_proxy_stream(&proxy, rpc_host).await?
+                        }
+                        _ => Box::new(TcpStream::connect(rpc_host).await?),
+                    })
+                }
+            })
+            .await?;
+
+            log::info!("connected to rpc endpoint {}", rpc_url);
+
+            rpc_url
+                .set_scheme(match url_scheme {
+                    Https => "wss",
+                    Http => "ws",
+                })
+                .unwrap();
+
+            // We call `into_client_request` to let `tungstenite` construct the WebSocket request
+            // for us from the RPC URL.
+            //
+            // Among other things, it will generate and set a `Sec-WebSocket-Key` header for us.
+            let mut request = IntoClientRequest::into_client_request(rpc_url.as_str())?;
+
+            // We then modify the request to add our desired headers.
+            let request_headers = request.headers_mut();
+            request_headers.insert(
+                http::header::AUTHORIZATION,
+                HeaderValue::from_str(&credentials.authorization_header())?,
+            );
+            request_headers.insert(
+                "x-zed-protocol-version",
+                HeaderValue::from_str(&rpc::PROTOCOL_VERSION.to_string())?,
+            );
+            request_headers.insert("x-zed-app-version", HeaderValue::from_str(&app_version)?);
+            request_headers.insert(
+                "x-zed-release-channel",
+                HeaderValue::from_str(release_channel.map(|r| r.dev_name()).unwrap_or("unknown"))?,
+            );
+            if let Some(user_agent) = user_agent {
+                request_headers.insert(http::header::USER_AGENT, user_agent);
+            }
+            if let Some(system_id) = system_id {
+                request_headers.insert("x-zed-system-id", HeaderValue::from_str(&system_id)?);
+            }
+            if let Some(metrics_id) = metrics_id {
+                request_headers.insert("x-zed-metrics-id", HeaderValue::from_str(&metrics_id)?);
+            }
+
+            let (stream, _) = async_tungstenite::tokio::client_async_tls_with_connector_and_config(
+                request,
+                stream,
+                Some(Arc::new(http_client_tls::tls_config()).into()),
+                None,
+            )
+            .await?;
+
+            Ok(Connection::new(
+                stream
+                    .map_err(|error| anyhow!(error))
+                    .sink_map_err(|error| anyhow!(error)),
+            ))
+        })
+    }
+
+    pub fn authenticate_with_browser(self: &Arc<Self>, cx: &AsyncApp) -> Task<Result<Credentials>> {
+        let http = self.http.clone();
+        let this = self.clone();
+        cx.spawn(async move |cx| {
+            let background = cx.background_executor().clone();
+
+            let (open_url_tx, open_url_rx) = oneshot::channel::<String>();
+            cx.update(|cx| {
+                cx.spawn(async move |cx| {
+                    if let Ok(url) = open_url_rx.await {
+                        cx.update(|cx| cx.open_url(&url));
+                    }
+                })
+                .detach();
+            });
+
+            let credentials = background
+                .clone()
+                .spawn(async move {
+                    // Generate a pair of asymmetric encryption keys. The public key will be used by the
+                    // zed server to encrypt the user's access token, so that it can'be intercepted by
+                    // any other app running on the user's device.
+                    let (public_key, private_key) =
+                        rpc::auth::keypair().context("failed to generate keypair for auth")?;
+                    let public_key = String::try_from(public_key)
+                        .context("failed to serialize public key for auth")?;
+
+                    if let Some((login, token)) =
+                        IMPERSONATE_LOGIN.as_ref().zip(ADMIN_API_TOKEN.as_ref())
+                    {
+                        if !*USE_WEB_LOGIN {
+                            eprintln!("authenticate as admin {login}, {token}");
+
+                            return this
+                                .authenticate_as_admin(http, login.clone(), token.clone())
+                                .await;
+                        }
+                    }
+
+                    // Start an HTTP server to receive the redirect from Zed's sign-in page.
+                    let server = tiny_http::Server::http("127.0.0.1:0")
+                        .map_err(|e| anyhow!(e).context("failed to bind callback port"))?;
+                    let port = server
+                        .server_addr()
+                        .to_ip()
+                        .context("server not bound to a TCP address")?
+                        .port();
+
+                    #[derive(Serialize)]
+                    struct NativeAppSignInQueryParams {
+                        native_app_port: u16,
+                        native_app_public_key: String,
+                        system_id: Option<Arc<str>>,
+                    }
+
+                    // Open the Zed sign-in page in the user's browser, with query parameters that indicate
+                    // that the user is signing in from a Zed app running on the same device.
+                    let url = http.build_url(&format!(
+                        "/native_app_signin?{}",
+                        serde_urlencoded::to_string(&NativeAppSignInQueryParams {
+                            native_app_port: port,
+                            native_app_public_key: public_key,
+                            system_id: this.telemetry.system_id(),
+                        })?
+                    ));
+
+                    open_url_tx.send(url).log_err();
+
+                    #[derive(Deserialize)]
+                    struct CallbackParams {
+                        pub user_id: String,
+                        pub access_token: String,
+                    }
+
+                    // Receive the HTTP request from the user's browser. Retrieve the user id and encrypted
+                    // access token from the query params.
+                    //
+                    // TODO - Avoid ever starting more than one HTTP server. Maybe switch to using a
+                    // custom URL scheme instead of this local HTTP server.
+                    let (user_id, access_token) = background
+                        .spawn(async move {
+                            for _ in 0..100 {
+                                if let Some(req) = server.recv_timeout(Duration::from_secs(1))? {
+                                    let path = req.url();
+                                    let url = Url::parse(&format!("http://example.com{}", path))
+                                        .context("failed to parse login notification url")?;
+                                    let callback_params: CallbackParams =
+                                        serde_urlencoded::from_str(url.query().unwrap_or_default())
+                                            .context(
+                                                "failed to parse sign-in callback query parameters",
+                                            )?;
+
+                                    let post_auth_url =
+                                        http.build_url("/native_app_signin_succeeded");
+                                    req.respond(
+                                        tiny_http::Response::empty(302).with_header(
+                                            tiny_http::Header::from_bytes(
+                                                &b"Location"[..],
+                                                post_auth_url.as_bytes(),
+                                            )
+                                            .unwrap(),
+                                        ),
+                                    )
+                                    .context("failed to respond to login http request")?;
+                                    return Ok((
+                                        callback_params.user_id,
+                                        callback_params.access_token,
+                                    ));
+                                }
+                            }
+
+                            anyhow::bail!("didn't receive login redirect");
+                        })
+                        .await?;
+
+                    let access_token = private_key
+                        .decrypt_string(&access_token)
+                        .context("failed to decrypt access token")?;
+
+                    Ok(Credentials {
+                        user_id: user_id.parse()?,
+                        access_token,
+                    })
+                })
+                .await?;
+
+            cx.update(|cx| cx.activate(true));
+            Ok(credentials)
+        })
+    }
+
+    async fn authenticate_as_admin(
+        self: &Arc<Self>,
+        http: Arc<HttpClientWithUrl>,
+        login: String,
+        api_token: String,
+    ) -> Result<Credentials> {
+        #[derive(Serialize)]
+        struct ImpersonateUserBody {
+            github_login: String,
+        }
+
+        #[derive(Deserialize)]
+        struct ImpersonateUserResponse {
+            user_id: u64,
+            access_token: String,
+        }
+
+        let url = self
+            .http
+            .build_zed_cloud_url("/internal/users/impersonate")?;
+        let request = Request::post(url.as_str())
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {api_token}"))
+            .body(
+                serde_json::to_string(&ImpersonateUserBody {
+                    github_login: login,
+                })?
+                .into(),
+            )?;
+
+        let mut response = http.send(request).await?;
+        let mut body = String::new();
+        response.body_mut().read_to_string(&mut body).await?;
+        anyhow::ensure!(
+            response.status().is_success(),
+            "admin user request failed {} - {}",
+            response.status().as_u16(),
+            body,
+        );
+        let response: ImpersonateUserResponse = serde_json::from_str(&body)?;
+
+        Ok(Credentials {
+            user_id: response.user_id,
+            access_token: response.access_token,
+        })
+    }
+
+    pub async fn cached_llm_token(
+        &self,
+        llm_token: &LlmApiToken,
+        organization_id: OrganizationId,
+    ) -> Result<String, ClientApiError> {
+        let system_id = self.telemetry().system_id().map(|x| x.to_string());
+        let cloud_client = self.cloud_client();
+        let result = llm_token
+            .cached(&cloud_client, system_id, organization_id)
+            .await;
+        if let Err(ClientApiError::Unauthorized) = result {
+            self.request_sign_out();
+        }
+        result
+    }
+
+    /// Sends an authenticated request to the Zed LLM service, retrying once
+    /// with a refreshed token if the server signals that the cached LLM
+    /// token is expired or otherwise rejected. Returns the raw response so
+    /// callers can inspect headers and stream the body.
+    pub async fn authenticated_llm_request(
+        &self,
+        llm_token: &LlmApiToken,
+        organization_id: OrganizationId,
+        build_request: impl Fn(&str) -> Result<http_client::Request<http_client::AsyncBody>>,
+    ) -> Result<http_client::Response<http_client::AsyncBody>> {
+        let http_client = self.http_client();
+        let token = self
+            .cached_llm_token(llm_token, organization_id.clone())
+            .await?;
+        let response = http_client.send(build_request(&token)?).await?;
+        if !response.needs_llm_token_refresh()
+            && response.status() != http_client::http::StatusCode::UNAUTHORIZED
+        {
+            return Ok(response);
+        }
+        log::info!("LLM token rejected; refreshing and retrying request");
+        let token = self.refresh_llm_token(llm_token, organization_id).await?;
+        http_client.send(build_request(&token)?).await
+    }
+
+    pub async fn refresh_llm_token(
+        &self,
+        llm_token: &LlmApiToken,
+        organization_id: OrganizationId,
+    ) -> Result<String, ClientApiError> {
+        let system_id = self.telemetry().system_id().map(|x| x.to_string());
+        let cloud_client = self.cloud_client();
+        let result = llm_token
+            .refresh(&cloud_client, system_id, organization_id)
+            .await;
+        if let Err(ClientApiError::Unauthorized) = result {
+            self.request_sign_out();
+        }
+        result
+    }
+
+    pub async fn clear_and_refresh_llm_token(
+        &self,
+        llm_token: &LlmApiToken,
+        organization_id: OrganizationId,
+    ) -> Result<String, ClientApiError> {
+        let system_id = self.telemetry().system_id().map(|x| x.to_string());
+        let cloud_client = self.cloud_client();
+        let result = llm_token
+            .clear_and_refresh(&cloud_client, system_id, organization_id)
+            .await;
+        if let Err(ClientApiError::Unauthorized) = result {
+            self.request_sign_out();
+        }
+        result
+    }
+
+    pub async fn sign_out(self: &Arc<Self>, cx: &AsyncApp) {
+        self.state.write().credentials = None;
+        self.cloud_client.clear_credentials();
+        self.disconnect(cx);
+
+        if self.has_credentials(cx).await {
+            self.credentials_provider
+                .delete_credentials(cx)
+                .await
+                .log_err();
+        }
+    }
+
+    /// Requests a sign out to be performed asynchronously.
+    pub fn request_sign_out(&self) {
+        if let Some(sign_out_tx) = self.sign_out_tx.lock().clone() {
+            sign_out_tx.unbounded_send(()).ok();
+        }
+    }
+
+    pub fn disconnect(self: &Arc<Self>, cx: &AsyncApp) {
+        self.peer.teardown();
+        self.set_status(Status::SignedOut, cx);
+    }
+
+    pub fn reconnect(self: &Arc<Self>, cx: &AsyncApp) {
+        self.peer.teardown();
+        self.set_status(Status::ConnectionLost, cx);
+    }
+
+>>>>>>> 81c811a8d22e640e2fdd0fce092ddcffbc360b68
     fn connection_id(&self) -> Result<ConnectionId> {
         if let Status::Connected { connection_id, .. } = *self.status().borrow() {
             Ok(connection_id)

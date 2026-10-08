@@ -1,5 +1,7 @@
 use gpui::{App, Menu, MenuItem, OsAction};
+use project::DisableAiSettings;
 use release_channel::ReleaseChannel;
+use settings::Settings;
 use terminal_view::terminal_panel;
 use wu_actions::{Quit, debug_panel, dev, git_panel, project_panel};
 
@@ -41,11 +43,21 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
         MenuItem::action("Outline Panel", outline_panel::ToggleFocus),
         MenuItem::action("Terminal Panel", terminal_panel::Toggle),
         MenuItem::action("Debugger Panel", debug_panel::ToggleFocus),
+<<<<<<< b20281218875039747bf4eacbb9cedf1242a1cf3:crates/wu/src/wu/app_menus.rs
+=======
+    ];
+
+    if !DisableAiSettings::get_global(cx).disable_ai {
+        view_items.push(MenuItem::action("Agent Panel", assistant::ToggleFocus));
+    }
+
+    view_items.extend([
+>>>>>>> 81c811a8d22e640e2fdd0fce092ddcffbc360b68:crates/zed/src/zed/app_menus.rs
         MenuItem::action("Git Panel", git_panel::ToggleFocus),
         MenuItem::separator(),
         MenuItem::action("Diagnostics", diagnostics::Deploy),
         MenuItem::separator(),
-    ];
+    ]);
 
     if ReleaseChannel::try_global(cx) == Some(ReleaseChannel::Dev) {
         view_items.push(MenuItem::action(

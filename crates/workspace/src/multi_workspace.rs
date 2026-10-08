@@ -22,6 +22,82 @@ use crate::{
     persistence::model::MultiWorkspaceState,
 };
 
+<<<<<<< b20281218875039747bf4eacbb9cedf1242a1cf3
+=======
+actions!(
+    multi_workspace,
+    [
+        /// Toggles the workspace switcher sidebar.
+        ToggleWorkspaceSidebar,
+        /// Closes the workspace sidebar.
+        CloseWorkspaceSidebar,
+        /// Moves focus to or from the workspace sidebar without closing it.
+        FocusWorkspaceSidebar,
+        /// Activates the next project in the sidebar.
+        NextProject,
+        /// Activates the previous project in the sidebar.
+        PreviousProject,
+        /// Moves the active project up in the sidebar.
+        MoveProjectUp,
+        /// Moves the active project down in the sidebar.
+        MoveProjectDown,
+        /// Activates the next thread in sidebar order.
+        NextThread,
+        /// Activates the previous thread in sidebar order.
+        PreviousThread,
+        /// Creates a new thread in the current workspace.
+        NewThread,
+        /// Moves the active project to a new window.
+        MoveProjectToNewWindow,
+    ]
+);
+
+#[derive(Default)]
+pub struct SidebarRenderState {
+    pub open: bool,
+    pub side: SidebarSide,
+}
+
+pub fn sidebar_side_context_menu(
+    id: impl Into<ElementId>,
+    cx: &App,
+) -> ui::RightClickMenu<ContextMenu> {
+    let current_position = AgentSettings::get_global(cx).threads_sidebar.position;
+    right_click_menu(id).menu(move |window, cx| {
+        let fs = <dyn fs::Fs>::global(cx);
+        ContextMenu::build(window, cx, move |mut menu, _, _cx| {
+            let positions: [(SidebarDockPosition, &str); 2] = [
+                (SidebarDockPosition::Left, "Left"),
+                (SidebarDockPosition::Right, "Right"),
+            ];
+            for (position, label) in positions {
+                let fs = fs.clone();
+                menu = menu.toggleable_entry(
+                    label,
+                    position == current_position,
+                    IconPosition::Start,
+                    None,
+                    move |_window, cx| {
+                        let side = match position {
+                            SidebarDockPosition::Left => "left",
+                            SidebarDockPosition::Right => "right",
+                        };
+                        telemetry::event!("Sidebar Side Changed", side = side);
+                        settings::update_settings_file(fs.clone(), cx, move |settings, _cx| {
+                            settings
+                                .agent
+                                .get_or_insert_default()
+                                .set_threads_sidebar_position(Some(position));
+                        });
+                    },
+                );
+            }
+            menu
+        })
+    })
+}
+
+>>>>>>> 81c811a8d22e640e2fdd0fce092ddcffbc360b68
 pub enum MultiWorkspaceEvent {
     ActiveWorkspaceChanged {
         source_workspace: Option<WeakEntity<Workspace>>,
@@ -953,7 +1029,7 @@ impl MultiWorkspace {
         }));
     }
 
-    fn serialize_now(&mut self, cx: &mut Context<Self>) -> Task<()> {
+    fn serialize_now(&mut self, cx: &mut Context<Self>) -> impl Future<Output = ()> + use<> {
         let state = MultiWorkspaceState {
             active_workspace_id: self.workspace().read(cx).database_id(),
             project_groups: self
@@ -969,16 +1045,17 @@ impl MultiWorkspace {
         };
         let window_id = self.window_id;
         let kvp = db::kvp::KeyValueStore::global(cx);
-        cx.background_spawn(async move {
+        async move {
             crate::persistence::write_multi_workspace_state(&kvp, window_id, state).await;
-        })
+        }
     }
 
     /// Used by the quit handler to ensure pending DB writes
     /// complete before the process exits.
     pub fn flush_serialization(&mut self, cx: &mut Context<Self>) -> Task<()> {
         self._serialize_task.take();
-        self.serialize_now(cx)
+        let serialization = self.serialize_now(cx);
+        cx.spawn(async move |_, _| serialization.await)
     }
 
     pub fn flush_pending_serialization(
