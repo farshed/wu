@@ -19,8 +19,8 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
 use crate::{
-    AgentEvent, DoneStatus, HarnessId, Model, PermissionMode, ReasoningLevel, RunRequest, Skill,
-    SkillRef, SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
+    AgentEvent, DoneStatus, ExternalSession, HarnessId, Model, PermissionMode, ReasoningLevel,
+    RunRequest, Skill, SkillRef, SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
 };
 use crate::{Harness, HarnessError, RunControls};
 use discovery::{
@@ -478,14 +478,7 @@ impl OpencodeHarness {
         {
             return Ok(cached.wire.clone());
         }
-        let directory = if cwd.as_os_str().is_empty() {
-            None
-        } else {
-            Some(
-                cwd.to_str()
-                    .ok_or_else(|| HarnessError::Protocol("Project path is not UTF-8".into()))?,
-            )
-        };
+        let directory = utf8_directory(cwd)?;
         let mut server = self.boot(directory)?.await?;
         let result = server.commands_wire(directory).await;
         server.shutdown(self.kill_grace).await;
@@ -547,6 +540,30 @@ impl Harness for OpencodeHarness {
     async fn skills(&self, cwd: &Path) -> Result<Vec<Skill>, HarnessError> {
         Ok(skills_from_wire(&self.project_commands(cwd).await?))
     }
+    async fn external_sessions(&self, cwd: &Path) -> Result<Vec<ExternalSession>, HarnessError> {
+        let directory = utf8_directory(cwd)?;
+        let mut server = self.boot(directory)?.await?;
+        let result = server.saved_sessions(directory).await;
+        server.shutdown(self.kill_grace).await;
+        Ok(result?
+            .map(|list| feed::external_sessions(&list))
+            .unwrap_or_default())
+    }
+    async fn external_history(
+        &self,
+        cwd: &Path,
+        session_id: &str,
+    ) -> Result<Vec<AgentEvent>, HarnessError> {
+        let directory = utf8_directory(cwd)?;
+        let mut server = self.boot(directory)?.await?;
+        let result = server.saved_messages(session_id, directory).await;
+        server.shutdown(self.kill_grace).await;
+        result?
+            .map(|messages| feed::history_events(&messages))
+            .ok_or_else(|| {
+                HarnessError::Protocol("This OpenCode version can't share its saved chats.".into())
+            })
+    }
 
     async fn run(
         &self,
@@ -606,6 +623,15 @@ struct QueuedSteer {
     prompt: String,
     native_command_selected: bool,
     attachments: Vec<String>,
+}
+
+fn utf8_directory(cwd: &Path) -> Result<Option<&str>, HarnessError> {
+    if cwd.as_os_str().is_empty() {
+        return Ok(None);
+    }
+    cwd.to_str()
+        .map(Some)
+        .ok_or_else(|| HarnessError::Protocol("Project path is not UTF-8".into()))
 }
 
 fn new_message_id() -> String {

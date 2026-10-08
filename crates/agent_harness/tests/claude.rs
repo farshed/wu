@@ -33,7 +33,9 @@ fn fixture_path() -> PathBuf {
 }
 
 fn harness() -> ClaudeHarness {
-    ClaudeHarness::new().with_executable(fixture_path())
+    ClaudeHarness::new()
+        .with_executable(fixture_path())
+        .with_config_dir(fixture_path().with_file_name("claude-config"))
 }
 
 fn request(prompt: &str) -> RunRequest {
@@ -834,6 +836,16 @@ async fn slash_commands_come_from_initialize_in_the_chat_folder() {
     assert_eq!(commands[0].description, "Review a pull request");
     assert_eq!(commands[0].input_hint.as_deref(), Some("[pr number]"));
     assert_eq!(commands[1].input_hint, None);
+
+    let own_command = cwd.path().join(".claude/commands/usage.md");
+    std::fs::create_dir_all(own_command.parent().expect("parent")).expect("create directory");
+    std::fs::write(&own_command, "My own usage report").expect("write command");
+    let commands = harness().commands(cwd.path()).await.expect("commands");
+    let names: Vec<&str> = commands
+        .iter()
+        .map(|command| command.name.as_str())
+        .collect();
+    assert_eq!(names, ["review", "compact", "usage"]);
 
     std::fs::write(cwd.path().join(".command-fixture"), "project-only").expect("write fixture");
     let commands = harness().commands(cwd.path()).await.expect("commands");

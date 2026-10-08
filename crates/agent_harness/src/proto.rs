@@ -141,6 +141,15 @@ pub struct RunRequest {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ExternalSession {
+    pub id: String,
+    pub title: String,
+    /// Unix seconds.
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Skill {
     pub name: String,
     pub description: String,

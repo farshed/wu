@@ -1,5 +1,5 @@
 use crate::{
-    AgentKind, NewClaudeChat, NewCodexChat, NewOpencodeChat, ToggleFocus,
+    AgentKind, ContinueSavedChat, NewClaudeChat, NewCodexChat, NewOpencodeChat, ToggleFocus,
     chat_style::{accent, ink, selected_row, text_faint, ui, wash},
     chat_view::ChatView,
     session::{AgentSession, AgentStore, ChatListPrefs, ChatOutcome, SessionSummary},
@@ -63,12 +63,15 @@ pub fn init(cx: &mut App) {
             })
             .register_action(|workspace, _: &NewOpencodeChat, window, cx| {
                 new_chat(workspace, AgentKind::Opencode, window, cx);
+            })
+            .register_action(|workspace, _: &ContinueSavedChat, window, cx| {
+                crate::saved_chats::toggle(workspace, window, cx);
             });
     })
     .detach();
 }
 
-fn chat_roots(project: &Entity<Project>, cx: &App) -> Vec<PathBuf> {
+pub(crate) fn chat_roots(project: &Entity<Project>, cx: &App) -> Vec<PathBuf> {
     let roots: Vec<PathBuf> = project
         .read(cx)
         .visible_worktrees(cx)
@@ -81,7 +84,7 @@ fn chat_roots(project: &Entity<Project>, cx: &App) -> Vec<PathBuf> {
     }
 }
 
-fn store_for(workspace: &Workspace, cx: &mut App) -> Entity<AgentStore> {
+pub(crate) fn store_for(workspace: &Workspace, cx: &mut App) -> Entity<AgentStore> {
     AgentStore::global(workspace.app_state().languages.clone(), cx)
 }
 
@@ -460,7 +463,7 @@ impl AgentPanel {
             .menu(move |window, cx| {
                 let workspace = workspace.clone();
                 Some(ContextMenu::build(window, cx, move |menu, _, _| {
-                    AgentKind::ALL.into_iter().fold(menu, |menu, kind| {
+                    let menu = AgentKind::ALL.into_iter().fold(menu, |menu, kind| {
                         let workspace = workspace.clone();
                         menu.entry(
                             kind.label(),
@@ -473,7 +476,18 @@ impl AgentPanel {
                                     .log_err();
                             },
                         )
-                    })
+                    });
+                    menu.separator().entry(
+                        "Continue Saved Chat…",
+                        Some(ContinueSavedChat.boxed_clone()),
+                        move |window, cx| {
+                            workspace
+                                .update(cx, |workspace, cx| {
+                                    crate::saved_chats::toggle(workspace, window, cx)
+                                })
+                                .log_err();
+                        },
+                    )
                 }))
             })
     }
@@ -1201,7 +1215,7 @@ fn row_height(compact: bool, shows_branch: bool) -> f32 {
     if shows_branch && !compact { 45. } else { 29. }
 }
 
-fn format_time_ago(then: i64, now: i64) -> String {
+pub(crate) fn format_time_ago(then: i64, now: i64) -> String {
     let seconds = (now - then).max(0);
     if seconds < 60 {
         return "now".to_string();

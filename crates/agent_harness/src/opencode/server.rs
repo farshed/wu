@@ -520,6 +520,31 @@ impl Server {
         Ok(unwrap_data(self.get_json(path, directory).await?))
     }
 
+    /// Returns `None` on 2.x, which has no saved-chat listing yet.
+    pub(super) async fn saved_sessions(
+        &self,
+        directory: Option<&str>,
+    ) -> Result<Option<Value>, HarnessError> {
+        match self.protocol().await {
+            Protocol::V1 => Ok(Some(self.get_json("/session?roots=true", directory).await?)),
+            Protocol::V2 => Ok(None),
+        }
+    }
+
+    pub(super) async fn saved_messages(
+        &self,
+        session_id: &str,
+        directory: Option<&str>,
+    ) -> Result<Option<Value>, HarnessError> {
+        match self.protocol().await {
+            Protocol::V1 => Ok(Some(
+                self.get_json(&format!("/session/{session_id}/message"), directory)
+                    .await?,
+            )),
+            Protocol::V2 => Ok(None),
+        }
+    }
+
     pub(super) async fn session_running(
         &self,
         session_id: &str,

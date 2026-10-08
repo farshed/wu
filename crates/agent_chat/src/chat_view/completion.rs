@@ -23,6 +23,7 @@ use std::{
 };
 use ui::{IconName, prelude::*};
 use util::ResultExt as _;
+use workspace::{Toast, notifications::NotificationId};
 
 const MAX_MENTION_RESULTS: usize = 50;
 
@@ -459,6 +460,43 @@ impl ChatView {
                 }
             }
         }
+    }
+
+    pub(super) fn redirect_hidden_command(
+        &mut self,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some((name, _)) = agent_harness::leading_command(text) else {
+            return false;
+        };
+        if self.session.read(cx).kind() != AgentKind::Claude
+            || !agent_harness::claude::is_hidden_command(name)
+            || self
+                .command_items(cx)
+                .iter()
+                .any(|item| item.target == CommandTarget::Agent && item.name == name)
+        {
+            return false;
+        }
+        match name {
+            "clear" => self.run_app_command(AppCommand::New, window, cx),
+            "model" | "effort" | "fast" => self.run_app_command(AppCommand::Model, window, cx),
+            "resume" => self.run_app_command(AppCommand::Resume, window, cx),
+            _ => {
+                let message = format!("/{name} only works in Claude Code in the terminal.");
+                self.workspace
+                    .update(cx, |workspace, cx| {
+                        workspace.show_toast(
+                            Toast::new(NotificationId::unique::<ChatView>(), message).autohide(),
+                            cx,
+                        )
+                    })
+                    .log_err();
+            }
+        }
+        true
     }
 
     pub(super) fn render_command_menu(&self, cx: &Context<Self>) -> AnyElement {

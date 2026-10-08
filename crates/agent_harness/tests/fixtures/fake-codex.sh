@@ -76,6 +76,7 @@ if has "$turnline" '"method":"review/start"'; then
   has "$turnline" '"delivery":"inline"' || exit 1
   emit "{\"id\":$tid,\"result\":{\"turn\":{\"id\":\"native-1\"}}}"
   emit '{"method":"item/completed","params":{"item":{"id":"review-1","type":"exitedReviewMode","review":"Review fixture result"}}}'
+  emit '{"method":"item/completed","params":{"item":{"id":"msg-review-1","type":"agentMessage","text":"Review fixture result"}}}'
   emit '{"method":"turn/completed","params":{"turn":{"id":"native-1","status":"completed"}}}'
   exec sleep 30
 fi

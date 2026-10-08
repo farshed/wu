@@ -7,6 +7,11 @@ release body.
 
 ## Unreleased
 
+- Added Continue Saved Chat to the new chat menu, which picks up a chat you started in Claude Code, Codex or OpenCode for the current project. Wu copies it into a new chat with its history, so the original stays as it was.
+- Removed Claude Code's settings and info commands like /model, /usage and /context from the chat's / menu, since Wu has its own controls for them and their answers never showed up in the chat. Typing /clear now starts a new chat, /model and /effort open the model picker, and the rest explain that they only work in the terminal. Skills, your own commands, /review, /init and /compact are still there.
+- Fixed Codex /review showing the review twice.
+
+
 ## 1.1.4 - 2026-10-08
 
 - Made the time on agent chats in the sidebar easier to read.

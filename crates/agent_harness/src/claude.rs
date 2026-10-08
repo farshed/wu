@@ -1,8 +1,10 @@
 pub mod catalog;
 mod discovery;
+mod history;
 mod normalize;
 mod wire;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,8 +17,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 use crate::{
-    AgentEvent, DoneStatus, HarnessId, Model, PermissionMode, ReasoningLevel, RunRequest,
-    SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
+    AgentEvent, DoneStatus, ExternalSession, HarnessId, Model, PermissionMode, ReasoningLevel,
+    RunRequest, SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
 };
 
 use crate::process::{Child, ChildStdin, Command, Stdio};
@@ -73,6 +75,8 @@ fn option_is_on(options: &serde_json::Map<String, Value>, key: &str) -> bool {
 
 pub struct ClaudeHarness {
     executable: Option<PathBuf>,
+    config_dir: Option<PathBuf>,
+    titles: Arc<history::TitleCache>,
     interrupt_grace: Duration,
     kill_grace: Duration,
     initialize: discovery::InitializeCache,
@@ -83,6 +87,8 @@ impl Default for ClaudeHarness {
     fn default() -> Self {
         Self {
             executable: None,
+            config_dir: None,
+            titles: Arc::default(),
             interrupt_grace: Duration::from_secs(2),
             kill_grace: Duration::from_secs(3),
             initialize: discovery::InitializeCache::default(),
@@ -99,6 +105,15 @@ impl ClaudeHarness {
     pub fn with_executable(mut self, path: impl Into<PathBuf>) -> Self {
         self.executable = Some(path.into());
         self
+    }
+
+    pub fn with_config_dir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.config_dir = Some(path.into());
+        self
+    }
+
+    fn config_dir(&self) -> PathBuf {
+        self.config_dir.clone().unwrap_or_else(claude_config_dir)
     }
 
     pub fn with_graces(mut self, interrupt_grace: Duration, kill_grace: Duration) -> Self {
@@ -285,6 +300,121 @@ impl ClaudeHarness {
     }
 }
 
+// Settings and info commands answer outside the chat, and Wu has its own controls for them.
+const HIDDEN_COMMANDS: &[&str] = &[
+    "__remote-workflow",
+    "add-dir",
+    "advisor",
+    "agents",
+    "auto-mode-setup",
+    "autocompact",
+    "bashes",
+    "bug",
+    "clear",
+    "color",
+    "config",
+    "context",
+    "cost",
+    "design",
+    "design-consent",
+    "design-revoke",
+    "effort",
+    "exit",
+    "export",
+    "extra-usage",
+    "fast",
+    "feedback",
+    "focus",
+    "heapdump",
+    "help",
+    "hooks",
+    "ide",
+    "import",
+    "install-github-app",
+    "keybindings",
+    "list-agents",
+    "login",
+    "logout",
+    "mcp",
+    "memory",
+    "migrate-installer",
+    "model",
+    "output-style",
+    "permissions",
+    "plugin",
+    "privacy-settings",
+    "quit",
+    "recap",
+    "release-notes",
+    "reload-plugins",
+    "reload-skills",
+    "rename",
+    "resume",
+    "rewind",
+    "sandbox",
+    "skill-doctor",
+    "stats",
+    "status",
+    "statusline",
+    "stickers",
+    "tasks",
+    "terminal-setup",
+    "theme",
+    "todos",
+    "upgrade",
+    "usage",
+    "usage-credits",
+    "vim",
+    "workflow-launch-exec",
+];
+
+pub fn is_hidden_command(name: &str) -> bool {
+    HIDDEN_COMMANDS.contains(&name)
+}
+
+fn claude_config_dir() -> PathBuf {
+    std::env::var_os("CLAUDE_CONFIG_DIR")
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| crate::executable::home_or_current_dir().join(".claude"))
+}
+
+fn defined_command_names(cwd: &std::path::Path, config_dir: &std::path::Path) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let roots = cwd
+        .ancestors()
+        .map(|dir| dir.join(".claude"))
+        .chain(std::iter::once(config_dir.to_path_buf()));
+    for root in roots {
+        collect_markdown_stems(&root.join("commands"), &mut names);
+        let Ok(skills) = std::fs::read_dir(root.join("skills")) else {
+            continue;
+        };
+        for skill in skills.flatten() {
+            if skill.path().join("SKILL.md").is_file() {
+                names.insert(skill.file_name().to_string_lossy().into_owned());
+            }
+        }
+    }
+    names
+}
+
+fn collect_markdown_stems(dir: &std::path::Path, names: &mut HashSet<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            collect_markdown_stems(&path, names);
+        } else if path.extension().is_some_and(|extension| extension == "md")
+            && let Some(stem) = path.file_stem()
+        {
+            names.insert(stem.to_string_lossy().into_owned());
+        }
+    }
+}
+
 fn parse_initialize_commands(response: &Value) -> Vec<SlashCommand> {
     response
         .pointer("/response/commands")
@@ -367,7 +497,42 @@ impl Harness for ClaudeHarness {
     }
     async fn commands(&self, cwd: &std::path::Path) -> Result<Vec<SlashCommand>, HarnessError> {
         let response = self.probe_initialize(Some(cwd)).await?;
-        Ok(parse_initialize_commands(&response))
+        let mut commands = parse_initialize_commands(&response);
+        if commands
+            .iter()
+            .any(|command| is_hidden_command(&command.name))
+        {
+            let defined = defined_command_names(cwd, &self.config_dir());
+            commands.retain(|command| {
+                !is_hidden_command(&command.name) || defined.contains(&command.name)
+            });
+        }
+        Ok(commands)
+    }
+
+    async fn external_sessions(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Result<Vec<ExternalSession>, HarnessError> {
+        let config_dir = self.config_dir();
+        let cwd = cwd.to_owned();
+        let titles = self.titles.clone();
+        tokio::task::spawn_blocking(move || history::list_sessions(&config_dir, &cwd, &titles))
+            .await
+            .map_err(|error| HarnessError::Protocol(error.to_string()))
+    }
+
+    async fn external_history(
+        &self,
+        cwd: &std::path::Path,
+        session_id: &str,
+    ) -> Result<Vec<AgentEvent>, HarnessError> {
+        let config_dir = self.config_dir();
+        let cwd = cwd.to_owned();
+        let session_id = session_id.to_owned();
+        tokio::task::spawn_blocking(move || history::read_history(&config_dir, &cwd, &session_id))
+            .await
+            .map_err(|error| HarnessError::Protocol(error.to_string()))?
     }
 
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
@@ -401,11 +566,7 @@ impl ClaudeHarness {
         let mut cmd = self.build_command(&exe, &request, discovered.as_deref());
         let normalizer = if let Some(session_id) = request.resume.as_ref().or(request.fork.as_ref())
         {
-            let config = std::env::var_os("CLAUDE_CONFIG_DIR")
-                .filter(|dir| !dir.is_empty())
-                .map(PathBuf::from)
-                .unwrap_or_else(|| crate::executable::home_or_current_dir().join(".claude"));
-            Normalizer::for_resume(&config, session_id).await
+            Normalizer::for_resume(&self.config_dir(), session_id).await
         } else {
             Normalizer::new()
         };
@@ -601,7 +762,7 @@ async fn run_session(session: Session) {
     let request_input = Arc::new(request_input);
 
     let mut pending_steers = std::collections::VecDeque::new();
-    let mut open_tools = std::collections::HashSet::new();
+    let mut open_tools = HashSet::new();
     let mut steering_open = true;
     let mut interrupted = false;
     let mut interrupt_sent = false;
@@ -943,6 +1104,30 @@ fn updated_input_with_answers(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn commands_the_user_or_project_define_are_never_treated_as_hidden() {
+        let config = tempfile::tempdir().expect("config directory");
+        let workspace = tempfile::tempdir().expect("workspace directory");
+        let project = workspace.path().join("app");
+        let write = |path: std::path::PathBuf| {
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("create directory");
+            std::fs::write(path, "body").expect("write file");
+        };
+        write(config.path().join("commands/usage.md"));
+        write(workspace.path().join(".claude/commands/team/status.md"));
+        write(project.join(".claude/skills/memory/SKILL.md"));
+        write(project.join(".claude/skills/context/notes.md"));
+        write(project.join(".claude/commands/model.txt"));
+
+        let names = defined_command_names(&project, config.path());
+        for name in ["usage", "status", "memory"] {
+            assert!(names.contains(name), "{name}");
+        }
+        for name in ["context", "model", "notes"] {
+            assert!(!names.contains(name), "{name}");
+        }
+    }
 
     #[test]
     fn each_permission_mode_maps_to_its_cli_flags() {

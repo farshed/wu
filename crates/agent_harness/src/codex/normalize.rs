@@ -1,4 +1,4 @@
-use crate::{AgentEvent, DoneStatus, TodoItem, TodoStatus, ToolCall};
+use crate::{AgentEvent, DoneStatus, ExternalSession, TodoItem, TodoStatus, ToolCall};
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -454,6 +454,105 @@ pub(crate) fn user_message_text(item: &Value) -> Option<String> {
     (!joined.trim().is_empty()).then_some(joined)
 }
 
+const TITLE_LIMIT: usize = 120;
+
+pub(crate) fn external_sessions(page: &Value) -> Vec<ExternalSession> {
+    page.get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|thread| {
+            let id = thread.get("id")?.as_str()?.to_owned();
+            let title = [
+                str_field(thread, &["name"]),
+                str_field(thread, &["preview"]),
+            ]
+            .into_iter()
+            .find_map(|text| {
+                let line = text.lines().find(|line| !line.trim().is_empty())?.trim();
+                Some(if line.chars().count() > TITLE_LIMIT {
+                    format!("{}…", line.chars().take(TITLE_LIMIT).collect::<String>())
+                } else {
+                    line.to_owned()
+                })
+            })?;
+            let updated_at = field(thread, &["updatedAt", "updated_at"])
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            Some(ExternalSession {
+                id,
+                title,
+                updated_at,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn history_events(thread: &Value) -> Vec<AgentEvent> {
+    let mut events = Vec::new();
+    let mut delivered_review: Option<String> = None;
+    let items = thread
+        .get("turns")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|turn| {
+            turn.get("items")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        });
+    for item in items {
+        let mut push_text = |text: String| {
+            events.push(AgentEvent::TextDelta { text });
+            events.push(AgentEvent::AssistantMessageCompleted {
+                assistant_message_id: String::new(),
+            });
+        };
+        match item_type(item) {
+            "userMessage" | "user_message" => {
+                if let Some(text) = user_message_text(item) {
+                    events.push(AgentEvent::UserMessage { text });
+                }
+            }
+            "exitedReviewMode" => {
+                let review = str_field(item, &["review"]);
+                if !review.trim().is_empty() {
+                    delivered_review = Some(review.trim().to_owned());
+                    push_text(review);
+                }
+            }
+            "agentMessage" | "agent_message" => {
+                let text = str_field(item, &["text"]);
+                if !text.trim().is_empty() && delivered_review.as_deref() != Some(text.trim()) {
+                    push_text(text);
+                }
+            }
+            "reasoning" => {
+                let summary: Vec<&str> = item
+                    .get("summary")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .filter(|text| !text.trim().is_empty())
+                    .collect();
+                if !summary.is_empty() {
+                    events.push(AgentEvent::ReasoningDelta {
+                        text: summary.join("\n\n"),
+                    });
+                }
+            }
+            "contextCompaction" | "enteredReviewMode" => {}
+            _ => {
+                events.extend(map_item(Phase::Started, item));
+                events.extend(map_item(Phase::Completed, item));
+            }
+        }
+    }
+    events
+}
+
 #[derive(Default)]
 pub(super) struct ChildStream {
     reasoning: ReasoningStream,
@@ -658,6 +757,73 @@ pub(crate) fn route_child_notification(method: &str) -> ChildRoute {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn saved_threads_list_by_name_then_first_message() {
+        let page = json!({"data": [
+            {"id": "t1", "name": "Named", "preview": "first", "updatedAt": 20},
+            {"id": "t2", "name": null, "preview": "\nFirst line\nsecond", "updatedAt": 10},
+            {"id": "t3", "name": null, "preview": "  "},
+        ]});
+        assert_eq!(
+            external_sessions(&page),
+            [
+                ExternalSession {
+                    id: "t1".into(),
+                    title: "Named".into(),
+                    updated_at: 20
+                },
+                ExternalSession {
+                    id: "t2".into(),
+                    title: "First line".into(),
+                    updated_at: 10
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn saved_thread_history_replays_messages_tools_and_one_review() {
+        let thread = json!({"turns": [
+            {"items": [
+                {"type": "userMessage", "id": "u1", "content": [{"type": "text", "text": "Fix it"}]},
+                {"type": "reasoning", "id": "r1", "summary": ["Looking"], "content": []},
+                {"type": "commandExecution", "id": "c1", "command": "ls", "status": "completed", "exitCode": 0},
+                {"type": "agentMessage", "id": "a1", "text": "Done."},
+            ]},
+            {"items": [
+                {"type": "enteredReviewMode", "id": "e1", "review": "changes"},
+                {"type": "exitedReviewMode", "id": "x1", "review": "Looks good."},
+                {"type": "agentMessage", "id": "a2", "text": "Looks good."},
+                {"type": "contextCompaction", "id": "k1"},
+            ]},
+        ]});
+        let summary: Vec<String> = history_events(&thread)
+            .iter()
+            .map(|event| match event {
+                AgentEvent::UserMessage { text } => format!("user:{text}"),
+                AgentEvent::TextDelta { text } => format!("text:{text}"),
+                AgentEvent::ReasoningDelta { text } => format!("thinking:{text}"),
+                AgentEvent::ToolCall { id, .. } => format!("call:{id}"),
+                AgentEvent::ToolResult { id, .. } => format!("result:{id}"),
+                AgentEvent::AssistantMessageCompleted { .. } => "end".into(),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                "user:Fix it",
+                "thinking:Looking",
+                "call:c1",
+                "result:c1",
+                "text:Done.",
+                "end",
+                "text:Looks good.",
+                "end",
+            ]
+        );
+    }
 
     #[test]
     fn reasoning_parts_preserve_chunking_and_existing_paragraph_breaks() {

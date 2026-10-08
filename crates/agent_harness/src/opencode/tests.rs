@@ -14,6 +14,70 @@ use super::v2::{
 use super::*;
 use crate::{TodoItem, TodoStatus, ToolCall};
 
+#[test]
+fn saved_sessions_skip_children_and_default_titles() {
+    let list = json!([
+        {"id": "old", "title": "Fix login", "time": {"updated": 1_000_000}},
+        {"id": "new", "title": "New session - 2026-10-06T18:04:23.320Z", "time": {"updated": 5_000_000}},
+        {"id": "child", "parentID": "new", "title": "Subtask", "time": {"updated": 9_000_000}},
+    ]);
+    assert_eq!(
+        super::feed::external_sessions(&list),
+        [
+            ExternalSession {
+                id: "new".into(),
+                title: "Untitled chat".into(),
+                updated_at: 5_000
+            },
+            ExternalSession {
+                id: "old".into(),
+                title: "Fix login".into(),
+                updated_at: 1_000
+            },
+        ]
+    );
+}
+
+#[test]
+fn saved_messages_replay_prompts_text_and_tools() {
+    let messages = json!([
+        {"info": {"id": "m1", "role": "user"}, "parts": [
+            {"id": "p1", "messageID": "m1", "type": "text", "text": "List files"},
+            {"id": "p2", "messageID": "m1", "type": "text", "text": "file body", "synthetic": true},
+        ]},
+        {"info": {"id": "m2", "role": "assistant"}, "parts": [
+            {"id": "p3", "messageID": "m2", "type": "step-start"},
+            {"id": "p4", "messageID": "m2", "type": "reasoning", "text": "Use ls"},
+            {"id": "p5", "messageID": "m2", "type": "tool", "tool": "bash", "callID": "call1",
+             "state": {"status": "completed", "input": {"command": "ls"}, "output": "a.txt"}},
+            {"id": "p6", "messageID": "m2", "type": "text", "text": "One file."},
+        ]},
+    ]);
+    let summary: Vec<String> = super::feed::history_events(&messages)
+        .iter()
+        .map(|event| match event {
+            AgentEvent::UserMessage { text } => format!("user:{text}"),
+            AgentEvent::TextDelta { text } => format!("text:{text}"),
+            AgentEvent::ReasoningDelta { text } => format!("thinking:{text}"),
+            AgentEvent::ToolCall { id, .. } => format!("call:{id}"),
+            AgentEvent::ToolResult { id, output, .. } => format!("result:{id}:{output:?}"),
+            AgentEvent::AssistantMessageCompleted { .. } => "end".into(),
+            other => format!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            "user:List files",
+            "thinking:Use ls",
+            "call:call1",
+            "result:call1:Some(\"a.txt\")",
+            "text:One file.",
+            "end",
+        ]
+    );
+}
+
 #[derive(Clone, Copy)]
 enum NativeCommandReply {
     Http404,

@@ -4,6 +4,7 @@ mod chat_style;
 mod chat_view;
 mod model_picker;
 mod notifications;
+mod saved_chats;
 mod session;
 mod slash_commands;
 mod usage_rings;
@@ -27,6 +28,8 @@ actions!(
         NewCodexChat,
         /// Starts a new OpenCode chat.
         NewOpencodeChat,
+        /// Continues a chat started in Claude Code, Codex or OpenCode.
+        ContinueSavedChat,
         /// Sends the message in the chat box.
         Send,
         /// Stops the agent's current turn.

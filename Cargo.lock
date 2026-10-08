@@ -171,6 +171,7 @@ dependencies = [
  "menu",
  "mermaid_render",
  "paths",
+ "picker",
  "project",
  "resvg",
  "serde",

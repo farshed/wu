@@ -74,6 +74,10 @@ export function Docs() {
           </li>
           <li>Chats can be pinned or forked.</li>
           <li>
+            Continue Saved Chat in the new chat menu picks up a chat you started in Claude Code, Codex, or OpenCode for
+            the current project. Wu copies it into a new chat, so the original stays as it was.
+          </li>
+          <li>
             Press <code>Cmd-D</code> (<code>Ctrl-D</code> on Windows and Linux) in the chat box to dictate. The speech
             model runs on your machine and downloads the first time you use it. Dictation works on macOS 14 or later
             with Apple Silicon, Linux, and Windows.

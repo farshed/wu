@@ -157,10 +157,10 @@ Release Notes:
 
 # Rules Hygiene
 
-These `.rules` files are read by every agent session. Keep them high-signal.
+These rules are read by every agent session. Keep them high-signal.
 
 ## After any agentic session
-If you discover a non-obvious pattern that would help future sessions, include a **"Suggested .rules additions"** heading in your PR description with the proposed text. Do **not** edit `.rules` inline during normal feature/fix work. Reviewers decide what gets merged.
+If you discover a non-obvious pattern that would help future sessions, include a **"Suggested rules additions"** heading in your PR description with the proposed text. Do **not** edit rules inline during normal feature/fix work. Reviewers decide what gets merged.
 
 ## High bar for new rules
 Editing or clarifying existing rules is always welcome. New rules must meet **all three** criteria:
@@ -168,9 +168,7 @@ Editing or clarifying existing rules is always welcome. New rules must meet **al
 2. **Repeatedly encountered** — it came up more than once (multiple hits in one session counts).
 3. **Specific enough to act on** — a concrete instruction, not a vague principle.
 
-Rules that apply to a single crate belong in that crate's own `.rules` file, not the repo root.
-
-## What NOT to put in `.rules`
+## What NOT to put in rules
 Avoid architectural descriptions of a crate (module layout, data flow, key types). These go stale fast and the agent can gather them by reading the code. Rules should be **traps to avoid**, not **maps to follow**.
 
 ## No drive-by additions

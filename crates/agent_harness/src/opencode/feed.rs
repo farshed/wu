@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use serde_json::Value;
 
-use crate::{AgentEvent, TodoItem, TodoStatus, ToolCall, UserInputQuestion};
+use crate::{AgentEvent, ExternalSession, TodoItem, TodoStatus, ToolCall, UserInputQuestion};
 
 const OUTPUT_CAP: usize = 4096;
 
@@ -209,6 +209,87 @@ pub(super) fn part_snapshot_events(
         }
         _ => Vec::new(),
     }
+}
+
+pub(super) fn external_sessions(list: &Value) -> Vec<ExternalSession> {
+    let mut sessions: Vec<ExternalSession> = list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|session| session.get("parentID").is_none_or(Value::is_null))
+        .filter_map(|session| {
+            let id = session.get("id")?.as_str()?.to_owned();
+            let title = session
+                .get("title")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|title| {
+                    !title.is_empty()
+                        && !title.starts_with("New session - ")
+                        && !title.starts_with("Child session - ")
+                })
+                .unwrap_or("Untitled chat")
+                .to_owned();
+            let updated_at = session
+                .pointer("/time/updated")
+                .and_then(Value::as_i64)
+                .map_or(0, |milliseconds| milliseconds / 1000);
+            Some(ExternalSession {
+                id,
+                title,
+                updated_at,
+            })
+        })
+        .collect();
+    sessions.sort_by_key(|session| std::cmp::Reverse(session.updated_at));
+    sessions
+}
+
+pub(super) fn history_events(messages: &Value) -> Vec<AgentEvent> {
+    let mut feed = SessionFeed::default();
+    let mut events = Vec::new();
+    for message in messages.as_array().into_iter().flatten() {
+        let parts = message
+            .get("parts")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let Some(message_id) = message.pointer("/info/id").and_then(Value::as_str) else {
+            continue;
+        };
+        if message.pointer("/info/role").and_then(Value::as_str) != Some("assistant") {
+            let text: Vec<&str> = parts
+                .iter()
+                .filter(|part| {
+                    part.get("type").and_then(Value::as_str) == Some("text")
+                        && part.get("synthetic").and_then(Value::as_bool) != Some(true)
+                })
+                .filter_map(|part| part.get("text").and_then(Value::as_str))
+                .filter(|text| !text.trim().is_empty())
+                .collect();
+            if !text.is_empty() {
+                events.push(AgentEvent::UserMessage {
+                    text: text.join("\n\n"),
+                });
+            }
+            continue;
+        }
+        feed.message_is_assistant
+            .insert(message_id.to_owned(), true);
+        for part in parts {
+            let part_events = part_snapshot_events(&mut feed, part, true, None);
+            let ends_text = part_events
+                .iter()
+                .any(|event| matches!(event, AgentEvent::TextDelta { .. }));
+            events.extend(part_events);
+            if ends_text {
+                events.push(AgentEvent::AssistantMessageCompleted {
+                    assistant_message_id: String::new(),
+                });
+            }
+        }
+    }
+    events
 }
 
 pub(super) fn part_delta_events(

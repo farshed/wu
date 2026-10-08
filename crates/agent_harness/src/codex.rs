@@ -15,9 +15,9 @@ use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc;
 
 use crate::{
-    AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice, PermissionMode,
-    ReasoningLevel, RunRequest, Skill, SkillRef, SlashCommand, SteeringMode, UserInputAnswer,
-    UserInputQuestion,
+    AgentEvent, DoneStatus, ExternalSession, HarnessId, Model, ModelOption, ModelOptionChoice,
+    PermissionMode, ReasoningLevel, RunRequest, Skill, SkillRef, SlashCommand, SteeringMode,
+    UserInputAnswer, UserInputQuestion,
 };
 
 use crate::jsonrpc::{Incoming, RpcClient};
@@ -50,6 +50,8 @@ pub struct CodexHarness {
     interrupt_grace: Duration,
     kill_grace: Duration,
 }
+
+const MAX_LISTED_THREADS: usize = 500;
 
 impl Default for CodexHarness {
     fn default() -> Self {
@@ -158,6 +160,44 @@ impl CodexHarness {
             Ok(inner) => inner,
             Err(_) => Err(HarnessError::Protocol(timeout_message.into())),
         }
+    }
+
+    async fn list_threads(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Result<Vec<ExternalSession>, HarnessError> {
+        self.probe_app_server(
+            Some(cwd),
+            "chat listing timed out",
+            |client, _exe| async move {
+                let mut sessions = Vec::new();
+                let mut seen_cursors = HashSet::new();
+                let mut cursor: Option<String> = None;
+                loop {
+                    let mut params = json!({
+                        "cwd": cwd,
+                        "sortKey": "updated_at",
+                        "limit": 100,
+                        "sourceKinds": ["cli", "vscode", "exec", "appServer", "unknown"],
+                    });
+                    if let Some(cursor) = cursor.as_deref() {
+                        params["cursor"] = Value::String(cursor.to_owned());
+                    }
+                    let page = client.request("thread/list", params).await?;
+                    sessions.extend(normalize::external_sessions(&page));
+                    match page.get("nextCursor").and_then(Value::as_str) {
+                        Some(next)
+                            if sessions.len() < MAX_LISTED_THREADS
+                                && seen_cursors.insert(next.to_owned()) =>
+                        {
+                            cursor = Some(next.to_owned());
+                        }
+                        _ => return Ok(sessions),
+                    }
+                }
+            },
+        )
+        .await
     }
 
     async fn discover_skills(&self, cwd: &std::path::Path) -> Result<Vec<Skill>, HarnessError> {
@@ -463,6 +503,34 @@ impl Harness for CodexHarness {
 
     async fn skills(&self, cwd: &std::path::Path) -> Result<Vec<Skill>, HarnessError> {
         self.discover_skills(cwd).await
+    }
+
+    async fn external_sessions(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Result<Vec<ExternalSession>, HarnessError> {
+        self.list_threads(cwd).await
+    }
+
+    async fn external_history(
+        &self,
+        cwd: &std::path::Path,
+        session_id: &str,
+    ) -> Result<Vec<AgentEvent>, HarnessError> {
+        self.probe_app_server(
+            Some(cwd),
+            "reading the chat timed out",
+            |client, _exe| async move {
+                let read = client
+                    .request(
+                        "thread/read",
+                        json!({ "threadId": session_id, "includeTurns": true }),
+                    )
+                    .await?;
+                Ok(normalize::history_events(&read["thread"]))
+            },
+        )
+        .await
     }
 
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
@@ -962,6 +1030,7 @@ async fn run_session(session: Session) {
     }
 
     let mut streamed_text: HashSet<String> = HashSet::new();
+    let mut delivered_review: Option<String> = None;
     let mut reasoning_streams: HashMap<String, ReasoningStream> = HashMap::new();
     let mut pending_usage: Option<AgentEvent> = None;
     let mut queued_steers: VecDeque<SteerMessage> = VecDeque::new();
@@ -1043,14 +1112,22 @@ async fn run_session(session: Session) {
                         if phase == Phase::Completed
                             && item_type(item) == "exitedReviewMode"
                             && let Some(text) = item.get("review").and_then(Value::as_str)
-                            && !send(&event_tx, AgentEvent::TextDelta { text: text.into() }).await
-                        { break 'main; }
+                        {
+                            delivered_review = Some(text.trim().to_owned());
+                            if !send(&event_tx, AgentEvent::TextDelta { text: text.into() }).await {
+                                break 'main;
+                            }
+                        }
                         if matches!(item_type(item), "agentMessage" | "agent_message") {
                             if phase == Phase::Completed {
                                 let id = item.get("id").and_then(Value::as_str).unwrap_or("");
                                 let text = item.get("text").and_then(Value::as_str).unwrap_or("");
+                                // Newer Codex versions repeat the review as a plain message.
+                                let repeats_review =
+                                    delivered_review.as_deref() == Some(text.trim());
                                 if !streamed_text.contains(id)
                                     && !text.is_empty()
+                                    && !repeats_review
                                     && !send(&event_tx, AgentEvent::TextDelta { text: text.into() }).await
                                 {
                                     break 'main;
@@ -1111,6 +1188,7 @@ async fn run_session(session: Session) {
                         let id = turn_id(&params);
                         router.note_completed(&id);
                         streamed_text.clear();
+                        delivered_review = None;
                         if let Some(usage) = pending_usage.take()
                             && !send(&event_tx, usage).await
                         {

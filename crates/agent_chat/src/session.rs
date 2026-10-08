@@ -1,10 +1,11 @@
 use agent_harness::{
-    AgentEvent, CancellationToken, ClaudeHarness, CodexHarness, DoneStatus, Harness, HarnessId,
-    Model, OpencodeHarness, PermissionMode, ReasoningLevel, RunControls, RunRequest, SkillRef,
-    SlashCommand, SteerMessage, ToolCall, UserInputAnswer, UserInputQuestion, usage::PlanUsage,
+    AgentEvent, CancellationToken, ClaudeHarness, CodexHarness, DoneStatus, ExternalSession,
+    Harness, HarnessId, Model, OpencodeHarness, PermissionMode, ReasoningLevel, RunControls,
+    RunRequest, SkillRef, SlashCommand, SteerMessage, ToolCall, UserInputAnswer, UserInputQuestion,
+    usage::PlanUsage,
 };
 use anyhow::{Context as _, Result};
-use collections::HashMap;
+use collections::{HashMap, HashSet};
 use futures::StreamExt as _;
 use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, SharedString, Task};
 use language::LanguageRegistry;
@@ -1679,6 +1680,54 @@ impl AgentSession {
         self.save_entries(cx);
     }
 
+    fn load_external_history(
+        &mut self,
+        events: Vec<AgentEvent>,
+        source: String,
+        cx: &mut Context<Self>,
+    ) {
+        let languages = self.languages.clone();
+        for event in events {
+            let transcript = &mut self.transcript;
+            match event {
+                AgentEvent::UserMessage { text } => {
+                    transcript.push_user(text, Vec::new(), Vec::new())
+                }
+                AgentEvent::TextDelta { text } => {
+                    transcript.append_text(&text, false, &languages, cx)
+                }
+                AgentEvent::ReasoningDelta { text } => {
+                    transcript.append_text(&text, true, &languages, cx)
+                }
+                AgentEvent::AssistantMessageCompleted { .. } => transcript.text_block_open = false,
+                AgentEvent::ToolCall { id, call } => transcript.start_tool(id, call),
+                AgentEvent::ToolResult {
+                    id,
+                    is_error,
+                    output,
+                    diff,
+                } => transcript.finish_tool(&id, is_error, output, diff),
+                AgentEvent::Error { message } => transcript.push_notice(message, true),
+                AgentEvent::Subagent {
+                    parent_tool_use_id,
+                    event,
+                } => self.apply_subagent_event(parent_tool_use_id, *event, cx),
+                _ => {}
+            }
+        }
+        self.cancel_running_tools();
+        for subagent in self.subagents.values_mut() {
+            subagent.transcript.cancel_running_tools();
+            subagent.status.get_or_insert(DoneStatus::Completed);
+        }
+        self.metadata.fork_context = fork_context(&self.transcript.serialize(cx));
+        self.transcript
+            .push_notice(format!("Continued from a saved {source} chat"), false);
+        self.save_metadata(cx);
+        self.save_entries(cx);
+        cx.notify();
+    }
+
     fn append_text(&mut self, text: &str, thinking: bool, cx: &mut Context<Self>) {
         let languages = self.languages.clone();
         self.transcript.append_text(text, thinking, &languages, cx);
@@ -2583,6 +2632,65 @@ impl AgentStore {
         session
     }
 
+    /// Chats the agent's own app saved for `cwd`, minus the ones Wu runs itself.
+    pub fn external_sessions(
+        &mut self,
+        kind: AgentKind,
+        cwd: PathBuf,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<Vec<ExternalSession>>> {
+        let harness = self.harness(kind);
+        let listing = spawn_agent_work(cx, async move { harness.external_sessions(&cwd).await });
+        cx.spawn(async move |this, cx| {
+            let sessions = listing.await??;
+            this.read_with(cx, |this, _| {
+                let own: HashSet<&str> = this
+                    .sessions
+                    .iter()
+                    .filter_map(|metadata| metadata.native_session_id.as_deref())
+                    .collect();
+                sessions
+                    .into_iter()
+                    .filter(|session| !own.contains(session.id.as_str()))
+                    .collect()
+            })
+        })
+    }
+
+    /// The agent copies the saved chat on the first message, so the original stays as it was.
+    pub fn continue_external(
+        &mut self,
+        kind: AgentKind,
+        cwd: PathBuf,
+        external: ExternalSession,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<Entity<AgentSession>>> {
+        let harness = self.harness(kind);
+        let history = spawn_agent_work(cx, {
+            let cwd = cwd.clone();
+            let id = external.id.clone();
+            async move { harness.external_history(&cwd, &id).await }
+        });
+        cx.spawn(async move |this, cx| {
+            let events = history.await??;
+            this.update(cx, |this, cx| {
+                let mut metadata = SessionMetadata::new(
+                    kind,
+                    cwd,
+                    this.defaults.get(&kind).cloned().unwrap_or_default(),
+                );
+                metadata.title = title_from(&external.title);
+                metadata.fork_source = Some(external.id);
+                let session =
+                    this.insert_session(metadata, SavedTranscript::EntriesOnly(Vec::new()), cx);
+                session.update(cx, |session, cx| {
+                    session.load_external_history(events, kind.label().to_owned(), cx)
+                });
+                session
+            })
+        })
+    }
+
     pub fn create_session(
         &mut self,
         kind: AgentKind,
@@ -2857,8 +2965,14 @@ pub(crate) mod tests {
 
     pub(crate) fn new_store(directory: &Path, cx: &mut TestAppContext) -> Entity<AgentStore> {
         cx.executor().allow_parking();
-        // SAFETY: tests in this crate only ever set this variable to the same fixture.
-        unsafe { std::env::set_var("CLAUDE_CODE_EXECUTABLE", fake_claude()) };
+        // SAFETY: tests in this crate only ever set these variables to the same fixtures.
+        unsafe {
+            std::env::set_var("CLAUDE_CODE_EXECUTABLE", fake_claude());
+            std::env::set_var(
+                "CLAUDE_CONFIG_DIR",
+                fake_claude().with_file_name("claude-config"),
+            );
+        }
         cx.update(gpui_tokio::init);
         let languages = Arc::new(LanguageRegistry::test(cx.background_executor.clone()));
         cx.new(|cx| AgentStore::new(directory.into(), languages, cx))
@@ -4150,6 +4264,68 @@ done
         }))
         .expect("old list settings load");
         assert!(prefs.compact_rows);
+    }
+
+    #[gpui::test]
+    async fn saved_chats_load_their_history_and_keep_its_context(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        let exec = |command: &str| ToolCall::Exec {
+            command: command.into(),
+        };
+        session.update(cx, |session, cx| {
+            session.load_external_history(
+                vec![
+                    AgentEvent::UserMessage {
+                        text: "Fix the bug".into(),
+                    },
+                    AgentEvent::ReasoningDelta {
+                        text: "Check the tests".into(),
+                    },
+                    AgentEvent::ToolCall {
+                        id: "t1".into(),
+                        call: exec("cargo test"),
+                    },
+                    AgentEvent::ToolResult {
+                        id: "t1".into(),
+                        is_error: false,
+                        output: None,
+                        diff: None,
+                    },
+                    AgentEvent::TextDelta {
+                        text: "Fixed.".into(),
+                    },
+                    AgentEvent::AssistantMessageCompleted {
+                        assistant_message_id: String::new(),
+                    },
+                    AgentEvent::ToolCall {
+                        id: "t2".into(),
+                        call: exec("git push"),
+                    },
+                ],
+                "Claude Code".into(),
+                cx,
+            )
+        });
+        session.read_with(cx, |session, cx| {
+            assert_eq!(
+                summarize(session.entries(), cx),
+                [
+                    "user: Fix the bug",
+                    "thinking: Check the tests",
+                    "tool t1: Completed",
+                    "assistant: Fixed.",
+                    "tool t2: Canceled",
+                    "notice: Continued from a saved Claude Code chat",
+                ]
+            );
+            let context = session.metadata().fork_context.clone().expect("history");
+            assert!(context.contains("Fix the bug") && context.contains("Fixed."));
+            assert!(!session.is_working());
+        });
     }
 
     #[gpui::test]

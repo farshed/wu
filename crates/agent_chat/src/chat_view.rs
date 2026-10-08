@@ -552,6 +552,12 @@ impl ChatView {
             self.run_app_command(command, window, cx);
             return;
         }
+        if self.attachments.is_empty()
+            && self.editing_queued.is_none()
+            && self.redirect_hidden_command(&text, window, cx)
+        {
+            return;
+        }
         let skills = std::mem::take(&mut self.composer_skills)
             .into_iter()
             .filter(|skill| text.contains(&format!("${}", skill.name)))
@@ -3412,6 +3418,16 @@ mod tests {
         assert_eq!(matches(&view, cx), ["stop"]);
         cx.simulate_keystrokes("enter");
         assert_eq!(composer_text(&view, cx), "");
+
+        cx.simulate_input("/");
+        let names = matches(&view, cx);
+        assert!(!names.contains(&"usage".to_string()));
+        assert_eq!(names.iter().filter(|name| *name == "model").count(), 1);
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("usage now");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(composer_text(&view, cx), "");
+        session.read_with(cx, |session, _| assert!(session.entries().is_empty()));
 
         cx.simulate_input("/nothing-like-this");
         assert!(matches(&view, cx).is_empty());

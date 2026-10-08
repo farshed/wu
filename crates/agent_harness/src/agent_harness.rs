@@ -83,6 +83,23 @@ pub trait Harness: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Chats saved for `cwd` by the agent's own app, newest first.
+    async fn external_sessions(
+        &self,
+        _cwd: &std::path::Path,
+    ) -> Result<Vec<ExternalSession>, HarnessError> {
+        Ok(Vec::new())
+    }
+
+    /// A saved chat replayed as events, with the user's prompts as `UserMessage`.
+    async fn external_history(
+        &self,
+        _cwd: &std::path::Path,
+        _session_id: &str,
+    ) -> Result<Vec<AgentEvent>, HarnessError> {
+        Ok(Vec::new())
+    }
+
     async fn run(
         &self,
         request: RunRequest,
