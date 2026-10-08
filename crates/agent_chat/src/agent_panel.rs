@@ -1,5 +1,6 @@
 use crate::{
-    AgentKind, ContinueSavedChat, NewClaudeChat, NewCodexChat, NewOpencodeChat, ToggleFocus,
+    AgentChatSettings, AgentKind, ContinueSavedChat, NewClaudeChat, NewCodexChat, NewOpencodeChat,
+    ToggleFocus,
     chat_style::{accent, ink, selected_row, text_faint, ui, wash},
     chat_view::ChatView,
     session::{AgentSession, AgentStore, ChatListPrefs, ChatOutcome, SessionSummary},
@@ -16,6 +17,7 @@ use gpui::{
     Transformation, WeakEntity, Window, anchored, deferred, div, percentage, point, px, rgb, svg,
 };
 use project::Project;
+use settings::Settings as _;
 use std::{
     cell::Cell,
     path::{Path, PathBuf},
@@ -53,22 +55,36 @@ pub fn init(cx: &mut App) {
     cx.observe_new(|workspace: &mut Workspace, _, _| {
         workspace
             .register_action(|workspace, _: &ToggleFocus, window, cx| {
-                workspace.toggle_panel_focus::<AgentPanel>(window, cx);
+                if agent_chat_enabled(cx) {
+                    workspace.toggle_panel_focus::<AgentPanel>(window, cx);
+                }
             })
             .register_action(|workspace, _: &NewClaudeChat, window, cx| {
-                new_chat(workspace, AgentKind::Claude, window, cx);
+                if agent_chat_enabled(cx) {
+                    new_chat(workspace, AgentKind::Claude, window, cx);
+                }
             })
             .register_action(|workspace, _: &NewCodexChat, window, cx| {
-                new_chat(workspace, AgentKind::Codex, window, cx);
+                if agent_chat_enabled(cx) {
+                    new_chat(workspace, AgentKind::Codex, window, cx);
+                }
             })
             .register_action(|workspace, _: &NewOpencodeChat, window, cx| {
-                new_chat(workspace, AgentKind::Opencode, window, cx);
+                if agent_chat_enabled(cx) {
+                    new_chat(workspace, AgentKind::Opencode, window, cx);
+                }
             })
             .register_action(|workspace, _: &ContinueSavedChat, window, cx| {
-                crate::saved_chats::toggle(workspace, window, cx);
+                if agent_chat_enabled(cx) {
+                    crate::saved_chats::toggle(workspace, window, cx);
+                }
             });
     })
     .detach();
+}
+
+fn agent_chat_enabled(cx: &App) -> bool {
+    AgentChatSettings::get_global(cx).enabled
 }
 
 pub(crate) fn chat_roots(project: &Entity<Project>, cx: &App) -> Vec<PathBuf> {
@@ -131,6 +147,9 @@ fn open_chat_in(
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) {
+    if !agent_chat_enabled(cx) {
+        return;
+    }
     let existing = workspace.items_of_type::<ChatView>(cx).find(|view| {
         let view = view.read(cx);
         view.session() == &session && !view.is_subagent()
@@ -462,8 +481,9 @@ impl AgentPanel {
             .anchor(gpui::Anchor::TopRight)
             .menu(move |window, cx| {
                 let workspace = workspace.clone();
+                let agents = AgentChatSettings::get_global(cx).agents().to_vec();
                 Some(ContextMenu::build(window, cx, move |menu, _, _| {
-                    let menu = AgentKind::ALL.into_iter().fold(menu, |menu, kind| {
+                    let menu = agents.into_iter().fold(menu, |menu, kind| {
                         let workspace = workspace.clone();
                         menu.entry(
                             kind.label(),
@@ -573,9 +593,12 @@ impl AgentPanel {
                     .child("No chats in this project yet."),
             )
             .child(
-                v_flex()
-                    .gap(px(LIST_GAP))
-                    .children(AgentKind::ALL.map(new_chat_row)),
+                v_flex().gap(px(LIST_GAP)).children(
+                    AgentChatSettings::get_global(cx)
+                        .agents()
+                        .iter()
+                        .map(|kind| new_chat_row(*kind)),
+                ),
             )
     }
 
@@ -1689,8 +1712,8 @@ impl Panel for AgentPanel {
         px(300.)
     }
 
-    fn icon(&self, _: &Window, _: &App) -> Option<IconName> {
-        Some(IconName::AgentBot)
+    fn icon(&self, _: &Window, cx: &App) -> Option<IconName> {
+        agent_chat_enabled(cx).then_some(IconName::AgentBot)
     }
 
     fn icon_tooltip(&self, _: &Window, _: &App) -> Option<&'static str> {
@@ -1703,6 +1726,16 @@ impl Panel for AgentPanel {
 
     fn activation_priority(&self) -> u32 {
         8
+    }
+
+    fn enabled(&self, cx: &App) -> bool {
+        agent_chat_enabled(cx)
+    }
+
+    fn set_active(&mut self, active: bool, _: &mut Window, cx: &mut Context<Self>) {
+        if active && !agent_chat_enabled(cx) {
+            cx.emit(PanelEvent::Close);
+        }
     }
 }
 

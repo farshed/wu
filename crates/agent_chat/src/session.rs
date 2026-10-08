@@ -11,6 +11,7 @@ use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, SharedSt
 use language::LanguageRegistry;
 use markdown::Markdown;
 use serde::{Deserialize, Serialize};
+use settings::Settings as _;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -18,7 +19,7 @@ use std::{
 };
 use util::ResultExt as _;
 
-use crate::AgentKind;
+use crate::{AgentChatSettings, AgentKind};
 
 const TITLE_MAX_CHARS: usize = 60;
 const TOOL_OUTPUT_MAX_CHARS: usize = 200_000;
@@ -183,10 +184,6 @@ pub struct SessionMetadata {
 
 impl SessionMetadata {
     fn new(kind: AgentKind, cwd: PathBuf, settings: RunSettings) -> Self {
-        let settings = RunSettings {
-            permission: PermissionMode::default(),
-            ..settings
-        };
         let created_at = now();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -865,6 +862,16 @@ impl AgentSession {
         self.working
     }
 
+    fn auto_compact_tokens(&self, cx: &App) -> Option<u64> {
+        let limit = AgentChatSettings::get_global(cx).auto_compact_tokens?;
+        let window = self.metadata.context.and_then(|context| context.window);
+        Some(match (self.metadata.kind, window) {
+            // Codex may not cap the limit at its context window, and would then never compact.
+            (AgentKind::Codex, Some(window)) if window > 0 => limit.min(window * 9 / 10),
+            _ => limit,
+        })
+    }
+
     pub fn background_tasks(&self) -> &[BackgroundTask] {
         &self.background_tasks
     }
@@ -955,7 +962,11 @@ impl AgentSession {
             .as_ref()
             .is_some_and(|run| run.interrupt.is_cancelled());
         if self.working && self.run.is_some() && !stopping {
-            self.enqueue(prompt, cx);
+            if AgentChatSettings::get_global(cx).steer_while_working {
+                self.deliver(prompt, cx);
+            } else {
+                self.enqueue(prompt, cx);
+            }
             return;
         }
         if !stopping && self.has_sendable_queued() {
@@ -1259,6 +1270,7 @@ impl AgentSession {
             permission: settings.permission,
             resume: self.metadata.native_session_id.clone(),
             fork,
+            auto_compact_tokens: self.auto_compact_tokens(cx),
         };
         let (steering_tx, steering_rx) = tokio::sync::mpsc::channel(32);
         let interrupt = CancellationToken::new();
@@ -1969,7 +1981,7 @@ pub struct AgentStore {
     save_list_prefs_task: Task<()>,
     metadata_writes: HashMap<String, Task<()>>,
     save_defaults_task: Task<()>,
-    _load: Task<()>,
+    load_task: Option<Task<()>>,
 }
 
 #[derive(Default)]
@@ -2031,7 +2043,76 @@ fn defaults_path(directory: &Path) -> PathBuf {
     directory.join("defaults.json")
 }
 
+/// The effort to switch to when the model doesn't offer the chat's, so what's sent matches the picker.
+pub(crate) fn reasoning_for_model(
+    settings: &RunSettings,
+    models: &[Model],
+) -> Option<Option<ReasoningLevel>> {
+    let level = settings.reasoning?;
+    let model = agent_harness::view::selected_catalog_model(models, settings.model.as_deref())?;
+    if model.reasoning_levels.contains(&level) {
+        return None;
+    }
+    Some(agent_harness::view::clamp_reasoning(
+        Some(level),
+        &model.reasoning_levels,
+    ))
+}
+
+pub(crate) fn working_agent_count(cx: &App) -> usize {
+    cx.try_global::<GlobalAgentStore>()
+        .map_or(0, |store| store.0.read(cx).working_count(cx))
+}
+
+pub(crate) fn load_saved_chats(cx: &mut App) {
+    if let Some(store) = cx
+        .try_global::<GlobalAgentStore>()
+        .map(|store| store.0.clone())
+    {
+        store.update(cx, |store, cx| store.load_saved_chats(cx));
+    }
+}
+
+pub(crate) fn stop_all_agents(cx: &mut App) {
+    let Some(store) = cx
+        .try_global::<GlobalAgentStore>()
+        .map(|store| store.0.clone())
+    else {
+        return;
+    };
+    let sessions: Vec<Entity<AgentSession>> = store.read(cx).live.values().cloned().collect();
+    for session in sessions {
+        session.update(cx, |session, cx| {
+            if session.is_working() {
+                session.stop(cx);
+            }
+        });
+    }
+}
+
+pub(crate) fn quit_warning(cx: &App) -> Option<String> {
+    let settings = AgentChatSettings::get_global(cx);
+    if !settings.enabled || !settings.confirm_quit_while_working {
+        return None;
+    }
+    match working_agent_count(cx) {
+        0 => None,
+        1 => Some("An agent is still working.".into()),
+        count => Some(format!("{count} agents are still working.")),
+    }
+}
+
 impl AgentStore {
+    fn working_count(&self, cx: &App) -> usize {
+        self.live
+            .values()
+            .filter(|session| {
+                let session = session.read(cx);
+                session.is_working() && !session.is_deleted()
+            })
+            .count()
+    }
+
     pub fn global(languages: Arc<LanguageRegistry>, cx: &mut App) -> Entity<Self> {
         if let Some(store) = cx.try_global::<GlobalAgentStore>() {
             return store.0.clone();
@@ -2044,8 +2125,36 @@ impl AgentStore {
     }
 
     fn new(directory: Arc<Path>, languages: Arc<LanguageRegistry>, cx: &mut Context<Self>) -> Self {
+        let mut store = Self {
+            directory,
+            sessions: Vec::new(),
+            live: HashMap::default(),
+            languages,
+            harnesses: HashMap::default(),
+            catalogs: HashMap::default(),
+            defaults: HashMap::default(),
+            plan_usage: HashMap::default(),
+            commands: HashMap::default(),
+            skills: HashMap::default(),
+            accounts: HashMap::default(),
+            list_prefs: ChatListPrefs::default(),
+            save_list_prefs_task: Task::ready(()),
+            metadata_writes: HashMap::default(),
+            save_defaults_task: Task::ready(()),
+            load_task: None,
+        };
+        if AgentChatSettings::get_global(cx).enabled {
+            store.load_saved_chats(cx);
+        }
+        store
+    }
+
+    fn load_saved_chats(&mut self, cx: &mut Context<Self>) {
+        if self.load_task.is_some() {
+            return;
+        }
         let load = cx.spawn({
-            let directory = directory.clone();
+            let directory = self.directory.clone();
             async move |this, cx| {
                 let defaults_file = defaults_path(&directory);
                 let list_file = chat_list_path(&directory);
@@ -2080,24 +2189,7 @@ impl AgentStore {
                 .log_err();
             }
         });
-        Self {
-            directory,
-            sessions: Vec::new(),
-            live: HashMap::default(),
-            languages,
-            harnesses: HashMap::default(),
-            catalogs: HashMap::default(),
-            defaults: HashMap::default(),
-            plan_usage: HashMap::default(),
-            commands: HashMap::default(),
-            skills: HashMap::default(),
-            accounts: HashMap::default(),
-            list_prefs: ChatListPrefs::default(),
-            save_list_prefs_task: Task::ready(()),
-            metadata_writes: HashMap::default(),
-            save_defaults_task: Task::ready(()),
-            _load: load,
-        }
+        self.load_task = Some(load);
     }
 
     fn harness(&mut self, kind: AgentKind) -> Arc<dyn Harness> {
@@ -2426,6 +2518,22 @@ impl AgentStore {
         }
     }
 
+    fn new_chat_settings(&self, kind: AgentKind, cx: &App) -> RunSettings {
+        let mut settings = self.defaults.get(&kind).cloned().unwrap_or_default();
+        let chat_settings = AgentChatSettings::get_global(cx);
+        if let Some(effort) = chat_settings.default_effort {
+            settings.reasoning = Some(effort);
+            if let Some(reasoning) = self
+                .models_discovered(kind)
+                .and_then(|models| reasoning_for_model(&settings, models))
+            {
+                settings.reasoning = reasoning;
+            }
+        }
+        settings.permission = chat_settings.default_permission(kind);
+        settings
+    }
+
     fn remember_settings(
         &mut self,
         kind: AgentKind,
@@ -2674,11 +2782,8 @@ impl AgentStore {
         cx.spawn(async move |this, cx| {
             let events = history.await??;
             this.update(cx, |this, cx| {
-                let mut metadata = SessionMetadata::new(
-                    kind,
-                    cwd,
-                    this.defaults.get(&kind).cloned().unwrap_or_default(),
-                );
+                let mut metadata =
+                    SessionMetadata::new(kind, cwd, this.new_chat_settings(kind, cx));
                 metadata.title = title_from(&external.title);
                 metadata.fork_source = Some(external.id);
                 let session =
@@ -2708,11 +2813,7 @@ impl AgentStore {
         branch: Option<String>,
         cx: &mut Context<Self>,
     ) -> Entity<AgentSession> {
-        let mut metadata = SessionMetadata::new(
-            kind,
-            cwd,
-            self.defaults.get(&kind).cloned().unwrap_or_default(),
-        );
+        let mut metadata = SessionMetadata::new(kind, cwd, self.new_chat_settings(kind, cx));
         metadata.project_root = project_root.filter(|root| *root != metadata.cwd);
         metadata.branch = branch;
         let languages = self.languages.clone();
@@ -2973,7 +3074,13 @@ pub(crate) mod tests {
                 fake_claude().with_file_name("claude-config"),
             );
         }
-        cx.update(gpui_tokio::init);
+        cx.update(|cx| {
+            gpui_tokio::init(cx);
+            if !cx.has_global::<settings::SettingsStore>() {
+                let settings = settings::SettingsStore::test(cx);
+                cx.set_global(settings);
+            }
+        });
         let languages = Arc::new(LanguageRegistry::test(cx.background_executor.clone()));
         cx.new(|cx| AgentStore::new(directory.into(), languages, cx))
     }
@@ -3017,6 +3124,31 @@ pub(crate) mod tests {
         feed_events(&session, reported("default"), cx);
         feed_events(&session, reported("default"), cx);
         assert_eq!(notices(cx), 1);
+    }
+
+    #[gpui::test]
+    async fn saved_chats_load_only_while_agent_chat_is_on(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        session.update(cx, |session, cx| {
+            session.update_settings(|settings| settings.model = Some("opus".into()), cx)
+        });
+        cx.run_until_parked();
+
+        update_chat_settings(cx, |content| content.enabled = Some(false));
+        let reopened = new_store(directory.path(), cx);
+        cx.run_until_parked();
+        let saved = |cx: &mut TestAppContext| {
+            reopened.read_with(cx, |store, _| store.sessions_metadata().count())
+        };
+        assert_eq!(saved(cx), 0);
+
+        reopened.update(cx, |store, cx| store.load_saved_chats(cx));
+        cx.run_until_parked();
+        assert_eq!(saved(cx), 1);
     }
 
     #[gpui::test]
@@ -4012,6 +4144,132 @@ done
                 })
                 .collect()
         })
+    }
+
+    fn update_chat_settings(
+        cx: &mut TestAppContext,
+        update: impl FnOnce(&mut settings::AgentChatSettingsContent),
+    ) {
+        cx.update(|cx| {
+            <settings::SettingsStore as gpui::UpdateGlobal>::update_global(cx, |store, cx| {
+                store.update_user_settings(cx, |content| {
+                    update(content.agent_chat.get_or_insert_default())
+                })
+            })
+        });
+    }
+
+    #[gpui::test]
+    async fn new_chats_start_with_the_default_effort_and_permission(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        let remembered = RunSettings {
+            model: Some("opus".into()),
+            reasoning: Some(ReasoningLevel::Low),
+            permission: PermissionMode::Ask,
+            ..RunSettings::default()
+        };
+        let remembered_without_permission = RunSettings {
+            permission: PermissionMode::Auto,
+            ..remembered.clone()
+        };
+        store.update(cx, |store, cx| {
+            store.remember_settings(AgentKind::Claude, remembered.clone(), cx);
+            store.remember_settings(AgentKind::Codex, remembered.clone(), cx);
+        });
+        let new_chat_settings = |kind, cx: &mut TestAppContext| {
+            store.update(cx, |store, cx| {
+                let session = store.create_session(kind, directory.path().to_path_buf(), cx);
+                session.read(cx).settings().clone()
+            })
+        };
+        assert_eq!(
+            new_chat_settings(AgentKind::Claude, cx),
+            remembered_without_permission
+        );
+
+        update_chat_settings(cx, |content| {
+            content.default_effort = Some(settings::AgentChatDefaultEffort::High);
+            content.default_permission = Some(settings::AgentChatDefaultPermissionContent {
+                claude_code: Some(settings::ClaudeCodePermissionDefault::Bypass),
+                ..Default::default()
+            });
+        });
+        let claude = new_chat_settings(AgentKind::Claude, cx);
+        assert_eq!(claude.model.as_deref(), Some("opus"));
+        assert_eq!(claude.reasoning, Some(ReasoningLevel::High));
+        assert_eq!(claude.permission, PermissionMode::FullAccess);
+        let codex = new_chat_settings(AgentKind::Codex, cx);
+        assert_eq!(codex.reasoning, Some(ReasoningLevel::High));
+        assert_eq!(codex.permission, PermissionMode::Auto);
+    }
+
+    #[test]
+    fn effort_the_model_does_not_offer_falls_back_to_the_model_default() {
+        let model = |id: &str, levels: Vec<ReasoningLevel>| Model {
+            id: id.into(),
+            label: id.into(),
+            description: None,
+            reasoning_levels: levels,
+            options: Vec::new(),
+        };
+        let models = [
+            model(
+                "gpt",
+                vec![
+                    ReasoningLevel::Low,
+                    ReasoningLevel::Medium,
+                    ReasoningLevel::High,
+                ],
+            ),
+            model("haiku", Vec::new()),
+        ];
+        let settings = |model: &str, reasoning| RunSettings {
+            model: Some(model.into()),
+            reasoning: Some(reasoning),
+            ..RunSettings::default()
+        };
+        assert_eq!(
+            reasoning_for_model(&settings("gpt", ReasoningLevel::Max), &models),
+            Some(Some(ReasoningLevel::High))
+        );
+        assert_eq!(
+            reasoning_for_model(&settings("gpt", ReasoningLevel::Low), &models),
+            None
+        );
+        assert_eq!(
+            reasoning_for_model(&settings("haiku", ReasoningLevel::High), &models),
+            Some(None)
+        );
+        assert_eq!(
+            reasoning_for_model(&settings("custom", ReasoningLevel::Max), &models),
+            None
+        );
+    }
+
+    #[gpui::test]
+    async fn messages_sent_while_working_steer_when_set_to(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let store = new_store(directory.path(), cx);
+        use_quick_stopping_claude(&store, cx);
+        update_chat_settings(cx, |content| {
+            content.while_working = Some(settings::AgentChatWhileWorking::Steer);
+        });
+        let session = store.update(cx, |store, cx| {
+            store.create_session(AgentKind::Claude, directory.path().to_path_buf(), cx)
+        });
+        session.update(cx, |session, cx| {
+            session.send_message("scenario:interrupt", cx)
+        });
+        run_until(cx, |cx| {
+            session.read_with(cx, |session, _| session.run.is_some())
+        });
+        session.update(cx, |session, cx| session.send_message("change of plan", cx));
+        assert!(session.read_with(cx, |session, _| session.queue().is_empty()));
+        assert_eq!(
+            user_texts(&session, cx),
+            ["scenario:interrupt", "change of plan"]
+        );
     }
 
     #[gpui::test]

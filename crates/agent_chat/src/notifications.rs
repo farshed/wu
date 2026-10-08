@@ -119,6 +119,9 @@ pub(crate) fn watch(store: &Entity<AgentStore>, cx: &mut App) {
             return;
         }
         let settings = AgentChatSettings::get_global(cx).clone();
+        if !settings.enabled {
+            return;
+        }
         let wu_active = cx.active_window().is_some();
         if settings.notify_only_in_background && wu_active {
             return;

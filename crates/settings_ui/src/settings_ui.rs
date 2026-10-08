@@ -555,6 +555,7 @@ fn init_renderers(cx: &mut App) {
         .add_basic_renderer::<NonZeroU32>(render_editable_number_field)
         .add_basic_renderer::<settings::CodeFade>(render_editable_number_field)
         .add_basic_renderer::<settings::DelayMs>(render_editable_number_field)
+        .add_basic_renderer::<settings::ContextTokens>(render_editable_number_field)
         .add_basic_renderer::<settings::FontWeightContent>(render_editable_number_field)
         .add_basic_renderer::<settings::PixelSetting>(render_editable_number_field)
         .add_basic_renderer::<settings::ActivityBarIconSize>(render_activity_bar_icon_size)
@@ -571,6 +572,11 @@ fn init_renderers(cx: &mut App) {
         .add_basic_renderer::<settings::ImageFileSizeUnit>(render_dropdown)
         .add_basic_renderer::<settings::AgentChatSendKey>(render_dropdown)
         .add_basic_renderer::<settings::AgentChatModelPickerLayout>(render_dropdown)
+        .add_basic_renderer::<settings::AgentChatWhileWorking>(render_dropdown)
+        .add_basic_renderer::<settings::AgentChatDefaultEffort>(render_dropdown)
+        .add_basic_renderer::<settings::ClaudeCodePermissionDefault>(render_dropdown)
+        .add_basic_renderer::<settings::CodexPermissionDefault>(render_dropdown)
+        .add_basic_renderer::<settings::OpencodePermissionDefault>(render_dropdown)
         .add_basic_renderer::<settings::StatusStyle>(render_dropdown)
         .add_basic_renderer::<settings::GitPanelClickBehavior>(render_dropdown)
         .add_basic_renderer::<settings::GitPanelSortBy>(render_dropdown)
@@ -884,6 +890,7 @@ pub struct SettingsWindow {
     /// or by the current file
     navbar_focus_subscriptions: Vec<gpui::Subscription>,
     filter_table: Vec<Vec<bool>>,
+    pages_with_feature_off: Vec<&'static str>,
     has_query: bool,
     content_handles: Vec<Vec<Entity<NonFocusableHandle>>>,
     focus_handle: FocusHandle,
@@ -1669,6 +1676,13 @@ impl SettingsWindow {
         cx.observe_global_in::<SettingsStore>(window, move |this, window, cx| {
             this.fetch_files(window, cx);
 
+            let pages_with_feature_off =
+                page_data::pages_with_feature_off(SettingsStore::global(cx).merged_settings());
+            if pages_with_feature_off != this.pages_with_feature_off {
+                this.pages_with_feature_off = pages_with_feature_off;
+                this.update_matches(cx);
+            }
+
             // Whenever settings are changed, it's possible that the changed
             // settings affects the rendering of the `SettingsWindow`, like is
             // the case with `ui_font_size`. When that happens, we need to
@@ -1808,6 +1822,7 @@ impl SettingsWindow {
             search_bar,
             search_task: None,
             filter_table: vec![],
+            pages_with_feature_off: Vec::new(),
             has_query: false,
             content_handles: vec![],
             focus_handle: cx.focus_handle(),
@@ -2010,6 +2025,16 @@ impl SettingsWindow {
     fn filter_matches_to_file(&mut self) {
         let current_file = self.current_file.mask();
         for (page, page_filter) in std::iter::zip(&self.pages, &mut self.filter_table) {
+            if self.pages_with_feature_off.contains(&page.title)
+                && let Some(toggle_index) = page
+                    .items
+                    .iter()
+                    .position(|item| matches!(item, SettingsPageItem::SettingItem(_)))
+            {
+                for shown in page_filter.iter_mut().skip(toggle_index + 1) {
+                    *shown = false;
+                }
+            }
             let mut header_index = 0;
             let mut any_found_since_last_header = true;
 
@@ -2332,6 +2357,8 @@ impl SettingsWindow {
     }
 
     fn build_ui(&mut self, window: &mut Window, cx: &mut Context<SettingsWindow>) {
+        self.pages_with_feature_off =
+            page_data::pages_with_feature_off(SettingsStore::global(cx).merged_settings());
         if self.pages.is_empty() {
             self.pages = page_data::settings_data(cx);
             self.build_navbar(cx);
@@ -4917,6 +4944,7 @@ pub mod test {
                 navbar_scroll_handle: UniformListScrollHandle::default(),
                 navbar_focus_subscriptions: Vec::default(),
                 filter_table: Vec::default(),
+                pages_with_feature_off: Vec::new(),
                 has_query: false,
                 content_handles: Vec::default(),
                 search_task: None,
@@ -5042,6 +5070,7 @@ pub mod test {
             navbar_scroll_handle: UniformListScrollHandle::default(),
             navbar_focus_subscriptions: vec![],
             filter_table: vec![],
+            pages_with_feature_off: Vec::new(),
             sub_page_stack: vec![],
             opening_link: false,
             has_query: false,

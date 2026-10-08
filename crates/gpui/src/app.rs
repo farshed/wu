@@ -1521,6 +1521,14 @@ impl App {
         self.platform.show_system_notification(notification);
     }
 
+    /// Asks the operating system to let the application post notifications,
+    /// prompting the user the first time. Resolves to whether they are allowed.
+    pub fn request_system_notification_permission(
+        &self,
+    ) -> futures::channel::oneshot::Receiver<bool> {
+        self.platform.request_system_notification_permission()
+    }
+
     /// Removes the delivered or pending notification with this tag.
     ///
     /// Best-effort: some platforms cannot retract a notification once shown,

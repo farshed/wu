@@ -415,12 +415,18 @@ impl ChatView {
 
     fn pin_default_settings(&mut self, cx: &mut Context<Self>) {
         let session = self.session.read(cx);
-        if session.settings().model.is_some() {
-            return;
-        }
         let Some(models) = self.store.read(cx).models_discovered(session.kind()) else {
             return;
         };
+        if session.settings().model.is_some() {
+            if let Some(reasoning) = crate::session::reasoning_for_model(session.settings(), models)
+            {
+                self.session.update(cx, |session, cx| {
+                    session.pin_settings(|settings| settings.reasoning = reasoning, cx)
+                });
+            }
+            return;
+        }
         let Some(model) = view::default_model(models).cloned() else {
             return;
         };

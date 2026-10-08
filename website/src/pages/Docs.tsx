@@ -82,10 +82,32 @@ export function Docs() {
             model runs on your machine and downloads the first time you use it. Dictation works on macOS 14 or later
             with Apple Silicon, Linux, and Windows.
           </li>
-          <li>Wu can play a sound and show a notification when the agent finishes, needs your input, or hits an error.</li>
+          <li>
+            Wu can play a sound and show a notification when the agent finishes, needs your input, or hits an error.
+            Notifications are off by default. On macOS, turning them on asks to allow Wu's notifications, and opens
+            System Settings if they're turned off there.
+          </li>
+          <li>
+            New chats start with the effort you used last with that agent and in Auto permission mode. In settings you
+            can pick a fixed effort, and a starting permission mode for each agent.
+          </li>
+          <li>
+            By default, a message you send while the agent is working waits in a queue until it finishes. Set While
+            Working to Steer to send it right away instead.
+          </li>
+          <li>Wu asks before quitting or restarting while an agent is working, since that stops it.</li>
+          <li>
+            Turn off Enable Agent Chat in settings to hide the agent panel, its commands, and everything else
+            agent-related. Running agents stop, and your saved chats come back when you turn it on again.
+          </li>
+          <li>You can hide agents you don't use from the new chat menu and Continue Saved Chat. At least one stays shown.</li>
+          <li>
+            Auto-Compact compacts a Claude Code or Codex chat once its context reaches the limit you pick, from 100K to
+            1M tokens. When it's off, each agent compacts on its own when the context is nearly full.
+          </li>
         </ul>
         <p>
-          The send key, sounds, notifications, dictation, and more are on the Agent Chat page in settings.
+          The send key, new chat defaults, auto-compact, sounds, notifications, dictation, and more are on the Agent Chat page in settings.
         </p>
 
         <h2>Workspace</h2>

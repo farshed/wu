@@ -239,6 +239,15 @@ pub trait Platform: 'static {
         _ = notification;
     }
 
+    /// Asks the operating system to let the application post notifications,
+    /// prompting the user the first time. Resolves to whether they are allowed.
+    /// Platforms without a permission model report `true`.
+    fn request_system_notification_permission(&self) -> oneshot::Receiver<bool> {
+        let (sender, receiver) = oneshot::channel();
+        sender.send(true).ok();
+        receiver
+    }
+
     /// Removes the delivered or pending notification with this tag.
     ///
     /// Best-effort: some platforms cannot retract a notification once shown,

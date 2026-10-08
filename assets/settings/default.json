@@ -106,6 +106,8 @@
   },
   // Agent chat settings
   "agent_chat": {
+    // When off, Wu hides the agent panel and its commands, and stops running agents.
+    "enabled": true,
     // "modifier_enter" means Cmd-Enter on macOS and Ctrl-Enter elsewhere.
     "send_with": "enter",
     "compact_transcript": false,
@@ -115,8 +117,29 @@
     "sound_when_done": true,
     "sound_when_needs_input": true,
     "sound_on_error": true,
-    "notifications": true,
+    // On macOS, also allow Wu in System Settings > Notifications.
+    "notifications": false,
     "notify_only_in_background": true,
+    // Claude Code and Codex only. When off, each agent compacts when its context is nearly full.
+    "auto_compact": false,
+    // Tokens, between 100000 and 1000000.
+    "auto_compact_limit": 200000,
+    // "last_used" keeps the effort of your last chat with that agent.
+    "default_effort": "last_used",
+    "default_permission": {
+      "claude_code": "auto",
+      "codex": "auto",
+      "opencode": "auto",
+    },
+    // Agents shown in the new chat menu and in Continue Saved Chat.
+    "agents": {
+      "claude_code": true,
+      "codex": true,
+      "opencode": true,
+    },
+    // "queue" waits for the agent to finish; "steer" sends the message right away.
+    "while_working": "queue",
+    "confirm_quit_while_working": true,
   },
   // Image viewer settings
   "image_viewer": {

@@ -12,8 +12,8 @@ use gpui::{
 };
 
 use settings::{
-    ActivityBarIconSize, CenteredPaddingSettings, CodeFade, DelayMs, FontSize, FontWeightContent,
-    InactiveOpacity, MinimumContrast, PixelSetting,
+    ActivityBarIconSize, CenteredPaddingSettings, CodeFade, ContextTokens, DelayMs, FontSize,
+    FontWeightContent, InactiveOpacity, MinimumContrast, PixelSetting,
 };
 use ui::prelude::*;
 use wu_actions::editor::{MoveDown, MoveUp};
@@ -36,6 +36,10 @@ pub trait NumberFieldType: Display + Copy + Clone + Sized + PartialOrd + FromStr
     fn max_value() -> Self;
     fn saturating_add(self, rhs: Self) -> Self;
     fn saturating_sub(self, rhs: Self) -> Self;
+    /// Goes through `Display` unless overridden, since there is no general numeric conversion.
+    fn numeric_value(&self) -> Option<f64> {
+        format!("{}", self).parse::<f64>().ok()
+    }
 }
 
 macro_rules! impl_newtype_numeric_stepper_float {
@@ -123,6 +127,39 @@ impl_newtype_numeric_stepper_float!(MinimumContrast, 1., 10., 0.5, 0.0, 106.0);
 impl_newtype_numeric_stepper_float!(PixelSetting, 1.0, 10.0, 0.5, 0.0, f32::MAX);
 impl_newtype_numeric_stepper_float!(ActivityBarIconSize, 1.0, 4.0, 0.5, 12.0, 48.0);
 impl_newtype_numeric_stepper_int!(DelayMs, 100, 500, 10, 0, 2000);
+impl NumberFieldType for ContextTokens {
+    fn default_step() -> Self {
+        Self(50_000)
+    }
+
+    fn large_step() -> Self {
+        Self(100_000)
+    }
+
+    fn small_step() -> Self {
+        Self(10_000)
+    }
+
+    fn min_value() -> Self {
+        Self(Self::MIN)
+    }
+
+    fn max_value() -> Self {
+        Self(Self::MAX)
+    }
+
+    fn saturating_add(self, rhs: Self) -> Self {
+        Self(self.0.saturating_add(rhs.0).min(Self::MAX))
+    }
+
+    fn saturating_sub(self, rhs: Self) -> Self {
+        Self(self.0.saturating_sub(rhs.0).max(Self::MIN))
+    }
+
+    fn numeric_value(&self) -> Option<f64> {
+        Some(self.0 as f64)
+    }
+}
 impl_newtype_numeric_stepper_float!(
     CenteredPaddingSettings,
     0.05,
@@ -374,10 +411,9 @@ enum ValueChangeDirection {
 }
 
 /// Best-effort conversion of a numeric field value to `f64` for reporting to
-/// assistive technology. Goes through the `Display` representation because
-/// `NumberFieldType` has no general numeric conversion.
-fn a11y_numeric_value(value: &impl Display) -> Option<f64> {
-    format!("{}", value).parse::<f64>().ok()
+/// assistive technology.
+fn a11y_numeric_value(value: &impl NumberFieldType) -> Option<f64> {
+    value.numeric_value()
 }
 
 /// Best-effort conversion of an assistive-technology-provided `f64` back into

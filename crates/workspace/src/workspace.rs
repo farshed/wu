@@ -9382,7 +9382,8 @@ fn deserialize_remote_project(
 pub const RESTART_WORKSPACE_IDS_KEY: &str = "restart_pending_workspace_ids";
 
 pub fn reload(cx: &mut App) {
-    let should_confirm = WorkspaceSettings::get_global(cx).confirm_quit;
+    let should_confirm =
+        WorkspaceSettings::get_global(cx).confirm_quit && quit_warning(cx).is_none();
     let mut workspace_windows = cx
         .windows()
         .into_iter()
@@ -9475,10 +9476,57 @@ pub async fn restart_and_restore_workspaces(
     Ok(true)
 }
 
+/// Names work that closing Wu would stop, so quitting and restarting ask first.
+pub struct QuitWarning(pub fn(&App) -> Option<String>);
+
+impl Global for QuitWarning {}
+
+pub fn quit_warning(cx: &App) -> Option<String> {
+    cx.try_global::<QuitWarning>()
+        .and_then(|warning| (warning.0)(cx))
+}
+
+static SHOWING_QUIT_WARNING: AtomicBool = AtomicBool::new(false);
+
+async fn confirm_quit_warning(
+    workspace_windows: &[WindowHandle<MultiWorkspace>],
+    cx: &mut AsyncApp,
+) -> bool {
+    if SHOWING_QUIT_WARNING.load(std::sync::atomic::Ordering::Acquire) {
+        return false;
+    }
+    let warning = cx.update(|cx| quit_warning(cx));
+    let (Some(warning), Some(window)) = (warning, workspace_windows.first()) else {
+        return true;
+    };
+    let answer = window
+        .update(cx, |_, window, cx| {
+            window.activate_window();
+            window.prompt(
+                PromptLevel::Warning,
+                &warning,
+                Some("Closing Wu now stops it."),
+                &["Cancel", "Close Wu"],
+                cx,
+            )
+        })
+        .log_err();
+    let Some(answer) = answer else {
+        return true;
+    };
+    SHOWING_QUIT_WARNING.store(true, std::sync::atomic::Ordering::Release);
+    let answer = answer.await.ok();
+    SHOWING_QUIT_WARNING.store(false, std::sync::atomic::Ordering::Release);
+    answer == Some(1)
+}
+
 pub async fn prepare_windows_to_quit(
     workspace_windows: &[WindowHandle<MultiWorkspace>],
     cx: &mut AsyncApp,
 ) -> bool {
+    if !confirm_quit_warning(workspace_windows, cx).await {
+        return false;
+    }
     // If the user cancels any save prompt, then keep the app open.
     let mut prepared_windows = Vec::new();
     let mut cancelled = false;
@@ -12464,6 +12512,36 @@ mod tests {
             let right_dock = workspace.dock_at_position(DockPosition::Right);
             assert!(!left_dock.read(cx).is_open());
             assert!(right_dock.read(cx).is_open());
+        });
+    }
+
+    #[gpui::test]
+    async fn test_opening_a_dock_skips_a_turned_off_panel(cx: &mut gpui::TestAppContext) {
+        init_test(cx);
+        let fs = FakeFs::new(cx.executor());
+        let project = Project::test(fs, [], cx).await;
+        let (multi_workspace, cx) =
+            cx.add_window_view(|window, cx| MultiWorkspace::test_new(project, window, cx));
+        let workspace = multi_workspace.read_with(cx, |mw, _| mw.workspace().clone());
+
+        workspace.update_in(cx, |workspace, window, cx| {
+            let first = cx.new(|cx| TestPanel::new(DockPosition::Left, 100, cx));
+            let second = cx.new(|cx| TestPanel::new(DockPosition::Left, 101, cx));
+            workspace.add_panel(first.clone(), window, cx);
+            workspace.add_panel(second.clone(), window, cx);
+            let dock = workspace.left_dock().clone();
+            dock.update(cx, |dock, cx| {
+                let second_index = dock
+                    .panels()
+                    .position(|panel| panel.panel_id() == second.panel_id())
+                    .expect("panels were added");
+                dock.activate_panel(second_index, window, cx);
+            });
+            second.update(cx, |panel, _| panel.enabled = false);
+
+            workspace.toggle_dock(DockPosition::Left, window, cx);
+            let visible = dock.read(cx).visible_panel().map(|panel| panel.panel_id());
+            assert_eq!(visible, Some(first.panel_id()));
         });
     }
 

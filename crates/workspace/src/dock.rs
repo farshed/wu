@@ -585,6 +585,14 @@ impl Dock {
 
     fn set_open_internal(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         if open != self.is_open {
+            if open
+                && self
+                    .active_panel_entry()
+                    .is_some_and(|entry| !entry.panel.enabled(cx))
+                && let Ok(index) = self.first_enabled_panel_idx(cx)
+            {
+                self.activate_panel_internal(index, window, cx);
+            }
             self.is_open = open;
             if let Some(active_panel) = self.active_panel_entry() {
                 active_panel.panel.set_active(open, window, cx);
@@ -1680,6 +1688,7 @@ pub mod test {
         pub default_size: Pixels,
         pub flexible: bool,
         pub activation_priority: u32,
+        pub enabled: bool,
     }
     actions!(test_only, [ToggleTestPanel]);
 
@@ -1696,6 +1705,7 @@ pub mod test {
                 default_size: px(300.),
                 flexible: false,
                 activation_priority,
+                enabled: true,
             }
         }
 
@@ -1811,6 +1821,10 @@ pub mod test {
 
         fn set_active(&mut self, active: bool, _window: &mut Window, _cx: &mut Context<Self>) {
             self.active = active;
+        }
+
+        fn enabled(&self, _: &App) -> bool {
+            self.enabled
         }
 
         fn activation_priority(&self) -> u32 {

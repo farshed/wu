@@ -577,6 +577,10 @@ impl CodexHarness {
         let exe = self.resolve_executable()?;
         let mut cmd = Command::new(&exe);
         cmd.arg("app-server");
+        if let Some(tokens) = request.auto_compact_tokens {
+            cmd.arg("-c");
+            cmd.arg(format!("model_auto_compact_token_limit={tokens}"));
+        }
         crate::compose_child_path(&mut cmd, &exe);
         if request.cwd.is_empty() {
             cmd.current_dir(crate::executable::scratch_dir());

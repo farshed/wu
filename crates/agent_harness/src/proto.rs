@@ -137,6 +137,9 @@ pub struct RunRequest {
     pub attachments: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<SkillRef>,
+    /// Context size in tokens at which the agent compacts; `None` keeps the agent's own default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_compact_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

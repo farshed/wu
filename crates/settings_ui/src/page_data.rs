@@ -7168,7 +7168,26 @@ fn version_control_page() -> SettingsPage {
 }
 
 fn agent_chat_page() -> SettingsPage {
-    fn chat_section() -> [SettingsPageItem; 5] {
+    fn general_section() -> [SettingsPageItem; 2] {
+        [
+            SettingsPageItem::SectionHeader("General"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Enable Agent Chat",
+                description: "Show the agent panel and its commands. When off, Wu hides everything agent-related and stops running agents.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.enabled"),
+                    pick: |settings_content| settings_content.agent_chat.as_ref()?.enabled.as_ref(),
+                    write: |settings_content, value, _| {
+                        settings_content.agent_chat.get_or_insert_default().enabled = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+        ]
+    }
+
+    fn chat_section() -> [SettingsPageItem; 7] {
         [
             SettingsPageItem::SectionHeader("Chat"),
             SettingsPageItem::SettingItem(SettingItem {
@@ -7181,6 +7200,24 @@ fn agent_chat_page() -> SettingsPage {
                     },
                     write: |settings_content, value, _| {
                         settings_content.agent_chat.get_or_insert_default().send_with = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "While Working",
+                description: "What a message sent while the agent is working does. Queue sends it when the agent finishes; Steer sends it right away.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.while_working"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.while_working.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .while_working = value;
                     },
                 }),
                 metadata: None,
@@ -7226,6 +7263,28 @@ fn agent_chat_page() -> SettingsPage {
                     },
                     write: |settings_content, value, _| {
                         settings_content.agent_chat.get_or_insert_default().dictation = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Ask Before Quitting",
+                description: "Ask before quitting or restarting Wu while an agent is working, since that stops it.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.confirm_quit_while_working"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .confirm_quit_while_working
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .confirm_quit_while_working = value;
                     },
                 }),
                 metadata: None,
@@ -7284,14 +7343,21 @@ fn agent_chat_page() -> SettingsPage {
             }),
             SettingsPageItem::SettingItem(SettingItem {
                 title: "Desktop Notifications",
-                description: "Show a notification when an agent finishes, needs input or fails.",
+                description: if cfg!(target_os = "macos") {
+                    "Show a notification when an agent finishes, needs input or fails. Allow Wu to send notifications in System Settings for this to work."
+                } else {
+                    "Show a notification when an agent finishes, needs input or fails."
+                },
                 field: Box::new(SettingField {
                     json_path: Some("agent_chat.notifications"),
                     pick: |settings_content| {
                         settings_content.agent_chat.as_ref()?.notifications.as_ref()
                     },
-                    write: |settings_content, value, _| {
+                    write: |settings_content, value, cx| {
                         settings_content.agent_chat.get_or_insert_default().notifications = value;
+                        if cfg!(target_os = "macos") && value == Some(true) {
+                            ask_to_allow_notifications(cx);
+                        }
                     },
                 }),
                 metadata: None,
@@ -7315,9 +7381,310 @@ fn agent_chat_page() -> SettingsPage {
         ]
     }
 
+    fn new_chats_section() -> [SettingsPageItem; 5] {
+        [
+            SettingsPageItem::SectionHeader("New Chats"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Default Effort",
+                description: "The effort new chats start with. Last Used keeps the effort of your last chat with that agent. A model that doesn't offer it uses its own default.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.default_effort"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .default_effort
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .default_effort = value;
+                    },
+                }),
+                metadata: Some(Box::new(SettingsFieldMetadata {
+                    should_do_titlecase: Some(false),
+                    ..Default::default()
+                })),
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Claude Code Permission",
+                description: "The permission mode new Claude Code chats start with. You can still change it in each chat.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.default_permission.claude_code"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .default_permission
+                            .as_ref()?
+                            .claude_code
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .default_permission
+                            .get_or_insert_default()
+                            .claude_code = value;
+                    },
+                }),
+                metadata: Some(Box::new(SettingsFieldMetadata {
+                    should_do_titlecase: Some(false),
+                    ..Default::default()
+                })),
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Codex Permission",
+                description: "The permission mode new Codex chats start with. You can still change it in each chat.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.default_permission.codex"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .default_permission
+                            .as_ref()?
+                            .codex
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .default_permission
+                            .get_or_insert_default()
+                            .codex = value;
+                    },
+                }),
+                metadata: Some(Box::new(SettingsFieldMetadata {
+                    should_do_titlecase: Some(false),
+                    ..Default::default()
+                })),
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "OpenCode Permission",
+                description: "The permission mode new OpenCode chats start with. You can still change it in each chat.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.default_permission.opencode"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .default_permission
+                            .as_ref()?
+                            .opencode
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .default_permission
+                            .get_or_insert_default()
+                            .opencode = value;
+                    },
+                }),
+                metadata: Some(Box::new(SettingsFieldMetadata {
+                    should_do_titlecase: Some(false),
+                    ..Default::default()
+                })),
+                files: USER,
+            }),
+        ]
+    }
+
+    fn agents_section() -> [SettingsPageItem; 4] {
+        [
+            SettingsPageItem::SectionHeader("Agents"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Claude Code",
+                description: "Show Claude Code in the new chat menu and in Continue Saved Chat. At least one agent stays shown.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.agents.claude_code"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .agents
+                            .as_ref()?
+                            .claude_code
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        let agents = settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .agents
+                            .get_or_insert_default();
+                        agents.claude_code = value;
+                        keep_one_agent_shown(agents, |agents| &mut agents.claude_code);
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Codex",
+                description: "Show Codex in the new chat menu and in Continue Saved Chat. At least one agent stays shown.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.agents.codex"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .agents
+                            .as_ref()?
+                            .codex
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        let agents = settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .agents
+                            .get_or_insert_default();
+                        agents.codex = value;
+                        keep_one_agent_shown(agents, |agents| &mut agents.codex);
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "OpenCode",
+                description: "Show OpenCode in the new chat menu and in Continue Saved Chat. At least one agent stays shown.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.agents.opencode"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .agents
+                            .as_ref()?
+                            .opencode
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        let agents = settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .agents
+                            .get_or_insert_default();
+                        agents.opencode = value;
+                        keep_one_agent_shown(agents, |agents| &mut agents.opencode);
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+        ]
+    }
+
+    fn context_section() -> [SettingsPageItem; 3] {
+        [
+            SettingsPageItem::SectionHeader("Context"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Auto-Compact",
+                description: "Compact the conversation once its context reaches the limit below. Works with Claude Code and Codex.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.auto_compact"),
+                    pick: |settings_content| {
+                        settings_content.agent_chat.as_ref()?.auto_compact.as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .auto_compact = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Context Limit",
+                description: "The context size, in tokens, that triggers compaction. Between 100K and 1M.",
+                field: Box::new(SettingField {
+                    json_path: Some("agent_chat.auto_compact_limit"),
+                    pick: |settings_content| {
+                        settings_content
+                            .agent_chat
+                            .as_ref()?
+                            .auto_compact_limit
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .agent_chat
+                            .get_or_insert_default()
+                            .auto_compact_limit = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+        ]
+    }
+
     SettingsPage {
-        title: "Agent Chat",
-        items: concat_sections![chat_section(), notifications_section()],
+        title: AGENT_CHAT_PAGE,
+        items: concat_sections![
+            general_section(),
+            chat_section(),
+            new_chats_section(),
+            agents_section(),
+            context_section(),
+            notifications_section()
+        ],
+    }
+}
+
+/// Pages that show only their first setting, the feature's own toggle, while that feature is off.
+pub(crate) fn pages_with_feature_off(settings: &SettingsContent) -> Vec<&'static str> {
+    let agent_chat_enabled = settings
+        .agent_chat
+        .as_ref()
+        .and_then(|agent_chat| agent_chat.enabled)
+        .unwrap_or(true);
+    if agent_chat_enabled {
+        Vec::new()
+    } else {
+        vec![AGENT_CHAT_PAGE]
+    }
+}
+
+const AGENT_CHAT_PAGE: &str = "Agent Chat";
+
+fn ask_to_allow_notifications(cx: &App) {
+    let permission = cx.request_system_notification_permission();
+    cx.spawn(async move |cx| {
+        if !permission.await.unwrap_or(false) {
+            cx.update(|cx| {
+                cx.open_url(&format!(
+                    "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={}",
+                    release_channel::RELEASE_CHANNEL.app_id()
+                ))
+            });
+        }
+    })
+    .detach();
+}
+
+fn keep_one_agent_shown(
+    agents: &mut settings::AgentChatAgentsContent,
+    changed: fn(&mut settings::AgentChatAgentsContent) -> &mut Option<bool>,
+) {
+    let all_hidden = [agents.claude_code, agents.codex, agents.opencode]
+        .iter()
+        .all(|shown| *shown == Some(false));
+    if all_hidden {
+        *changed(agents) = None;
     }
 }
 
@@ -9123,4 +9490,28 @@ where
     T::Discriminant: strum::VariantArray,
 {
     <<T as strum::IntoDiscriminant>::Discriminant as strum::VariantArray>::VARIANTS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keep_one_agent_shown;
+    use settings::AgentChatAgentsContent;
+
+    #[test]
+    fn hiding_the_last_shown_agent_keeps_it_shown() {
+        let mut agents = AgentChatAgentsContent {
+            claude_code: Some(false),
+            codex: Some(false),
+            opencode: None,
+        };
+        keep_one_agent_shown(&mut agents, |agents| &mut agents.opencode);
+        assert_eq!(agents.opencode, None);
+        agents.opencode = Some(false);
+        keep_one_agent_shown(&mut agents, |agents| &mut agents.opencode);
+        assert_eq!(agents.opencode, None);
+        agents.codex = Some(true);
+        agents.opencode = Some(false);
+        keep_one_agent_shown(&mut agents, |agents| &mut agents.opencode);
+        assert_eq!(agents.opencode, Some(false));
+    }
 }

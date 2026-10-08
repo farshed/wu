@@ -1040,6 +1040,11 @@ pub struct MarkdownPreviewSettingsContent {
 #[with_fallible_options]
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, MergeFrom, Default, PartialEq)]
 pub struct AgentChatSettingsContent {
+    /// Show agent chats in Wu. When off, the agent panel, its commands and all agent work are
+    /// hidden, and running agents stop.
+    ///
+    /// Default: true
+    pub enabled: Option<bool>,
     /// Which key sends a message from the chat box.
     ///
     /// Default: "enter"
@@ -1070,12 +1075,189 @@ pub struct AgentChatSettingsContent {
     pub sound_on_error: Option<bool>,
     /// Show a desktop notification when an agent finishes, needs input or fails.
     ///
-    /// Default: true
+    /// Default: false
     pub notifications: Option<bool>,
     /// Only notify when Wu is not the active app.
     ///
     /// Default: true
     pub notify_only_in_background: Option<bool>,
+    /// Compact Claude Code and Codex chats once their context reaches `auto_compact_limit`.
+    /// When off, each agent compacts on its own when the context is nearly full.
+    ///
+    /// Default: false
+    pub auto_compact: Option<bool>,
+    /// The context size, in tokens, at which to compact. Between 100K and 1M.
+    ///
+    /// Default: 200000
+    pub auto_compact_limit: Option<ContextTokens>,
+    /// The effort new chats start with. "last_used" keeps the effort of your last chat with that
+    /// agent. A model that doesn't offer the effort uses its own default.
+    ///
+    /// Default: "last_used"
+    pub default_effort: Option<AgentChatDefaultEffort>,
+    /// The permission mode new chats start with, for each agent.
+    pub default_permission: Option<AgentChatDefaultPermissionContent>,
+    /// Which agents appear in the new chat menu and in Continue Saved Chat.
+    pub agents: Option<AgentChatAgentsContent>,
+    /// What a message sent while the agent is working does.
+    ///
+    /// Default: "queue"
+    pub while_working: Option<AgentChatWhileWorking>,
+    /// Ask before quitting or restarting Wu while an agent is working, since that stops it.
+    ///
+    /// Default: true
+    pub confirm_quit_while_working: Option<bool>,
+}
+
+#[with_fallible_options]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, MergeFrom, Default, PartialEq)]
+pub struct AgentChatDefaultPermissionContent {
+    /// Default: "auto"
+    pub claude_code: Option<ClaudeCodePermissionDefault>,
+    /// Default: "auto"
+    pub codex: Option<CodexPermissionDefault>,
+    /// Default: "auto"
+    pub opencode: Option<OpencodePermissionDefault>,
+}
+
+#[with_fallible_options]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, MergeFrom, Default, PartialEq)]
+pub struct AgentChatAgentsContent {
+    /// Default: true
+    pub claude_code: Option<bool>,
+    /// Default: true
+    pub codex: Option<bool>,
+    /// Default: true
+    pub opencode: Option<bool>,
+}
+
+#[with_fallible_options]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    Default,
+    PartialEq,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentChatDefaultEffort {
+    #[default]
+    #[strum(serialize = "Last Used")]
+    LastUsed,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    #[serde(rename = "xhigh")]
+    #[strum(serialize = "X-High")]
+    XHigh,
+    Max,
+}
+
+#[with_fallible_options]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    Default,
+    PartialEq,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeCodePermissionDefault {
+    Ask,
+    #[strum(serialize = "Accept Edits")]
+    AcceptEdits,
+    #[default]
+    Auto,
+    #[strum(serialize = "Don't Ask")]
+    DontAsk,
+    Bypass,
+}
+
+#[with_fallible_options]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    Default,
+    PartialEq,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexPermissionDefault {
+    #[strum(serialize = "Read Only")]
+    ReadOnly,
+    #[default]
+    Auto,
+    #[strum(serialize = "Approve for Me")]
+    ApproveForMe,
+    #[strum(serialize = "Full Access")]
+    FullAccess,
+}
+
+#[with_fallible_options]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    Default,
+    PartialEq,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum OpencodePermissionDefault {
+    Ask,
+    #[strum(serialize = "Accept Edits")]
+    AcceptEdits,
+    #[default]
+    Auto,
+    #[strum(serialize = "Full Access")]
+    FullAccess,
+}
+
+#[with_fallible_options]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    Default,
+    PartialEq,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentChatWhileWorking {
+    /// The message waits in the queue and is sent when the agent finishes.
+    #[default]
+    Queue,
+    /// The message is sent right away, so the agent sees it mid-task.
+    Steer,
 }
 
 #[with_fallible_options]
@@ -1367,5 +1549,99 @@ impl std::str::FromStr for DelayMs {
             .parse::<u64>()
             .map(DelayMs)
             .with_context(|| format!("failed to parse delay duration: {s}"))
+    }
+}
+
+#[derive(
+    Copy, Clone, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, MergeFrom, JsonSchema,
+)]
+#[serde(transparent)]
+pub struct ContextTokens(#[schemars(range(min = 100_000, max = 1_000_000))] pub u64);
+
+impl<'de> Deserialize<'de> for ContextTokens {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let tokens = u64::deserialize(deserializer)?;
+        Ok(Self(tokens.clamp(Self::MIN, Self::MAX)))
+    }
+}
+
+impl ContextTokens {
+    pub const MIN: u64 = 100_000;
+    pub const MAX: u64 = 1_000_000;
+
+    pub fn clamped(self) -> u64 {
+        self.0.clamp(Self::MIN, Self::MAX)
+    }
+}
+
+impl From<u64> for ContextTokens {
+    fn from(n: u64) -> Self {
+        Self(n)
+    }
+}
+
+impl std::fmt::Display for ContextTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0 >= 1_000_000 && self.0.is_multiple_of(1_000_000) {
+            write!(f, "{}M", self.0 / 1_000_000)
+        } else if self.0.is_multiple_of(1_000) {
+            write!(f, "{}K", self.0 / 1_000)
+        } else {
+            write!(f, "{}", self.0)
+        }
+    }
+}
+
+impl std::str::FromStr for ContextTokens {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let text = s.trim().replace([',', '_'], "").to_lowercase();
+        let (number, scale) = if let Some(number) = text.strip_suffix('m') {
+            (number, 1_000_000.)
+        } else if let Some(number) = text.strip_suffix('k') {
+            (number, 1_000.)
+        } else {
+            (text.as_str(), 1.)
+        };
+        let value = number
+            .trim()
+            .parse::<f64>()
+            .with_context(|| format!("failed to parse token count: {s}"))?;
+        anyhow::ensure!(value.is_finite() && value >= 0., "invalid token count: {s}");
+        Ok(Self((value * scale).round() as u64))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ContextTokens;
+
+    #[test]
+    fn context_tokens_read_and_print_as_people_write_them() {
+        for (text, tokens) in [
+            ("200K", 200_000),
+            ("250k", 250_000),
+            ("1M", 1_000_000),
+            ("1.5m", 1_500_000),
+            ("150,000", 150_000),
+            (" 120000 ", 120_000),
+        ] {
+            assert_eq!(
+                text.parse::<ContextTokens>().ok(),
+                Some(ContextTokens(tokens)),
+                "{text}"
+            );
+        }
+        assert!("lots".parse::<ContextTokens>().is_err());
+        assert!("-5k".parse::<ContextTokens>().is_err());
+        assert_eq!(ContextTokens(200_000).to_string(), "200K");
+        assert_eq!(ContextTokens(1_000_000).to_string(), "1M");
+        assert_eq!(ContextTokens(123_456).to_string(), "123456");
+        assert_eq!(ContextTokens(5).clamped(), ContextTokens::MIN);
+        assert_eq!(
+            serde_json::from_str::<ContextTokens>("50000").ok(),
+            Some(ContextTokens(ContextTokens::MIN))
+        );
     }
 }

@@ -6,13 +6,14 @@ use gpui::{
     Task, WeakEntity, Window,
 };
 use picker::{Picker, PickerDelegate};
+use settings::Settings as _;
 use time::OffsetDateTime;
 use ui::{ListItem, ListItemSpacing, prelude::*};
 use util::ResultExt as _;
 use workspace::{ModalView, Toast, Workspace, notifications::NotificationId};
 
 use crate::{
-    AgentKind,
+    AgentChatSettings, AgentKind,
     agent_panel::{chat_roots, format_time_ago, open_chat, store_for},
     model_picker::agent_icon,
     session::AgentStore,
@@ -51,6 +52,7 @@ impl SavedChatPicker {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let agents = AgentChatSettings::get_global(cx).agents().to_vec();
         let delegate = SavedChatDelegate {
             modal: cx.entity().downgrade(),
             workspace,
@@ -60,14 +62,14 @@ impl SavedChatPicker {
             matches: Vec::new(),
             selected_index: 0,
             query: String::new(),
-            pending: roots.len() * AgentKind::ALL.len(),
+            pending: roots.len() * agents.len(),
             now: OffsetDateTime::now_utc().unix_timestamp(),
             _loads: Vec::new(),
         };
         let picker = cx.new(|cx| {
             let mut picker = Picker::uniform_list(delegate, window, cx);
             for root in roots {
-                for kind in AgentKind::ALL {
+                for kind in agents.iter().copied() {
                     let listing = store.update(cx, |store, cx| {
                         store.external_sessions(kind, root.clone(), cx)
                     });
@@ -210,6 +212,10 @@ impl PickerDelegate for SavedChatDelegate {
     }
 
     fn confirm(&mut self, _: bool, window: &mut Window, cx: &mut Context<Picker<Self>>) {
+        if !AgentChatSettings::get_global(cx).enabled {
+            self.dismissed(window, cx);
+            return;
+        }
         let Some(chat) = self
             .matches
             .get(self.selected_index)

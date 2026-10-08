@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use block2::RcBlock;
 use futures::StreamExt as _;
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
 use gpui::{
     ForegroundExecutor, SharedString, SystemNotification, SystemNotificationAction,
     SystemNotificationResponse, Task,
@@ -27,6 +27,7 @@ use objc2_user_notifications::{
     UNNotificationRequest, UNNotificationResponse, UNUserNotificationCenter,
     UNUserNotificationCenterDelegate,
 };
+use parking_lot::Mutex;
 
 type ResponseCallback = Rc<RefCell<Option<Box<dyn FnMut(SystemNotificationResponse)>>>>;
 
@@ -52,6 +53,21 @@ impl SystemNotificationState {
         if let Some(center) = &self.center {
             center.show(notification);
         }
+    }
+
+    pub(crate) fn request_permission(
+        &mut self,
+        executor: &ForegroundExecutor,
+    ) -> oneshot::Receiver<bool> {
+        self.initialize(executor);
+        let (sender, receiver) = oneshot::channel();
+        match &self.center {
+            Some(center) => center.request_permission(sender),
+            None => {
+                sender.send(false).ok();
+            }
+        }
+        receiver
     }
 
     pub(crate) fn dismiss(&mut self, executor: &ForegroundExecutor, tag: &str) {
@@ -152,6 +168,29 @@ impl NotificationCenter {
                 );
             } else if !granted.as_bool() {
                 log::info!("system notification authorization denied");
+            }
+        });
+        self.center
+            .requestAuthorizationWithOptions_completionHandler(
+                UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
+                &completion,
+            );
+    }
+
+    fn request_permission(&self, sender: oneshot::Sender<bool>) {
+        self.authorization_requested.set(true);
+        let sender = Mutex::new(Some(sender));
+        let completion = RcBlock::new(move |granted: Bool, error: *mut NSError| {
+            // SAFETY: when non-null, `error` is a valid `NSError` for the
+            // duration of the callback.
+            if let Some(error) = unsafe { error.as_ref() } {
+                log::warn!(
+                    "system notification authorization failed: {}",
+                    error.localizedDescription()
+                );
+            }
+            if let Some(sender) = sender.lock().take() {
+                sender.send(granted.as_bool()).ok();
             }
         });
         self.center

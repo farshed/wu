@@ -257,6 +257,7 @@ fn request(prompt: &str) -> RunRequest {
         fork: None,
         attachments: Vec::new(),
         skills: Vec::new(),
+        auto_compact_tokens: None,
     }
 }
 

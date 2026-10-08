@@ -186,16 +186,7 @@ impl ClaudeHarness {
             cmd.arg(format!("--resume={fork}"));
             cmd.arg("--fork-session");
         }
-        let mut settings = serde_json::Map::new();
-        if option_is_on(&request.model_options, "fastMode") {
-            settings.insert("fastMode".into(), Value::Bool(true));
-        }
-        if option_is_on(&request.model_options, "thinking") {
-            settings.insert("alwaysThinkingEnabled".into(), Value::Bool(true));
-        }
-        if request.reasoning == Some(ReasoningLevel::Ultracode) {
-            settings.insert("ultracode".into(), Value::Bool(true));
-        }
+        let settings = flag_settings(request);
         if !settings.is_empty() {
             cmd.arg("--settings");
             cmd.arg(Value::Object(settings).to_string());
@@ -1100,10 +1091,51 @@ fn updated_input_with_answers(
     Value::Object(updated)
 }
 
+fn flag_settings(request: &RunRequest) -> serde_json::Map<String, Value> {
+    let mut settings = serde_json::Map::new();
+    if option_is_on(&request.model_options, "fastMode") {
+        settings.insert("fastMode".into(), Value::Bool(true));
+    }
+    if option_is_on(&request.model_options, "thinking") {
+        settings.insert("alwaysThinkingEnabled".into(), Value::Bool(true));
+    }
+    if request.reasoning == Some(ReasoningLevel::Ultracode) {
+        settings.insert("ultracode".into(), Value::Bool(true));
+    }
+    if let Some(tokens) = request.auto_compact_tokens {
+        settings.insert("autoCompactEnabled".into(), Value::Bool(true));
+        settings.insert("autoCompactWindow".into(), tokens.into());
+    }
+    settings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn auto_compact_limit_turns_on_claude_auto_compaction_at_that_window() {
+        let mut request = RunRequest {
+            prompt: "hi".into(),
+            model: None,
+            reasoning: None,
+            model_options: serde_json::Map::new(),
+            cwd: String::new(),
+            permission: PermissionMode::FullAccess,
+            resume: None,
+            fork: None,
+            attachments: Vec::new(),
+            skills: Vec::new(),
+            auto_compact_tokens: None,
+        };
+        assert!(flag_settings(&request).is_empty());
+        request.auto_compact_tokens = Some(150_000);
+        assert_eq!(
+            Value::Object(flag_settings(&request)),
+            json!({ "autoCompactEnabled": true, "autoCompactWindow": 150_000 })
+        );
+    }
 
     #[test]
     fn commands_the_user_or_project_define_are_never_treated_as_hidden() {

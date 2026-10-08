@@ -1018,6 +1018,12 @@ impl Platform for MacPlatform {
         state.system_notifications.show(&executor, notification);
     }
 
+    fn request_system_notification_permission(&self) -> oneshot::Receiver<bool> {
+        let mut state = self.0.lock();
+        let executor = state.foreground_executor.clone();
+        state.system_notifications.request_permission(&executor)
+    }
+
     fn dismiss_system_notification(&self, tag: &str) {
         let mut state = self.0.lock();
         let executor = state.foreground_executor.clone();

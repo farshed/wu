@@ -1452,7 +1452,8 @@ fn quit(_: &Quit, cx: &mut App) {
         return;
     }
 
-    let should_confirm = WorkspaceSettings::get_global(cx).confirm_quit;
+    let should_confirm =
+        WorkspaceSettings::get_global(cx).confirm_quit && workspace::quit_warning(cx).is_none();
     cx.spawn(async move |cx| {
         let mut workspace_windows: Vec<WindowHandle<MultiWorkspace>> = cx.update(|cx| {
             cx.windows()
