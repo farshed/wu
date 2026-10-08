@@ -370,24 +370,82 @@ fn claude_config_dir() -> PathBuf {
         .unwrap_or_else(|| crate::executable::home_or_current_dir().join(".claude"))
 }
 
+fn claude_roots(
+    cwd: &std::path::Path,
+    config_dir: &std::path::Path,
+) -> impl Iterator<Item = PathBuf> {
+    cwd.ancestors()
+        .map(|dir| dir.join(".claude"))
+        .chain(std::iter::once(config_dir.to_path_buf()))
+}
+
 fn defined_command_names(cwd: &std::path::Path, config_dir: &std::path::Path) -> HashSet<String> {
     let mut names = HashSet::new();
-    let roots = cwd
-        .ancestors()
-        .map(|dir| dir.join(".claude"))
-        .chain(std::iter::once(config_dir.to_path_buf()));
-    for root in roots {
+    for root in claude_roots(cwd, config_dir) {
         collect_markdown_stems(&root.join("commands"), &mut names);
-        let Ok(skills) = std::fs::read_dir(root.join("skills")) else {
+        collect_skill_names(&root.join("skills"), &mut names);
+    }
+    names
+}
+
+fn defined_skill_names(cwd: &std::path::Path, config_dir: &std::path::Path) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for root in claude_roots(cwd, config_dir) {
+        collect_skill_names(&root.join("skills"), &mut names);
+    }
+    collect_plugin_skill_names(&config_dir.join("plugins"), 0, &mut names);
+    names
+}
+
+fn collect_skill_names(dir: &std::path::Path, names: &mut HashSet<String>) {
+    let Ok(skills) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for skill in skills.flatten() {
+        if skill.path().join("SKILL.md").is_file() {
+            names.insert(skill.file_name().to_string_lossy().into_owned());
+        }
+    }
+}
+
+const MAX_PLUGIN_DEPTH: usize = 7;
+
+/// Plugin skills are named `plugin:skill`; the plugin folder is one or two levels above `skills`.
+fn collect_plugin_skill_names(dir: &std::path::Path, depth: usize, names: &mut HashSet<String>) {
+    if depth > MAX_PLUGIN_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
             continue;
-        };
-        for skill in skills.flatten() {
-            if skill.path().join("SKILL.md").is_file() {
-                names.insert(skill.file_name().to_string_lossy().into_owned());
+        }
+        let path = entry.path();
+        if entry.file_name() == "skills" {
+            let mut skills = HashSet::new();
+            collect_skill_names(&path, &mut skills);
+            let plugins = path
+                .ancestors()
+                .skip(1)
+                .take(2)
+                .filter_map(|folder| folder.file_name())
+                .map(|folder| folder.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            for skill in &skills {
+                for plugin in &plugins {
+                    names.insert(format!("{plugin}:{skill}"));
+                }
+            }
+        } else {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.starts_with('.') && name != "node_modules" {
+                collect_plugin_skill_names(&path, depth + 1, names);
             }
         }
     }
-    names
 }
 
 fn collect_markdown_stems(dir: &std::path::Path, names: &mut HashSet<String>) {
@@ -431,6 +489,7 @@ fn parse_initialize_commands(response: &Value) -> Vec<SlashCommand> {
                     .map(str::trim)
                     .filter(|hint| !hint.is_empty())
                     .map(str::to_owned),
+                is_skill: false,
             })
         })
         .collect()
@@ -489,14 +548,20 @@ impl Harness for ClaudeHarness {
     async fn commands(&self, cwd: &std::path::Path) -> Result<Vec<SlashCommand>, HarnessError> {
         let response = self.probe_initialize(Some(cwd)).await?;
         let mut commands = parse_initialize_commands(&response);
-        if commands
-            .iter()
-            .any(|command| is_hidden_command(&command.name))
-        {
-            let defined = defined_command_names(cwd, &self.config_dir());
-            commands.retain(|command| {
-                !is_hidden_command(&command.name) || defined.contains(&command.name)
-            });
+        let config_dir = self.config_dir();
+        let project = cwd.to_owned();
+        let (defined, skills) = tokio::task::spawn_blocking(move || {
+            (
+                defined_command_names(&project, &config_dir),
+                defined_skill_names(&project, &config_dir),
+            )
+        })
+        .await
+        .map_err(|error| HarnessError::Protocol(error.to_string()))?;
+        commands
+            .retain(|command| !is_hidden_command(&command.name) || defined.contains(&command.name));
+        for command in &mut commands {
+            command.is_skill = skills.contains(&command.name);
         }
         Ok(commands)
     }
@@ -1158,6 +1223,42 @@ mod tests {
         }
         for name in ["context", "model", "notes"] {
             assert!(!names.contains(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn skills_from_projects_users_and_plugins_are_recognized() {
+        let config = tempfile::tempdir().expect("config directory");
+        let project = tempfile::tempdir().expect("project directory");
+        let write = |path: std::path::PathBuf| {
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("create directory");
+            std::fs::write(path, "body").expect("write file");
+        };
+        write(project.path().join(".claude/skills/deploy/SKILL.md"));
+        write(project.path().join(".claude/commands/status.md"));
+        write(config.path().join("skills/notes/SKILL.md"));
+        write(
+            config
+                .path()
+                .join("plugins/synced/abc/marketing/skills/seo-audit/SKILL.md"),
+        );
+        write(
+            config
+                .path()
+                .join("plugins/cache/market/review/1.0.0/skills/check/SKILL.md"),
+        );
+        write(
+            config
+                .path()
+                .join("plugins/cache/market/review/1.0.0/commands/ship.md"),
+        );
+
+        let skills = defined_skill_names(project.path(), config.path());
+        for name in ["deploy", "notes", "marketing:seo-audit", "review:check"] {
+            assert!(skills.contains(name), "{name}");
+        }
+        for name in ["status", "review:ship", "seo-audit"] {
+            assert!(!skills.contains(name), "{name}");
         }
     }
 

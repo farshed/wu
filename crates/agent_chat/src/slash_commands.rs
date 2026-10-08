@@ -150,6 +150,7 @@ pub(crate) struct CommandItem {
     pub name: String,
     pub detail: String,
     pub target: CommandTarget,
+    pub is_skill: bool,
 }
 
 pub(crate) fn command_items(agent_commands: &[SlashCommand]) -> Vec<CommandItem> {
@@ -163,6 +164,7 @@ pub(crate) fn command_items(agent_commands: &[SlashCommand]) -> Vec<CommandItem>
                 (false, Some(hint)) => format!("{} · <{hint}>", command.description),
             },
             target: CommandTarget::Agent,
+            is_skill: command.is_skill,
         })
         .collect();
     for command in AppCommand::ALL {
@@ -174,6 +176,7 @@ pub(crate) fn command_items(agent_commands: &[SlashCommand]) -> Vec<CommandItem>
             name,
             detail: command.description().to_string(),
             target: CommandTarget::App(command),
+            is_skill: false,
         });
     }
     items
@@ -257,6 +260,7 @@ mod tests {
             name: name.into(),
             description: String::new(),
             input_hint: None,
+            is_skill: false,
         }
     }
 
@@ -280,6 +284,7 @@ mod tests {
             name: "review".into(),
             description: "Review a pull request".into(),
             input_hint: Some("[pr number]".into()),
+            is_skill: false,
         };
         assert_eq!(
             command_items(&[command])[0].detail,

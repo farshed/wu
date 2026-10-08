@@ -7173,7 +7173,7 @@ fn agent_chat_page() -> SettingsPage {
             SettingsPageItem::SectionHeader("General"),
             SettingsPageItem::SettingItem(SettingItem {
                 title: "Enable Agent Chat",
-                description: "Show the agent panel and its commands. When off, Wu hides everything agent-related and stops running agents.",
+                description: "Show the agent panel and its commands. When off, Wu hides everything agent-related.",
                 field: Box::new(SettingField {
                     json_path: Some("agent_chat.enabled"),
                     pick: |settings_content| settings_content.agent_chat.as_ref()?.enabled.as_ref(),

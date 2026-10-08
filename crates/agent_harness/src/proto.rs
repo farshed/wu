@@ -333,6 +333,8 @@ pub struct SlashCommand {
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_skill: bool,
 }
 
 /// `old_text: None` means a new file.

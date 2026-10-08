@@ -224,6 +224,7 @@ pub(super) fn commands_from_wire(commands: &Value) -> Vec<SlashCommand> {
                     .unwrap_or_default()
                     .to_owned(),
                 input_hint: None,
+                is_skill: false,
             })
         })
         .collect()

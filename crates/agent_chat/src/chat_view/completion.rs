@@ -51,6 +51,7 @@ enum Row {
 impl Row {
     fn icon(&self) -> IconName {
         match self {
+            Row::Command(item) if item.is_skill => IconName::AgentWidget,
             Row::Command(_) => IconName::AgentCommand,
             Row::Skill(_) => IconName::AgentWidget,
             Row::Mention(item) if item.is_dir => IconName::AgentFolder,
