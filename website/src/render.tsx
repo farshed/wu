@@ -14,7 +14,7 @@ export function renderPage(route: Route, { css, js }: Assets): string {
   const title = escapeHtml(route.meta?.title ?? SITE_TITLE);
   const description = escapeHtml(route.meta?.description ?? SITE_DESCRIPTION);
   const url = `${SITE_URL}${route.path === '/' ? '/' : `${route.path}/`}`;
-  const image = `${SITE_URL}/screenshot-dark.png`;
+  const image = `${SITE_URL}/wu-preview.png`;
   const app = js ? renderToString(route.element) : renderToStaticMarkup(route.element);
 
   return `<!doctype html>
@@ -32,6 +32,8 @@ export function renderPage(route: Route, { css, js }: Assets): string {
     <meta property="og:title" content="${title}" />
     <meta property="og:description" content="${description}" />
     <meta property="og:image" content="${image}" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="729" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="${image}" />
     <meta name="theme-color" content="#06040a" />

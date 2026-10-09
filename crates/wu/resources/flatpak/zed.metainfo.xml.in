@@ -48,12 +48,8 @@
 
     <screenshots>
         <screenshot type="default">
-            <caption>Wu with a project open, in the Catppuccin Mocha theme</caption>
-            <image>https://raw.githubusercontent.com/farshed/wu/main/assets/images/screenshot-dark.png</image>
-        </screenshot>
-        <screenshot>
-            <caption>Wu with a project open, in the Catppuccin Latte theme</caption>
-            <image>https://raw.githubusercontent.com/farshed/wu/main/assets/images/screenshot-light.png</image>
+            <caption>Wu with a project open</caption>
+            <image>https://wu.farshed.me/screenshot.png</image>
         </screenshot>
     </screenshots>
 
