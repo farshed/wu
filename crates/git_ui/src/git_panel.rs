@@ -3915,7 +3915,13 @@ impl GitPanel {
         .detach();
     }
 
-    pub(crate) fn pull(&mut self, rebase: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn pull(
+        &mut self,
+        rebase: bool,
+        select_remote_and_branch: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.can_push_and_pull(cx) {
             return;
         }
@@ -3929,7 +3935,8 @@ impl GitPanel {
             return;
         }
 
-        let remote = self.get_remote(false, false, window, cx);
+        let remote = self.get_remote(select_remote_and_branch, false, window, cx);
+        let workspace = self.workspace.clone();
         cx.spawn_in(window, async move |this, cx| {
             let _clear_pending_remote_operation = cx.on_drop(&this, |this, cx| {
                 this.clear_remote_operation(cx);
@@ -3948,14 +3955,69 @@ impl GitPanel {
                 }
             };
 
-            let askpass = this.update_in(cx, |this, window, cx| {
-                this.askpass_delegate(format!("git pull {}", remote.name), window, cx)
-            })?;
+            let branch_name = if select_remote_and_branch {
+                let branch_options = repo.update(cx, |repo, _| {
+                    let branch_list = repo.branch_list.clone();
+                    let prefix = format!("refs/remotes/{}/", remote.name);
+                    let mut remote_branches: Vec<SharedString> = Vec::new();
+                    for b in branch_list.iter() {
+                        if let Some(name) = b.ref_name.strip_prefix(&prefix) {
+                            if name != "HEAD" && !name.ends_with("/HEAD") {
+                                remote_branches.push(SharedString::from(name.to_string()));
+                            }
+                        }
+                    }
+                    for b in branch_list.iter() {
+                        if !b.is_remote() {
+                            let name = SharedString::from(b.name().to_string());
+                            if !remote_branches.contains(&name) {
+                                remote_branches.push(name);
+                            }
+                        }
+                    }
+                    let current_branch_name = branch.name().to_string();
+                    if let Some(pos) = remote_branches
+                        .iter()
+                        .position(|b| b.as_ref() == current_branch_name)
+                    {
+                        let current = remote_branches.remove(pos);
+                        remote_branches.insert(0, current);
+                    }
+                    remote_branches
+                });
 
-            let branch_name = branch
-                .upstream
-                .is_none()
-                .then(|| branch.name().to_owned().into());
+                let selected = this
+                    .update_in(cx, |_, window, cx| {
+                        picker_prompt::prompt_branch(
+                            "Pick which branch to pull from",
+                            branch_options,
+                            workspace,
+                            window,
+                            cx,
+                        )
+                    })?
+                    .await;
+
+                let Some(selected) = selected else {
+                    return Ok(());
+                };
+                Some(selected)
+            } else {
+                branch
+                    .upstream
+                    .is_none()
+                    .then(|| branch.name().to_owned().into())
+            };
+
+            let askpass_message = if let Some(ref branch_name) = branch_name {
+                format!("git pull {} {}", remote.name, branch_name)
+            } else {
+                format!("git pull {}", remote.name)
+            };
+
+            let askpass = this.update_in(cx, |this, window, cx| {
+                this.askpass_delegate(askpass_message, window, cx)
+            })?;
 
             let pull = repo.update(cx, |repo, cx| {
                 repo.pull(branch_name, remote.name.clone(), rebase, askpass, cx)
@@ -4251,10 +4313,15 @@ impl GitPanel {
                 .into_iter()
                 .map(|remotes| remotes.name)
                 .collect();
+            let prompt_text = if is_push {
+                "Pick which remote to push to"
+            } else {
+                "Pick which remote to pull from"
+            };
             let selection = cx
                 .update(|window, cx| {
                     picker_prompt::prompt(
-                        "Pick which remote to push to",
+                        prompt_text,
                         current_remotes.clone(),
                         workspace,
                         window,
