@@ -19,7 +19,7 @@ const USAGE_DANGER: f32 = 0.95;
 const USAGE_LABEL_WIDTH: f32 = 52.0;
 const USAGE_BAR_WIDTH: f32 = 88.0;
 const USAGE_PERCENT_WIDTH: f32 = 34.0;
-const USAGE_CARD_WIDTH: f32 = 400.0;
+const USAGE_CARD_WIDTH: f32 = 350.0;
 const CARD_INSET: f32 = 4.0;
 const MENU_ITEM_RADIUS: f32 = 7.0;
 
