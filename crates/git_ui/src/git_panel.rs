@@ -564,6 +564,16 @@ enum CommitHistory {
     Error(SharedString),
 }
 
+fn remote_branch_names(branches: &[Branch], remote_name: &str) -> Vec<SharedString> {
+    let prefix = format!("refs/remotes/{remote_name}/");
+    branches
+        .iter()
+        .filter_map(|branch| branch.ref_name.strip_prefix(prefix.as_str()))
+        .filter(|name| *name != "HEAD")
+        .map(|name| SharedString::from(name.to_string()))
+        .collect()
+}
+
 fn commit_history_from_response(
     entries: Rc<[CommitHistoryEntry]>,
     is_loading: bool,
@@ -3915,7 +3925,13 @@ impl GitPanel {
         .detach();
     }
 
-    pub(crate) fn pull(&mut self, rebase: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn pull(
+        &mut self,
+        rebase: bool,
+        select_branch: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.can_push_and_pull(cx) {
             return;
         }
@@ -3929,7 +3945,8 @@ impl GitPanel {
             return;
         }
 
-        let remote = self.get_remote(false, false, window, cx);
+        let remote = self.get_remote(select_branch, false, window, cx);
+        let workspace = self.workspace.clone();
         cx.spawn_in(window, async move |this, cx| {
             let _clear_pending_remote_operation = cx.on_drop(&this, |this, cx| {
                 this.clear_remote_operation(cx);
@@ -3948,14 +3965,50 @@ impl GitPanel {
                 }
             };
 
-            let askpass = this.update_in(cx, |this, window, cx| {
-                this.askpass_delegate(format!("git pull {}", remote.name), window, cx)
-            })?;
+            let branch_name: Option<SharedString> = if select_branch {
+                let remote_branches = repo.read_with(cx, |repo, _| {
+                    remote_branch_names(&repo.branch_list, &remote.name)
+                });
+                if remote_branches.is_empty() {
+                    let error = anyhow::anyhow!(
+                        "No branches found on {}. Fetch from it first.",
+                        remote.name
+                    );
+                    this.update(cx, |this, cx| this.show_error_toast("pull", error, cx))
+                        .ok();
+                    return Ok(());
+                }
+                let selection = cx
+                    .update(|window, cx| {
+                        picker_prompt::prompt(
+                            "Pick which branch to pull from",
+                            remote_branches.clone(),
+                            workspace,
+                            window,
+                            cx,
+                        )
+                    })?
+                    .await;
+                let Some(branch_name) =
+                    selection.and_then(|index| remote_branches.get(index).cloned())
+                else {
+                    return Ok(());
+                };
+                Some(branch_name)
+            } else {
+                branch
+                    .upstream
+                    .is_none()
+                    .then(|| branch.name().to_owned().into())
+            };
 
-            let branch_name = branch
-                .upstream
-                .is_none()
-                .then(|| branch.name().to_owned().into());
+            let askpass_message = match &branch_name {
+                Some(branch_name) => format!("git pull {} {branch_name}", remote.name),
+                None => format!("git pull {}", remote.name),
+            };
+            let askpass = this.update_in(cx, |this, window, cx| {
+                this.askpass_delegate(askpass_message, window, cx)
+            })?;
 
             let pull = repo.update(cx, |repo, cx| {
                 repo.pull(branch_name, remote.name.clone(), rebase, askpass, cx)
@@ -4254,7 +4307,11 @@ impl GitPanel {
             let selection = cx
                 .update(|window, cx| {
                     picker_prompt::prompt(
-                        "Pick which remote to push to",
+                        if is_push {
+                            "Pick which remote to push to"
+                        } else {
+                            "Pick which remote to pull from"
+                        },
                         current_remotes.clone(),
                         workspace,
                         window,
@@ -9155,6 +9212,44 @@ mod tests {
     }
 
     #[gpui::test]
+    async fn test_cancelling_picker_prompt_resolves_to_none(cx: &mut TestAppContext) {
+        init_test(cx);
+        let fs = FakeFs::new(cx.background_executor.clone());
+        fs.insert_tree(path!("/project"), json!({})).await;
+        let project = Project::test(fs, [Path::new(path!("/project"))], cx).await;
+        let window_handle =
+            cx.add_window(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
+        let workspace = window_handle
+            .read_with(cx, |mw, _| mw.workspace().clone())
+            .unwrap();
+        let cx = &mut VisualTestContext::from_window(window_handle.into(), cx);
+
+        let selection = workspace.update_in(cx, |workspace, window, cx| {
+            picker_prompt::prompt(
+                "Pick which remote to pull from",
+                vec!["origin".into(), "upstream".into()],
+                workspace.weak_handle(),
+                window,
+                cx,
+            )
+        });
+        cx.run_until_parked();
+
+        let prompt = workspace
+            .update(cx, |workspace, cx| {
+                workspace.active_modal::<picker_prompt::PickerPrompt>(cx)
+            })
+            .expect("prompt should be open");
+        prompt.update_in(cx, |prompt, window, cx| {
+            prompt.picker.update(cx, |picker, cx| {
+                picker.cancel(&Default::default(), window, cx)
+            })
+        });
+
+        assert_eq!(selection.await, None);
+    }
+
+    #[gpui::test]
     async fn test_skip_hooks_toggle(cx: &mut TestAppContext) {
         init_test(cx);
         let (_, _, _, panel, mut cx) = setup_git_panel_with_changes(
@@ -12576,6 +12671,37 @@ mod tests {
         for (input, expected) in cases {
             assert_eq!(terminal::strip_ansi_text(input.as_bytes()), expected);
         }
+    }
+
+    #[test]
+    fn test_remote_branch_names() {
+        let branches = [
+            "refs/heads/main",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+            "refs/remotes/origin/feature/login",
+            "refs/remotes/origin-fork/main",
+            "refs/remotes/upstream/dev",
+        ]
+        .map(|ref_name| Branch {
+            is_head: false,
+            ref_name: ref_name.into(),
+            upstream: None,
+            most_recent_commit: None,
+        });
+
+        assert_eq!(
+            remote_branch_names(&branches, "origin"),
+            vec![
+                SharedString::from("main"),
+                SharedString::from("feature/login")
+            ]
+        );
+        assert_eq!(
+            remote_branch_names(&branches, "upstream"),
+            vec![SharedString::from("dev")]
+        );
+        assert!(remote_branch_names(&branches, "missing").is_empty());
     }
 
     #[test]

@@ -79,7 +79,7 @@ export function Home() {
               <h2 className={sectionTitle}>Light on memory</h2>
               <p className={sectionBody}>Wu used less memory than Zed and VS Code in every test we ran.</p>
               <a className="btn btn-md btn-light mt-2" href={MEMORY_BENCHMARK_URL} target="_blank" rel="noopener">
-                See benchmark
+                See benchmarks
                 <ArrowUpRight size={18} aria-hidden="true" />
               </a>
             </>
