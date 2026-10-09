@@ -14,7 +14,7 @@ Wu is a fast, native code editor written in Rust, with a clean, modern design an
 
 - ⚡ **Native and fast.** No Electron or webviews. Opens instantly and stays responsive on large views.
 - 🍃 **Lightweight.** Wu's memory footprint is lower than VS Code and Zed. See [benchmarks](https://github.com/farshed/wu/blob/main/docs/memory-benchmark.md).
-- 👾 **Coding agents included.** Built-in support for Claude Code, Codex, and OpenCode (currently in preview).
+- 👾 **Coding agents included.** Built-in support for Claude Code, Codex, and OpenCode.
 - ✨ **Beautiful by default.** Clean, modern look with a delightful UX.
 - 🤫 **No account or telemetry.** Nothing to sign in to. Wu never sends your usage data anywhere.
 
