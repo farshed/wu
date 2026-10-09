@@ -332,7 +332,7 @@ checksum = "a33bd3e260892199c3ccfc487c88b2da2265080acb316cd920da72fdfd7c599f"`;
 
 const readme = `# Wu
 
-The fast, native code editor. Written in Rust, drawn on the GPU.
+The fast, native code editor and agent workspace. Written in Rust.
 
 ## Features
 

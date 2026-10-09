@@ -16,7 +16,7 @@ export interface Route {
 }
 
 export const routes: Route[] = [
-  { path: '/', element: <Home />, entry: 'home', meta: { title: 'Wu: the fast, native code editor' } },
+  { path: '/', element: <Home />, entry: 'home', meta: { title: 'Wu: the fast, native code editor and agent workspace' } },
   {
     path: '/docs',
     element: <Docs />,

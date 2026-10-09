@@ -1,7 +1,7 @@
 <div align="center">
   <img src="crates/wu/resources/app-icon.png" alt="Wu" width="128">
   <h1>Wu</h1>
-  <p>The fast, native code editor.</p>
+  <p>The fast, native code editor and agent workspace.</p>
   <p>Written in Rust. Batteries included.</p>
   <p><a href="#download"><strong>Download</strong></a></p>
 </div>

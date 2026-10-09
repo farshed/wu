@@ -49,10 +49,10 @@ export function Home() {
           <section className="px-8 pt-42 pb-26 max-sm:px-4 max-sm:pt-30 max-sm:pb-14">
             <div className="mx-auto flex max-w-[1240px] flex-col items-start gap-5">
               <h1 className="max-w-[800px] text-[clamp(36px,5.2vw,60px)] leading-[1.1] font-medium tracking-[-0.03em]">
-                The fast, native code&nbsp;editor
+                The fast, native code&nbsp;editor and agent workspace
               </h1>
               <p className="max-w-[600px] text-xl leading-[1.35] max-sm:text-lg">
-                Written in Rust. Batteries included: coding agents, a beautiful design and everything you need from day
+                Written in Rust. Batteries included: coding agents, a delightful UX and everything you need from day
                 one.
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
